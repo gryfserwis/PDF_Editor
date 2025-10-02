@@ -1442,10 +1442,10 @@ class SelectablePDFViewer(QMainWindow):
             'rotate_r': ('↷', "rotate_right.png"),
             'import': ('📥', "import.png"),
             'export': ('📤', "export.png"),
-            'image_import': ('🖼️', "image_import.png"),
+            'image_import': ('🖼️', "import_image.png"),
             'export_image': ('🎨', "export_image.png"),
             'shift': ('⬌', "shift.png"),
-            'page_num_del': ('🔢❌', "page_num_del.png"),
+            'page_num_del': ('🔢❌', "del_nums.png"),
             'add_nums': ('🔢', "add_nums.png"),
             'zoom_in': ('+', "zoom_in.png"),
             'zoom_out': ('-', "zoom_out.png"),
@@ -1884,37 +1884,56 @@ class SelectablePDFViewer(QMainWindow):
     # ===================================================================
 
     def open_pdf(self, filepath=None):
-        """Open a PDF file"""
-        if filepath is None:
-            filepath, _ = QFileDialog.getOpenFileName(
-                self,
-                "Wybierz plik PDF",
-                "",
-                "Pliki PDF (*.pdf);;Wszystkie pliki (*)"
-            )
-        
+        print(">>> open_pdf wywołane", filepath)
+        filepath, _ = QFileDialog.getOpenFileName(
+            None,
+            "Wybierz plik PDF",
+            "",
+            "Pliki PDF (*.pdf);;Wszystkie pliki (*)"
+        )
+        print(">>> Wybrano plik:", filepath)
         if not filepath:
+            print(">>> Nie wybrano pliku.")
             return
-        
+
+        print(">>> Przechodzę do otwierania PDF przez fitz")
         try:
             if self.pdf_document:
+                print(">>> Zamykam poprzedni dokument")
                 self.pdf_document.close()
-            
+            print(">>> fitz.open() start")
             self.pdf_document = fitz.open(filepath)
-            self.selected_pages.clear()
-            self.pixmaps.clear()
+            print(">>> PDF otwarty, liczba stron:", len(self.pdf_document))
+
+            # --- RESETUJ STAN (ważne!) ---
+            self.selected_pages = set()
+            self.pixmaps = {}            # Zamiast self.tk_images
             self.thumb_frames.clear()
+            self.clipboard = None
+            self.pages_in_clipboard_count = 0
             self.active_page_index = 0
-            
             self.undo_stack.clear()
             self.redo_stack.clear()
-            
+            self.target_num_cols = 4
+
+            # Wyczyść widgety miniatur
+            while self.scroll_layout.count():
+                item = self.scroll_layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+
+            # --- ODSWIEŻ GUI ---
             self._reconfigure_grid()
             self._update_status(f"Wczytano: {os.path.basename(filepath)} ({len(self.pdf_document)} stron)")
             self.update_tool_button_states()
-            
+            self.update_focus_display()  # Jeśli masz taką metodę
+
         except Exception as e:
+            print(">>> Błąd przy otwieraniu PDF:", e)
             QMessageBox.critical(self, "Błąd", f"Nie można otworzyć pliku: {e}")
+            self.pdf_document = None
+            self._update_status("Nie udało się wczytać pliku PDF.")
+            self.update_tool_button_states()
 
     def save_document(self):
         """Save PDF document"""
