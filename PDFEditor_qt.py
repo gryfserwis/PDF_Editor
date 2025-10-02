@@ -28,6 +28,8 @@ from datetime import date
 import pypdf
 from pypdf import PdfReader, PdfWriter, Transformation
 from pypdf.generic import RectangleObject, FloatObject, ArrayObject, NameObject
+from PySide6.QtGui import QDrag, QPixmap, QMouseEvent
+from PySide6.QtCore import QMimeData
 
 # ArrayObject jest nadal potrzebne, jeśli użyjesz add_transformation, choć FloatObject 
 # wystarczyłoby, jeśli pypdf je konwertuje. Zostawiam dla pełnej kompatybilności.
@@ -679,62 +681,54 @@ class PageNumberingDialog(QDialog):
 # KLASA: DIALOG MARGINESU NUMERACJI
 # ====================================================================
 
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QLineEdit, QHBoxLayout, QPushButton
+
 class PageNumberMarginDialog(QDialog):
-    """Dialog for page number margin settings - migrated from Tkinter"""
-    
-    def __init__(self, parent, initial_margin_mm=20):
+    def __init__(self, parent=None, initial_margin_mm=20):
         super().__init__(parent)
-        self.setWindowTitle("Usuń numerację stron")
-        self.setModal(True)
+        self.setWindowTitle("Usuwanie numeracji stron")
         self.result = None
-        self.initial_margin_mm = initial_margin_mm
-        
-        self.build_ui()
-        self.center_dialog()
 
-    def center_dialog(self):
-        """Center dialog relative to parent"""
-        if self.parent():
-            parent_geo = self.parent().geometry()
-            self.move(
-                parent_geo.x() + (parent_geo.width() - self.width()) // 2,
-                parent_geo.y() + (parent_geo.height() - self.height()) // 2
-            )
-
-    def build_ui(self):
-        """Build the dialog UI"""
         layout = QVBoxLayout(self)
-        
-        label = QLabel("Podaj wysokość marginesu do skanowania (w mm):")
+
+        label = QLabel("Podaj wysokości marginesów (w mm):")
         layout.addWidget(label)
-        
-        self.entry = QLineEdit(str(self.initial_margin_mm))
-        layout.addWidget(self.entry)
-        
-        button_layout = QHBoxLayout()
-        btn_ok = QPushButton("OK")
+
+        # Dwa pola: góra, dół
+        row1 = QHBoxLayout()
+        row1.addWidget(QLabel("Od góry (nagłówek):"))
+        self.top_entry = QLineEdit(str(initial_margin_mm))
+        row1.addWidget(self.top_entry)
+        layout.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        row2.addWidget(QLabel("Od dołu (stopka):"))
+        self.bottom_entry = QLineEdit(str(initial_margin_mm))
+        row2.addWidget(self.bottom_entry)
+        layout.addLayout(row2)
+
+        buttons = QHBoxLayout()
+        btn_ok = QPushButton("Usuń")
         btn_ok.clicked.connect(self.ok)
-        button_layout.addWidget(btn_ok)
-        
+        buttons.addWidget(btn_ok)
         btn_cancel = QPushButton("Anuluj")
         btn_cancel.clicked.connect(self.cancel)
-        button_layout.addWidget(btn_cancel)
-        
-        layout.addLayout(button_layout)
+        buttons.addWidget(btn_cancel)
+        layout.addLayout(buttons)
 
     def ok(self):
-        """OK button handler"""
         try:
-            value = float(self.entry.text().replace(',', '.'))
-            if value <= 0:
-                raise ValueError("Margines musi być większy od zera")
-            self.result = value
+            top_mm = float(self.top_entry.text().replace(',', '.'))
+            bottom_mm = float(self.bottom_entry.text().replace(',', '.'))
+            if top_mm < 0 or bottom_mm < 0:
+                raise ValueError("Marginesy muszą być nieujemne.")
+            self.result = {'top_mm': top_mm, 'bottom_mm': bottom_mm}
             self.accept()
-        except ValueError as e:
-            QMessageBox.critical(self, "Błąd", f"Nieprawidłowa wartość: {e}")
+        except Exception as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Błąd", f"Nieprawidłowe dane: {e}")
 
     def cancel(self):
-        """Cancel button handler"""
         self.result = None
         self.reject()
 
@@ -987,7 +981,6 @@ class ImageImportSettingsDialog(QDialog):
         self.result = None
         self.reject()
 
-
 # ====================================================================
 # KLASA: DIALOG WYBORU ZAKRESU STRON
 # ====================================================================
@@ -1092,274 +1085,311 @@ class EnhancedPageRangeDialog(QDialog):
 # KLASA: DIALOG SCALANIA STRON NA ARKUSZU
 # ====================================================================
 
+from PySide6.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QLineEdit, QPushButton,
+    QGridLayout, QGroupBox, QWidget, QMessageBox
+)
+from PySide6.QtGui import QPixmap, QPainter, QColor, QPen
+from PySide6.QtCore import Qt
+
 class MergePageGridDialog(QDialog):
-    """Dialog for merging pages into a grid - migrated from Tkinter"""
-    
-    def __init__(self, parent, page_count):
+    PAPER_FORMATS = {
+        'A0': (841, 1189),
+        'A1': (594, 841),
+        'A2': (420, 594),
+        'A3': (297, 420),
+        'A4': (210, 297),
+        'A5': (148, 210),
+        'A6': (105, 148),
+    }
+
+    def __init__(self, parent=None, page_count=1):
         super().__init__(parent)
-        self.setWindowTitle("Scal strony na arkusz")
-        self.setModal(True)
+        self.setWindowTitle("Scalanie stron na arkuszu")
         self.result = None
         self.page_count = page_count
-        
-        # Initialize variables
-        self.format_var = "A4"
-        self.orientation_var = "portrait"
-        self.rows_var = "2"
-        self.cols_var = "2"
-        self.spacing_x_mm = "5"
-        self.spacing_y_mm = "5"
-        
-        self.build_ui()
-        self.center_dialog()
 
-    def center_dialog(self):
-        """Center dialog relative to parent"""
-        if self.parent():
-            parent_geo = self.parent().geometry()
-            self.move(
-                parent_geo.x() + (parent_geo.width() - self.width()) // 2,
-                parent_geo.y() + (parent_geo.height() - self.height()) // 2
-            )
+        layout = QVBoxLayout(self)
 
-    def build_ui(self):
-        """Build the dialog UI"""
-        main_layout = QHBoxLayout(self)
-        
-        # LEFT PART - Settings
-        left_widget = QWidget()
-        left_layout = QVBoxLayout(left_widget)
-        
-        # Sheet format
-        format_group = QFrame()
-        format_group.setFrameStyle(QFrame.Box | QFrame.Plain)
-        format_layout = QVBoxLayout(format_group)
-        
-        format_label = QLabel("Arkusz docelowy")
-        format_label.setStyleSheet("font-weight: bold;")
-        format_layout.addWidget(format_label)
-        
-        format_grid = QGridLayout()
-        format_grid.addWidget(QLabel("Format:"), 0, 0)
-        self.combo_format = QComboBox()
-        self.combo_format.addItems(["A3", "A4", "A5"])
-        self.combo_format.setCurrentText(self.format_var)
-        format_grid.addWidget(self.combo_format, 0, 1)
-        
-        format_grid.addWidget(QLabel("Orientacja:"), 1, 0)
-        self.combo_orientation = QComboBox()
-        self.combo_orientation.addItems(["Pionowa", "Pozioma"])
-        format_grid.addWidget(self.combo_orientation, 1, 1)
-        
-        format_layout.addLayout(format_grid)
-        left_layout.addWidget(format_group)
-        
-        # Spacing
-        spacing_group = QFrame()
-        spacing_group.setFrameStyle(QFrame.Box | QFrame.Plain)
-        spacing_layout = QVBoxLayout(spacing_group)
-        
-        spacing_label = QLabel("Odstępy między stronami (mm)")
-        spacing_label.setStyleSheet("font-weight: bold;")
-        spacing_layout.addWidget(spacing_label)
-        
-        spacing_grid = QGridLayout()
-        spacing_grid.addWidget(QLabel("Poziomy:"), 0, 0)
-        self.e_spacing_x = QLineEdit(self.spacing_x_mm)
-        spacing_grid.addWidget(self.e_spacing_x, 0, 1)
-        
-        spacing_grid.addWidget(QLabel("Pionowy:"), 1, 0)
-        self.e_spacing_y = QLineEdit(self.spacing_y_mm)
-        spacing_grid.addWidget(self.e_spacing_y, 1, 1)
-        
-        spacing_layout.addLayout(spacing_grid)
-        left_layout.addWidget(spacing_group)
-        
-        # Grid
-        grid_group = QFrame()
-        grid_group.setFrameStyle(QFrame.Box | QFrame.Plain)
-        grid_layout = QVBoxLayout(grid_group)
-        
-        grid_label = QLabel("Siatka stron")
-        grid_label.setStyleSheet("font-weight: bold;")
-        grid_layout.addWidget(grid_label)
-        
-        grid_grid = QGridLayout()
-        grid_grid.addWidget(QLabel("Wiersze:"), 0, 0)
-        self.e_rows = QLineEdit(self.rows_var)
-        grid_grid.addWidget(self.e_rows, 0, 1)
-        
-        grid_grid.addWidget(QLabel("Kolumny:"), 1, 0)
-        self.e_cols = QLineEdit(self.cols_var)
-        grid_grid.addWidget(self.e_cols, 1, 1)
-        
-        grid_layout.addLayout(grid_grid)
-        left_layout.addWidget(grid_group)
-        
-        left_layout.addStretch()
-        main_layout.addWidget(left_widget)
-        
-        # RIGHT PART - Preview
-        right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget)
-        
-        preview_label = QLabel("Podgląd układu")
-        preview_label.setStyleSheet("font-weight: bold;")
-        right_layout.addWidget(preview_label)
-        
-        self.preview_canvas = QLabel()
-        self.preview_canvas.setMinimumSize(300, 400)
-        self.preview_canvas.setStyleSheet("background-color: white; border: 1px solid black;")
-        self.preview_canvas.setAlignment(Qt.AlignCenter)
-        right_layout.addWidget(self.preview_canvas)
-        
-        main_layout.addWidget(right_widget)
-        
-        # Buttons at bottom
-        button_widget = QWidget()
-        button_layout = QHBoxLayout(button_widget)
-        
+        # Format + orientacja
+        format_row = QHBoxLayout()
+        format_row.addWidget(QLabel("Format:"))
+        self.format_combo = QComboBox()
+        self.format_combo.addItems(list(self.PAPER_FORMATS.keys()))
+        self.format_combo.setCurrentText("A4")
+        format_row.addWidget(self.format_combo)
+        format_row.addWidget(QLabel("Orientacja:"))
+        self.orientation_combo = QComboBox()
+        self.orientation_combo.addItems(["Pionowa", "Pozioma"])
+        format_row.addWidget(self.orientation_combo)
+        layout.addLayout(format_row)
+
+        # Marginesy
+        margin_box = QGroupBox("Marginesy [mm]")
+        margin_layout = QGridLayout(margin_box)
+        self.margin_top = QLineEdit("4")
+        self.margin_bottom = QLineEdit("4")
+        self.margin_left = QLineEdit("5")
+        self.margin_right = QLineEdit("5")
+        margin_layout.addWidget(QLabel("Górny:"), 0, 0)
+        margin_layout.addWidget(self.margin_top, 0, 1)
+        margin_layout.addWidget(QLabel("Dolny:"), 0, 2)
+        margin_layout.addWidget(self.margin_bottom, 0, 3)
+        margin_layout.addWidget(QLabel("Lewy:"), 1, 0)
+        margin_layout.addWidget(self.margin_left, 1, 1)
+        margin_layout.addWidget(QLabel("Prawy:"), 1, 2)
+        margin_layout.addWidget(self.margin_right, 1, 3)
+        layout.addWidget(margin_box)
+
+        # Odstępy
+        spacing_row = QHBoxLayout()
+        spacing_row.addWidget(QLabel("Odstęp X [mm]:"))
+        self.spacing_x = QLineEdit("10")
+        spacing_row.addWidget(self.spacing_x)
+        spacing_row.addWidget(QLabel("Odstęp Y [mm]:"))
+        self.spacing_y = QLineEdit("10")
+        spacing_row.addWidget(self.spacing_y)
+        layout.addLayout(spacing_row)
+
+        # Grid (wiersze/kolumny)
+        grid_row = QHBoxLayout()
+        grid_row.addWidget(QLabel("Wiersze:"))
+        self.rows_edit = QLineEdit("2")
+        grid_row.addWidget(self.rows_edit)
+        grid_row.addWidget(QLabel("Kolumny:"))
+        self.cols_edit = QLineEdit("2")
+        grid_row.addWidget(self.cols_edit)
+        layout.addLayout(grid_row)
+
+        # Podgląd graficzny
+        layout.addWidget(QLabel("Podgląd siatki:"))
+        self.preview_label = QLabel()
+        self.preview_label.setFixedSize(320, 450)
+        self.preview_label.setStyleSheet("background-color: white; border: 1px solid #bbb;")
+        layout.addWidget(self.preview_label)
+
+        # Przyciski
+        buttons = QHBoxLayout()
         btn_ok = QPushButton("Scal")
         btn_ok.clicked.connect(self.ok)
-        button_layout.addWidget(btn_ok)
-        
+        buttons.addWidget(btn_ok)
         btn_cancel = QPushButton("Anuluj")
         btn_cancel.clicked.connect(self.cancel)
-        button_layout.addWidget(btn_cancel)
-        
-        main_layout_vertical = QVBoxLayout()
-        main_layout_vertical.addLayout(main_layout)
-        main_layout_vertical.addWidget(button_widget)
-        
-        container = QWidget()
-        container.setLayout(main_layout_vertical)
-        final_layout = QVBoxLayout(self)
-        final_layout.addWidget(container)
-        
-        # Connect signals for preview updates
-        self.combo_format.currentTextChanged.connect(self._update_grid_preview)
-        self.combo_orientation.currentTextChanged.connect(self._update_grid_preview)
-        self.e_rows.textChanged.connect(self._update_grid_preview)
-        self.e_cols.textChanged.connect(self._update_grid_preview)
-        self.e_spacing_x.textChanged.connect(self._update_grid_preview)
-        self.e_spacing_y.textChanged.connect(self._update_grid_preview)
-        
-        self._update_grid_preview()
+        buttons.addWidget(btn_cancel)
+        layout.addLayout(buttons)
 
-    def _update_grid_preview(self):
-        """Update preview (simple text preview)"""
+        # Sygnaly do aktualizacji podglądu
+        self.format_combo.currentTextChanged.connect(self.update_grid_preview)
+        self.orientation_combo.currentTextChanged.connect(self.update_grid_preview)
+        self.margin_top.textChanged.connect(self.update_grid_preview)
+        self.margin_bottom.textChanged.connect(self.update_grid_preview)
+        self.margin_left.textChanged.connect(self.update_grid_preview)
+        self.margin_right.textChanged.connect(self.update_grid_preview)
+        self.spacing_x.textChanged.connect(self.update_grid_preview)
+        self.spacing_y.textChanged.connect(self.update_grid_preview)
+        self.rows_edit.textChanged.connect(self.update_grid_preview)
+        self.cols_edit.textChanged.connect(self.update_grid_preview)
+
+        self.update_grid_preview()
+
+    def update_grid_preview(self):
         try:
-            rows = int(self.e_rows.text())
-            cols = int(self.e_cols.text())
-            text = f"Układ: {rows} × {cols}\n"
-            text += f"Stron na arkusz: {rows * cols}\n"
-            text += f"Format: {self.combo_format.currentText()}\n"
-            text += f"Orientacja: {self.combo_orientation.currentText()}"
-            self.preview_canvas.setText(text)
-        except:
-            self.preview_canvas.setText("Nieprawidłowe dane")
+            rows = int(self.rows_edit.text())
+            cols = int(self.cols_edit.text())
+            margin_top = float(self.margin_top.text().replace(",", "."))
+            margin_bottom = float(self.margin_bottom.text().replace(",", "."))
+            margin_left = float(self.margin_left.text().replace(",", "."))
+            margin_right = float(self.margin_right.text().replace(",", "."))
+            spacing_x = float(self.spacing_x.text().replace(",", "."))
+            spacing_y = float(self.spacing_y.text().replace(",", "."))
+            format_name = self.format_combo.currentText()
+            sheet_w, sheet_h = self.PAPER_FORMATS[format_name]
+            if self.orientation_combo.currentText() == "Pozioma":
+                sheet_w, sheet_h = sheet_h, sheet_w
+
+            # Skala do rozmiaru podglądu
+            preview_w, preview_h = 320, 450
+            pad = 16
+            scale = min((preview_w-2*pad)/sheet_w, (preview_h-2*pad)/sheet_h)
+            width_px = int(sheet_w * scale)
+            height_px = int(sheet_h * scale)
+            offset_x = (preview_w - width_px) // 2
+            offset_y = (preview_h - height_px) // 2
+
+            pixmap = QPixmap(preview_w, preview_h)
+            pixmap.fill(QColor("white"))
+            painter = QPainter(pixmap)
+            pen = QPen(QColor("#bbb"))
+            pen.setWidth(2)
+            painter.setPen(pen)
+            painter.setBrush(QColor("white"))
+            # Arkusz
+            painter.drawRect(offset_x, offset_y, width_px, height_px)
+
+            # Oblicz pole siatki
+            grid_w = width_px - int((margin_left + margin_right)*scale)
+            grid_h = height_px - int((margin_top + margin_bottom)*scale)
+            grid_x = offset_x + int(margin_left*scale)
+            grid_y = offset_y + int(margin_top*scale)
+
+            # Komórki gridu
+            if cols == 1:
+                cell_w = grid_w
+            else:
+                cell_w = (grid_w - (cols-1)*spacing_x*scale)/cols
+            if rows == 1:
+                cell_h = grid_h
+            else:
+                cell_h = (grid_h - (rows-1)*spacing_y*scale)/rows
+
+            for r in range(rows):
+                for c in range(cols):
+                    x0 = int(grid_x + c * (cell_w + spacing_x*scale))
+                    y0 = int(grid_y + r * (cell_h + spacing_y*scale))
+                    x1 = int(x0 + cell_w)
+                    y1 = int(y0 + cell_h)
+                    idx = r * cols + c
+                    if idx < self.page_count:
+                        painter.setBrush(QColor("#d0e6f8"))
+                    else:
+                        painter.setBrush(QColor("#f5f5f5"))
+                    painter.setPen(QPen(QColor("#666")))
+                    painter.drawRect(x0, y0, x1-x0, y1-y0)
+                    if idx < self.page_count:
+                        painter.setPen(QPen(QColor("#345")))
+                        painter.drawText((x0+x1)//2-10, (y0+y1)//2+6, str(idx+1))
+            painter.end()
+            self.preview_label.setPixmap(pixmap)
+        except Exception:
+            # Jeśli coś pójdzie nie tak, czyść podgląd
+            self.preview_label.clear()
 
     def ok(self):
-        """OK button handler"""
         try:
-            rows = int(self.e_rows.text())
-            cols = int(self.e_cols.text())
-            spacing_x = float(self.e_spacing_x.text().replace(',', '.'))
-            spacing_y = float(self.e_spacing_y.text().replace(',', '.'))
-            
-            if rows < 1 or cols < 1:
-                raise ValueError("Liczba wierszy i kolumn musi być >= 1")
-            
-            orientation = 'portrait' if self.combo_orientation.currentText() == "Pionowa" else 'landscape'
-            
+            margin_top = float(self.margin_top.text().replace(',', '.'))
+            margin_bottom = float(self.margin_bottom.text().replace(',', '.'))
+            margin_left = float(self.margin_left.text().replace(',', '.'))
+            margin_right = float(self.margin_right.text().replace(',', '.'))
+            spacing_x = float(self.spacing_x.text().replace(',', '.'))
+            spacing_y = float(self.spacing_y.text().replace(',', '.'))
+            rows = int(self.rows_edit.text())
+            cols = int(self.cols_edit.text())
+            orientation = self.orientation_combo.currentText()
+            format_name = self.format_combo.currentText()
             self.result = {
-                'format': self.combo_format.currentText(),
-                'orientation': orientation,
-                'rows': rows,
-                'cols': cols,
-                'spacing_x_mm': spacing_x,
-                'spacing_y_mm': spacing_y
+                "format_name": format_name,
+                "margin_top_mm": margin_top,
+                "margin_bottom_mm": margin_bottom,
+                "margin_left_mm": margin_left,
+                "margin_right_mm": margin_right,
+                "spacing_x_mm": spacing_x,
+                "spacing_y_mm": spacing_y,
+                "rows": rows,
+                "cols": cols,
+                "orientation": orientation
             }
             self.accept()
-        except ValueError as e:
+        except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nieprawidłowe dane: {e}")
 
     def cancel(self):
-        """Cancel button handler"""
         self.result = None
         self.reject()
-
 
 
 # ====================================================================
 # KLASA: RAMKA MINIATURY
 # ====================================================================
 
+from PySide6.QtWidgets import QFrame, QVBoxLayout, QLabel
+from PySide6.QtCore import Qt
+
 class ThumbnailFrame(QFrame):
-    """Thumbnail frame widget - migrated from tk.Frame"""
-    
-    def __init__(self, parent, viewer_app, page_index, column_width):
+    def __init__(self, parent, viewer_app, page_index, thumb_width):
         super().__init__(parent)
         self.viewer_app = viewer_app
         self.page_index = page_index
-        self.column_width = column_width
-        
+        self.thumb_width = thumb_width
         self.bg_normal = "#F5F5F5"
         self.bg_selected = "#CCEEFF"
-        
-        self.setFrameStyle(QFrame.Box | QFrame.Plain)
-        self.setLineWidth(2)
         self.setStyleSheet(f"background-color: {self.bg_normal};")
-        
+        self.setFixedWidth(self.thumb_width + 12)  # +margines
         self.setup_ui()
 
-    def setup_ui(self):
-        """Build the thumbnail UI"""
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
-        
-        # Render image
-        pixmap = self.viewer_app._render_and_scale(self.page_index, self.column_width)
-        
-        # Image container
-        image_container = QFrame()
-        image_container.setStyleSheet("background-color: white;")
-        image_container_layout = QVBoxLayout(image_container)
-        image_container_layout.setContentsMargins(0, 0, 0, 0)
-        
-        self.img_label = QLabel()
-        self.img_label.setPixmap(pixmap)
-        self.img_label.setAlignment(Qt.AlignCenter)
-        image_container_layout.addWidget(self.img_label)
-        
-        layout.addWidget(image_container)
-        
-        # Page label
-        self.page_label = QLabel(f"Strona {self.page_index + 1}")
-        self.page_label.setStyleSheet("font-weight: bold;")
-        self.page_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.page_label)
-        
-        # Size label
-        format_label = self.viewer_app._get_page_size_label(self.page_index)
-        self.size_label = QLabel(format_label)
-        self.size_label.setStyleSheet("color: gray;")
-        self.size_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.size_label)
-
     def mousePressEvent(self, event):
-        """Handle mouse press events (replaces bind)"""
         if event.button() == Qt.LeftButton:
             self.viewer_app._handle_lpm_click(self.page_index, event)
         elif event.button() == Qt.RightButton:
-            self._handle_ppm_click(event, self.page_index)
+            self.viewer_app.show_context_menu(event.globalPos(), self.page_index)
         super().mousePressEvent(event)
 
-    def _handle_ppm_click(self, event, page_index):
-        """Handle right-click to show context menu"""
-        self.viewer_app.show_context_menu(event.globalPos(), page_index)
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(2)
 
+        # Render miniaturę
+        pixmap = self.viewer_app._render_and_scale(self.page_index, self.thumb_width)
+        self.img_label = QLabel()
+        self.img_label.setPixmap(pixmap)
+        self.img_label.setFixedWidth(self.thumb_width)
+        self.img_label.setFixedHeight(pixmap.height())
+        self.img_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.img_label, alignment=Qt.AlignCenter)
 
+        # Opis
+        self.page_label = QLabel(f"Strona {self.page_index + 1}")
+        self.page_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.page_label)
+
+        self.size_label = QLabel(self.viewer_app._get_page_size_label(self.page_index))
+        self.size_label.setAlignment(Qt.AlignCenter)
+        self.size_label.setStyleSheet("color: gray;")
+        layout.addWidget(self.size_label)
+
+    def set_selected(self, selected):
+        self.setStyleSheet(f"background-color: {self.bg_selected if selected else self.bg_normal};")
+
+    def mousePressEvent(self, event):
+            if event.button() == Qt.LeftButton:
+                self._drag_start_pos = event.pos()
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+            if event.buttons() & Qt.LeftButton:
+                if (event.pos() - self._drag_start_pos).manhattanLength() > 10:
+                    # Rozpocznij drag
+                    drag = QDrag(self)
+                    mime_data = QMimeData()
+                    # Przekaż indeks przeciąganej strony w mimedata
+                    mime_data.setData("application/x-page-index", str(self.page_index).encode())
+                    drag.setMimeData(mime_data)
+                    # Ustaw podgląd (opcjonalnie miniatura)
+                    drag.setPixmap(self.img_label.pixmap())
+                    drag.exec(Qt.MoveAction)
+            super().mouseMoveEvent(event)
+            
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasFormat("application/x-page-index"):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasFormat("application/x-page-index"):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        if event.mimeData().hasFormat("application/x-page-index"):
+            src_index = int(event.mimeData().data("application/x-page-index").data().decode())
+            dest_index = self.page_index
+            if src_index != dest_index:
+                self.viewer_app.move_page(src_index, dest_index)
+            event.acceptProposedAction()
+        else:
+            event.ignore()
 
 # ====================================================================
 # GŁÓWNA KLASA PROGRAMU: SELECTABLEPDFVIEWER
@@ -1410,8 +1440,68 @@ class SelectablePDFViewer(QMainWindow):
         self._create_menu()
         self._setup_key_bindings()
         self._setup_main_ui()
-        
+        self.setAcceptDrops(True)
         self.update_tool_button_states()
+        
+    def move_page(self, src_idx, dest_idx):
+        """Przesuń stronę src_idx na miejsce dest_idx w PDF"""
+        if src_idx == dest_idx:
+            return
+        self._save_state_to_undo()
+        page = self.pdf_document[src_idx]
+        # Skopiuj stronę na nowe miejsce
+        self.pdf_document.insert_pdf(self.pdf_document, from_page=src_idx, to_page=src_idx, start_at=dest_idx + (1 if src_idx < dest_idx else 0))
+        # Usuń starą kopię strony (przesuniętą)
+        remove_idx = src_idx if src_idx < dest_idx else src_idx + 1
+        self.pdf_document.delete_page(remove_idx)
+        self._reconfigure_grid()
+        self._update_status(f"Przesunięto stronę {src_idx+1} na pozycję {dest_idx+1}")
+
+
+
+    def dragEnterEvent(self, event):
+        """Umożliwia przeciąganie plików PDF/obrazów na okno"""
+        if event.mimeData().hasUrls():
+            # Akceptuj tylko pliki PDF lub obrazy
+            for url in event.mimeData().urls():
+                if url.isLocalFile():
+                    ext = url.toLocalFile().lower()
+                    if ext.endswith('.pdf') or ext.endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
+                        event.acceptProposedAction()
+                        return
+        event.ignore()
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                path = url.toLocalFile()
+                ext = path.lower()
+                if ext.endswith('.pdf'):
+                    # działa!
+                    self.open_pdf(filepath=path)  # lub self.import_pdf_after_active_page(filepath=path)
+                    event.acceptProposedAction()
+                    return
+                elif ext.endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff')):
+                    print("Import obrazu:", path)  # sprawdź, czy to się wypisuje!
+                    self.import_image_to_new_page(filepath=path)
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def _handle_lpm_click(self, page_index, event):
+        modifiers = QApplication.keyboardModifiers()
+        if modifiers & Qt.ControlModifier:
+            # Toggle selection
+            if page_index in self.selected_pages:
+                self.selected_pages.remove(page_index)
+            else:
+                self.selected_pages.add(page_index)
+        else:
+            self.selected_pages.clear()
+            self.selected_pages.add(page_index)
+        self.active_page_index = page_index
+        self.update_selection_display()
+        self.update_focus_display()
 
     def _set_initial_geometry(self):
         """Set initial window size and position"""
@@ -1885,16 +1975,17 @@ class SelectablePDFViewer(QMainWindow):
 
     def open_pdf(self, filepath=None):
         print(">>> open_pdf wywołane", filepath)
-        filepath, _ = QFileDialog.getOpenFileName(
-            None,
-            "Wybierz plik PDF",
-            "",
-            "Pliki PDF (*.pdf);;Wszystkie pliki (*)"
-        )
-        print(">>> Wybrano plik:", filepath)
-        if not filepath:
-            print(">>> Nie wybrano pliku.")
-            return
+        if filepath is None:
+            filepath, _ = QFileDialog.getOpenFileName(
+                None,
+                "Wybierz plik PDF",
+                "",
+                "Pliki PDF (*.pdf);;Wszystkie pliki (*)"
+            )
+            print(">>> Wybrano plik:", filepath)
+            if not filepath:
+                print(">>> Nie wybrano pliku.")
+                return
 
         print(">>> Przechodzę do otwierania PDF przez fitz")
         try:
@@ -1961,54 +2052,54 @@ class SelectablePDFViewer(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie można zapisać pliku: {e}")
 
-    def import_pdf_after_active_page(self):
-        """Import pages from another PDF"""
+    def import_pdf_after_active_page(self, filepath=None):
+        """Import pages from another PDF (drag&drop-safe)"""
         if not self.pdf_document:
             QMessageBox.warning(self, "Brak dokumentu", "Najpierw otwórz dokument PDF.")
             return
-        
-        filepath, _ = QFileDialog.getOpenFileName(
-            self,
-            "Wybierz plik PDF do importu",
-            "",
-            "Pliki PDF (*.pdf)"
-        )
-        
-        if not filepath:
-            return
-        
+
+        if filepath is None:
+            filepath, _ = QFileDialog.getOpenFileName(
+                self,
+                "Wybierz plik PDF do importu",
+                "",
+                "Pliki PDF (*.pdf)"
+            )
+            if not filepath:
+                return
+
         try:
             imported_doc = fitz.open(filepath)
-            
+
             # Show page range dialog
             dialog = EnhancedPageRangeDialog(self, "Wybierz strony do importu", imported_doc)
             dialog.exec()
-            
+
             if dialog.result is None:
                 imported_doc.close()
                 return
-            
+
             selected_indices = dialog.result
-            
+
             # Determine insert position
             if self.selected_pages:
                 insert_after = max(self.selected_pages)
             else:
                 insert_after = len(self.pdf_document) - 1
-            
+
             self._save_state_to_undo()
-            
+
             # Import pages
             for offset, src_idx in enumerate(selected_indices):
                 dest_idx = insert_after + 1 + offset
                 self.pdf_document.insert_pdf(imported_doc, from_page=src_idx, to_page=src_idx, start_at=dest_idx)
-            
+
             imported_doc.close()
-            
+
             self._reconfigure_grid()
             self._update_status(f"Zaimportowano {len(selected_indices)} stron.")
             self.update_tool_button_states()
-            
+
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie można zaimportować PDF: {e}")
 
@@ -2042,57 +2133,51 @@ class SelectablePDFViewer(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie można wyeksportować stron: {e}")
 
-    def import_image_to_new_page(self):
-        """Import an image as a new PDF page"""
+    def import_image_to_new_page(self, filepath=None):
         if not self.pdf_document:
             QMessageBox.warning(self, "Brak dokumentu", "Najpierw otwórz dokument PDF.")
             return
-        
-        filepath, _ = QFileDialog.getOpenFileName(
-            self,
-            "Wybierz obraz do importu",
-            "",
-            "Pliki obrazów (*.png *.jpg *.jpeg *.bmp *.gif *.tiff)"
-        )
-        
-        if not filepath:
-            return
-        
+
+        if filepath is None:
+            filepath, _ = QFileDialog.getOpenFileName(
+                self,
+                "Wybierz obraz do importu",
+                "",
+                "Pliki obrazów (*.png *.jpg *.jpeg *.bmp *.gif *.tiff)"
+            )
+            if not filepath:
+                return
+
         try:
-            # Show import settings dialog
             dialog = ImageImportSettingsDialog(self, "Ustawienia importu obrazu", filepath)
             dialog.exec()
-            
+
             if dialog.result is None:
                 return
-            
+
             settings = dialog.result
             orientation = settings['orientation']
             fit_mode = settings['fit_mode']
-            
-            # Create new page with image
+
             if orientation == 'portrait':
                 rect = fitz.Rect(0, 0, A4_WIDTH_POINTS, A4_HEIGHT_POINTS)
             else:
                 rect = fitz.Rect(0, 0, A4_HEIGHT_POINTS, A4_WIDTH_POINTS)
-            
-            # Determine insert position
+
             if self.selected_pages:
                 insert_after = max(self.selected_pages)
             else:
                 insert_after = len(self.pdf_document) - 1
-            
+
             self._save_state_to_undo()
-            
+
             new_page = self.pdf_document.new_page(pno=insert_after + 1, width=rect.width, height=rect.height)
-            
-            # Insert image
             img_rect = new_page.rect
             new_page.insert_image(img_rect, filename=filepath, keep_proportion=(fit_mode != 'stretch'))
-            
+
             self._reconfigure_grid()
             self._update_status(f"Zaimportowano obraz jako nową stronę.")
-            
+
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie można zaimportować obrazu: {e}")
 
@@ -2484,20 +2569,124 @@ class SelectablePDFViewer(QMainWindow):
             QMessageBox.critical(self, "Błąd", f"Błąd przy usuwaniu numeracji: {e}")
 
     def merge_pages_to_grid(self):
-        """Merge pages into a grid"""
-        if not self.selected_pages:
-            QMessageBox.warning(self, "Brak zaznaczenia", "Zaznacz strony do scalenia.")
+        """
+        Scala zaznaczone strony w siatkę na nowym arkuszu.
+        Bitmapy renderowane są w 600dpi (bardzo wysoka jakość do druku).
+        Przed renderowaniem każda strona jest automatycznie obracana jeśli jej orientacja nie pasuje do komórki siatki.
+        Marginesy i odstępy pobierane są z dialogu (osobno dla każdej krawędzi/osi).
+        """
+        import io
+
+        if not self.pdf_document:
+            self._update_status("BŁĄD: Otwórz najpierw dokument PDF.")
             return
-        
-        dialog = MergePageGridDialog(self, len(self.selected_pages))
+        if len(self.selected_pages) == 0:
+            self._update_status("BŁĄD: Zaznacz przynajmniej jedną stronę do scalenia.")
+            return
+
+        selected_indices = sorted(list(self.selected_pages))
+        num_pages = len(selected_indices)
+
+        dialog = MergePageGridDialog(self, page_count=num_pages)
         dialog.exec()
-        
-        if dialog.result is None:
+        params = dialog.result
+        if params is None:
+            self._update_status("Anulowano scalanie stron.")
             return
-        
-        # Implementation would create a new page with a grid of pages
-        # (Full implementation from original code would go here)
-        QMessageBox.information(self, "Info", "Funkcja scalania stron - implementacja w toku.")
+
+        try:
+            # Pobierz parametry z dialogu
+            format_name = params["format_name"]
+            sheet_w_mm, sheet_h_mm = MergePageGridDialog.PAPER_FORMATS[format_name]
+            if params["orientation"] == "Pozioma":
+                sheet_w_mm, sheet_h_mm = sheet_h_mm, sheet_w_mm
+            sheet_width_pt = sheet_w_mm * self.MM_TO_POINTS
+            sheet_height_pt = sheet_h_mm * self.MM_TO_POINTS
+            margin_top_pt = params["margin_top_mm"] * self.MM_TO_POINTS
+            margin_bottom_pt = params["margin_bottom_mm"] * self.MM_TO_POINTS
+            margin_left_pt = params["margin_left_mm"] * self.MM_TO_POINTS
+            margin_right_pt = params["margin_right_mm"] * self.MM_TO_POINTS
+            spacing_x_pt = params["spacing_x_mm"] * self.MM_TO_POINTS
+            spacing_y_pt = params["spacing_y_mm"] * self.MM_TO_POINTS
+            rows = params["rows"]
+            cols = params["cols"]
+
+            TARGET_DPI = 600  # Bardzo wysoka rozdzielczość bitmapy
+            PT_TO_INCH = 1 / 72
+
+            total_cells = rows * cols
+            source_pages = []
+            for i in range(total_cells):
+                if i < num_pages:
+                    source_pages.append(selected_indices[i])
+                else:
+                    source_pages.append(selected_indices[-1])
+
+            # Oblicz rozmiar komórki (punkt PDF)
+            if cols == 1:
+                cell_width = sheet_width_pt - margin_left_pt - margin_right_pt
+            else:
+                cell_width = (sheet_width_pt - margin_left_pt - margin_right_pt - (cols - 1) * spacing_x_pt) / cols
+            if rows == 1:
+                cell_height = sheet_height_pt - margin_top_pt - margin_bottom_pt
+            else:
+                cell_height = (sheet_height_pt - margin_top_pt - margin_bottom_pt - (rows - 1) * spacing_y_pt) / rows
+
+            self._save_state_to_undo()
+            new_page = self.pdf_document.new_page(width=sheet_width_pt, height=sheet_height_pt)
+
+            for idx, src_idx in enumerate(source_pages):
+                row = idx // cols
+                col = idx % cols
+                if row >= rows:
+                    break
+
+                x = margin_left_pt + col * (cell_width + spacing_x_pt)
+                y = margin_top_pt + row * (cell_height + spacing_y_pt)
+
+                src_page = self.pdf_document[src_idx]
+                page_rect = src_page.rect
+                page_w = page_rect.width
+                page_h = page_rect.height
+
+                # Automatyczny obrót jeśli orientacja strony nie pasuje do komórki
+                page_landscape = page_w > page_h
+                cell_landscape = cell_width > cell_height
+                rotate = 0
+                if page_landscape != cell_landscape:
+                    rotate = 90  # Obróć o 90 stopni
+
+                # Skala renderowania: bitmapa ma dokładnie tyle pikseli, ile wynosi rozmiar komórki w punktach * 600 / 72
+                bitmap_w = int(round(cell_width * TARGET_DPI * PT_TO_INCH))
+                bitmap_h = int(round(cell_height * TARGET_DPI * PT_TO_INCH))
+
+                if rotate == 90:
+                    scale_x = bitmap_w / page_h
+                    scale_y = bitmap_h / page_w
+                else:
+                    scale_x = bitmap_w / page_w
+                    scale_y = bitmap_h / page_h
+
+                # Renderuj bitmapę w bardzo wysokiej rozdzielczości, z ewentualnym obrotem
+                pix = src_page.get_pixmap(matrix=fitz.Matrix(scale_x, scale_y).prerotate(rotate), alpha=False)
+                img_bytes = pix.tobytes("png")
+                rect = fitz.Rect(x, y, x + cell_width, y + cell_height)
+                new_page.insert_image(rect, stream=img_bytes)
+
+            # Odświeżenie GUI i status
+            self.selected_pages.clear()
+            self.pixmaps.clear()
+            self.thumb_frames.clear()
+            self._reconfigure_grid()
+            self.update_tool_button_states()
+            self.update_focus_display()
+            self._update_status(
+                f"Scalono {num_pages} stron w siatkę {rows}x{cols} na nowym arkuszu {format_name} (bitmapy 600dpi)."
+            )
+        except Exception as e:
+            self._update_status(f"BŁĄD: Nie udało się scalić stron: {e}")
+            import traceback
+            traceback.print_exc()
 
     # ===================================================================
     # NAVIGATION AND SELECTION
@@ -2596,74 +2785,48 @@ class SelectablePDFViewer(QMainWindow):
     # ===================================================================
 
     def _reconfigure_grid(self):
-        """Reconfigure thumbnail grid (replaces Canvas reconfiguration)"""
         if not self.pdf_document:
             return
-        
-        # Calculate layout
+        thumb_w = self.fixed_thumb_width
+        min_col = self.min_cols
+        max_col = self.max_cols
         scroll_width = self.scroll_area.viewport().width()
-        available_width = scroll_width - 40  # Margins
-        
-        # Calculate columns
-        thumb_width_with_padding = self.fixed_thumb_width + 2 * self.THUMB_PADDING
-        num_cols = max(self.min_cols, min(self.max_cols, available_width // thumb_width_with_padding))
-        column_width = self.fixed_thumb_width
-        
-        # Clear existing layout
+        col_with_pad = thumb_w + 12 + 2 * self.THUMB_PADDING
+        num_cols = max(min_col, min(max_col, max(1, scroll_width // col_with_pad)))
+
+        # Czyść
         while self.scroll_layout.count():
             item = self.scroll_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        
         self.thumb_frames.clear()
         self.pixmaps.clear()
-        
-        # Create thumbnails
+
+        # Dodaj miniatury o stałej szerokości
         for i in range(len(self.pdf_document)):
-            frame = ThumbnailFrame(
-                self.scrollable_frame,
-                self,
-                i,
-                column_width
-            )
-            row = i // num_cols
-            col = i % num_cols
-            self.scroll_layout.addWidget(frame, row, col)
+            frame = ThumbnailFrame(self.scrollable_frame, self, i, thumb_w)
+            row, col = divmod(i, num_cols)
+            self.scroll_layout.addWidget(frame, row, col, alignment=Qt.AlignTop)
             self.thumb_frames[i] = frame
-        
+
         self.update_selection_display()
         self.update_focus_display()
 
-    def _render_and_scale(self, page_index, column_width):
-        """Render page and scale to thumbnail size"""
+    def _render_and_scale(self, page_index, thumb_width):
         page = self.pdf_document.load_page(page_index)
-        page_width = page.rect.width
-        page_height = page.rect.height
-        aspect_ratio = page_height / page_width if page_width != 0 else 1
-        
-        final_thumb_width = column_width
-        final_thumb_height = int(final_thumb_width * aspect_ratio)
-        if final_thumb_width <= 0: final_thumb_width = 1
-        if final_thumb_height <= 0: final_thumb_height = 1
-        
+        aspect_ratio = page.rect.height / page.rect.width if page.rect.width else 1
+        thumb_h = int(thumb_width * aspect_ratio)
+        if thumb_h < 10: thumb_h = 10
         mat = fitz.Matrix(self.render_dpi_factor, self.render_dpi_factor)
         pix = page.get_pixmap(matrix=mat, alpha=False)
-        
-        # Convert to QPixmap
-        img_data = pix.tobytes("ppm")
-        image = Image.open(io.BytesIO(img_data))
-        
-        resized_image = image.resize((final_thumb_width, final_thumb_height), Image.LANCZOS)
-        
-        # Convert PIL Image to QPixmap
-        img_byte_arr = io.BytesIO()
-        resized_image.save(img_byte_arr, format='PNG')
-        img_byte_arr = img_byte_arr.getvalue()
-        
-        pixmap = QPixmap()
-        pixmap.loadFromData(img_byte_arr)
-        
-        return pixmap
+        from PIL import Image
+        img = Image.open(io.BytesIO(pix.tobytes("ppm")))
+        img = img.resize((thumb_width, thumb_h), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        qpixmap = QPixmap()
+        qpixmap.loadFromData(buf.getvalue())
+        return qpixmap
 
     def _get_page_size_label(self, page_index):
         """Get page size label"""
@@ -2712,13 +2875,20 @@ class SelectablePDFViewer(QMainWindow):
             self._update_status("Gotowy. Otwórz plik PDF.")
 
     def update_focus_display(self):
-        """Update focus display"""
         for index, frame in self.thumb_frames.items():
+            # Domyślnie: tło zwykłe, bez ramki
+            bg = frame.bg_normal
+            border = "none"
+
+            # Jeśli zaznaczony – zmień tło
+            if index in self.selected_pages:
+                bg = frame.bg_selected
+
+            # Jeśli aktywny (focus) – dodaj ramkę
             if index == self.active_page_index:
-                frame.setFrameStyle(QFrame.Box | QFrame.Plain)
-                frame.setLineWidth(3)
-            else:
-                frame.setLineWidth(2)
+                border = "2px solid #000"
+
+            frame.setStyleSheet(f"background-color: {bg}; border: {border};")
 
     # ===================================================================
     # ZOOM
