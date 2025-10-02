@@ -1069,9 +1069,10 @@ class ThumbnailFrame(tk.Frame):
 # DIALOG SCALANIA STRON NA ARKUSZU
 # ====================================================================
 
+import tkinter as tk
+from tkinter import ttk, messagebox
+
 class MergePageGridDialog(tk.Toplevel):
-    """Dialog do scalania wielu stron na jeden arkusz w układzie siatki."""
-    
     PAPER_FORMATS = {
         'A0': (841, 1189),
         'A1': (594, 841),
@@ -1081,78 +1082,213 @@ class MergePageGridDialog(tk.Toplevel):
         'A5': (148, 210),
         'A6': (105, 148),
     }
-    
-    def __init__(self, parent):
+    def __init__(self, parent, page_count):
         super().__init__(parent)
-        self.title("Scal strony na arkuszu")
+        self.title("Scalanie strony na arkuszu")
         self.transient(parent)
         self.result = None
-        
-        # Zmienne
+
+        self.configure(bg=parent.cget('bg'))
+
+        # Domyślne wartości
         self.sheet_format = tk.StringVar(value="A4")
-        self.margin_mm = tk.StringVar(value="10")
-        self.spacing_mm = tk.StringVar(value="5")
-        
+        self.orientation = tk.StringVar(value="Pionowa")
+        self.margin_top_mm = tk.StringVar(value="4")
+        self.margin_bottom_mm = tk.StringVar(value="4")
+        self.margin_left_mm = tk.StringVar(value="5")
+        self.margin_right_mm = tk.StringVar(value="5")
+        self.spacing_x_mm = tk.StringVar(value="10")
+        self.spacing_y_mm = tk.StringVar(value="10")
+        self.rows_var = tk.IntVar()
+        self.cols_var = tk.IntVar()
+        self.page_count = page_count
+
+        # Automatycznie ustaw kwadratową siatkę dla >1 obrazka
+        if page_count == 1:
+            self.rows_var.set(1)
+            self.cols_var.set(1)
+        else:
+            import math
+            sq = math.ceil(page_count ** 0.5)
+            if (sq - 1) * sq >= page_count:
+                self.rows_var.set(sq - 1)
+                self.cols_var.set(sq)
+            else:
+                self.rows_var.set(sq)
+                self.cols_var.set(sq)
+
         self.build_ui()
+        self._update_grid_preview()
         self.center_dialog(parent)
         self.grab_set()
         self.focus_force()
         self.protocol("WM_DELETE_WINDOW", self.cancel)
         self.resizable(False, False)
-        
-        # Obsługa Enter i Esc
         self.bind("<Return>", lambda e: self.ok())
         self.bind("<KP_Enter>", lambda e: self.ok())
         self.bind("<Escape>", lambda e: self.cancel())
-        
         self.wait_window(self)
-    
+
     def build_ui(self):
-        pad = {'padx': 8, 'pady': 4}
-        
-        # Format arkusza
-        format_frame = ttk.LabelFrame(self, text="Format arkusza docelowego")
-        format_frame.pack(fill="x", padx=12, pady=(12, 8))
-        
-        ttk.Label(format_frame, text="Format:").pack(anchor="w", **pad)
+        main_frame = ttk.Frame(self)
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # LEWA CZĘŚĆ - POLA USTAWIEŃ
+        left_frame = ttk.Frame(main_frame)
+        left_frame.pack(side="left", fill="y", expand=False, padx=(0, 10))
+
+        # PRAWA CZĘŚĆ - PODGLĄD
+        right_frame = ttk.Frame(main_frame)
+        right_frame.pack(side="left", fill="both", expand=True)
+
+        # Format arkusza i orientacja
+        format_frame = ttk.LabelFrame(left_frame, text="Arkusz docelowy")
+        format_frame.pack(fill="x", pady=(0, 8))
+        ttk.Label(format_frame, text="Format:").grid(row=0, column=0, sticky="e", padx=4, pady=4)
         format_combo = ttk.Combobox(
-            format_frame, 
-            textvariable=self.sheet_format, 
-            values=list(self.PAPER_FORMATS.keys()), 
-            state="readonly", 
-            width=20
+            format_frame,
+            textvariable=self.sheet_format,
+            values=list(self.PAPER_FORMATS.keys()),
+            state="readonly",
+            width=8
         )
-        format_combo.pack(anchor="w", padx=8, pady=(0, 8))
-        
-        # Marginesy i odstępy
-        spacing_frame = ttk.LabelFrame(self, text="Marginesy i odstępy")
-        spacing_frame.pack(fill="x", padx=12, pady=8)
-        
-        margin_row = ttk.Frame(spacing_frame)
-        margin_row.pack(fill="x", padx=8, pady=4)
-        ttk.Label(margin_row, text="Margines do krawędzi arkusza [mm]:").pack(side="left")
-        ttk.Entry(margin_row, textvariable=self.margin_mm, width=8).pack(side="left", padx=(8, 0))
-        
-        spacing_row = ttk.Frame(spacing_frame)
-        spacing_row.pack(fill="x", padx=8, pady=(0, 8))
-        ttk.Label(spacing_row, text="Odstęp między stronami [mm]:").pack(side="left")
-        ttk.Entry(spacing_row, textvariable=self.spacing_mm, width=8).pack(side="left", padx=(8, 0))
-        
-        # Informacja
-        info_frame = ttk.Frame(self)
-        info_frame.pack(fill="x", padx=12, pady=8)
-        info_text = (
-            "Program automatycznie obliczy optymalną siatkę (wiersze/kolumny)\n"
-            "aby zmaksymalizować rozmiar scalonych stron na arkuszu."
+        format_combo.grid(row=0, column=1, sticky="w", padx=4, pady=4)
+        format_combo.bind("<<ComboboxSelected>>", lambda e: self._update_grid_preview())
+        # Orientacja - radio buttony
+        orient_label = ttk.Label(format_frame, text="Orientacja:")
+        orient_label.grid(row=1, column=0, sticky="e", padx=4, pady=4)
+        orient_radio_frame = ttk.Frame(format_frame)
+        orient_radio_frame.grid(row=1, column=1, sticky="w", padx=4, pady=4)
+        orient_pion = ttk.Radiobutton(orient_radio_frame, text="Pionowa", variable=self.orientation, value="Pionowa", command=self._update_grid_preview)
+        orient_pion.pack(side="left", padx=(0,8))
+        orient_poz = ttk.Radiobutton(orient_radio_frame, text="Pozioma", variable=self.orientation, value="Pozioma", command=self._update_grid_preview)
+        orient_poz.pack(side="left")
+
+        # Marginesy
+        margin_frame = ttk.LabelFrame(left_frame, text="Marginesy [mm]")
+        margin_frame.pack(fill="x", pady=8)
+        ttk.Label(margin_frame, text="Górny:").grid(row=0, column=0, sticky="e", padx=4, pady=2)
+        ttk.Entry(margin_frame, textvariable=self.margin_top_mm, width=6).grid(row=0, column=1, sticky="w", padx=2, pady=2)
+        ttk.Label(margin_frame, text="Dolny:").grid(row=0, column=2, sticky="e", padx=4, pady=2)
+        ttk.Entry(margin_frame, textvariable=self.margin_bottom_mm, width=6).grid(row=0, column=3, sticky="w", padx=2, pady=2)
+        ttk.Label(margin_frame, text="Lewy:").grid(row=1, column=0, sticky="e", padx=4, pady=2)
+        ttk.Entry(margin_frame, textvariable=self.margin_left_mm, width=6).grid(row=1, column=1, sticky="w", padx=2, pady=2)
+        ttk.Label(margin_frame, text="Prawy:").grid(row=1, column=2, sticky="e", padx=4, pady=2)
+        ttk.Entry(margin_frame, textvariable=self.margin_right_mm, width=6).grid(row=1, column=3, sticky="w", padx=2, pady=2)
+        for child in margin_frame.winfo_children():
+            if isinstance(child, ttk.Entry):
+                child.bind("<KeyRelease>", lambda e: self._update_grid_preview())
+
+        # Odstępy
+        spacing_frame = ttk.LabelFrame(left_frame, text="Odstępy [mm]")
+        spacing_frame.pack(fill="x", pady=(0, 8))
+        ttk.Label(spacing_frame, text="Między kolumnami:").grid(row=0, column=0, sticky="e", padx=4, pady=2)
+        ttk.Entry(spacing_frame, textvariable=self.spacing_x_mm, width=6).grid(row=0, column=1, sticky="w", padx=2, pady=2)
+        ttk.Label(spacing_frame, text="Między wierszami:").grid(row=1, column=0, sticky="e", padx=4, pady=2)
+        ttk.Entry(spacing_frame, textvariable=self.spacing_y_mm, width=6).grid(row=1, column=1, sticky="w", padx=2, pady=2)
+        for child in spacing_frame.winfo_children():
+            if isinstance(child, ttk.Entry):
+                child.bind("<KeyRelease>", lambda e: self._update_grid_preview())
+
+        # Liczba wierszy/kolumn
+        grid_frame = ttk.LabelFrame(left_frame, text="Siatka stron")
+        grid_frame.pack(fill="x", pady=(0, 8))
+        ttk.Label(grid_frame, text="Wiersze:").grid(row=0, column=0, sticky="e", padx=4, pady=4)
+        self.rows_entry = ttk.Entry(grid_frame, textvariable=self.rows_var, width=5, justify="center")
+        self.rows_entry.grid(row=0, column=1, sticky="w", padx=2, pady=4)
+        ttk.Label(grid_frame, text="Kolumny:").grid(row=0, column=2, sticky="e", padx=4, pady=4)
+        self.cols_entry = ttk.Entry(grid_frame, textvariable=self.cols_var, width=5, justify="center")
+        self.cols_entry.grid(row=0, column=3, sticky="w", padx=2, pady=4)
+        self.rows_var.trace_add("write", lambda *a: self._update_grid_preview())
+        self.cols_var.trace_add("write", lambda *a: self._update_grid_preview())
+
+        # Podgląd na tle okna, wyśrodkowany, zawsze ten sam rozmiar
+        preview_frame = ttk.LabelFrame(right_frame, text="Podgląd rozkładu stron")
+        preview_frame.pack(fill="both", expand=True)
+        self.PREVIEW_W = 320
+        self.PREVIEW_H = 450
+        self.PREVIEW_PAD = 20  # odstęp od ramki
+        self.preview_canvas = tk.Canvas(
+            preview_frame,
+            width=self.PREVIEW_W,
+            height=self.PREVIEW_H,
+            bg=self.cget('bg'),
+            highlightthickness=0
         )
-        ttk.Label(info_frame, text=info_text, foreground="gray", font=("Helvetica", 8)).pack()
-        
-        # Przyciski
+        self.preview_canvas.pack(padx=0, pady=0, fill="both", expand=True)
+
+        # Przyciski na dole
         button_frame = ttk.Frame(self)
-        button_frame.pack(fill="x", padx=12, pady=(8, 12))
+        button_frame.pack(fill="x", padx=16, pady=(0, 12), side="bottom")
         ttk.Button(button_frame, text="Zastosuj", command=self.ok).pack(side="left", expand=True, padx=5)
         ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side="right", expand=True, padx=5)
-    
+
+    def _get_sheet_dimensions(self):
+        sf = self.sheet_format.get()
+        sheet_w, sheet_h = self.PAPER_FORMATS.get(sf, (210, 297))
+        if self.orientation.get() == "Pozioma":
+            return sheet_h, sheet_w
+        return sheet_w, sheet_h
+
+    def _update_grid_preview(self):
+        try:
+            num_pages = self.page_count
+            margin_top = float(self.margin_top_mm.get().replace(",", "."))
+            margin_bottom = float(self.margin_bottom_mm.get().replace(",", "."))
+            margin_left = float(self.margin_left_mm.get().replace(",", "."))
+            margin_right = float(self.margin_right_mm.get().replace(",", "."))
+            spacing_x = float(self.spacing_x_mm.get().replace(",", "."))
+            spacing_y = float(self.spacing_y_mm.get().replace(",", "."))
+            rows = int(self.rows_var.get())
+            cols = int(self.cols_var.get())
+            sheet_w, sheet_h = self._get_sheet_dimensions()
+
+            # Ustal pole podglądu z paddingiem
+            preview_area_w = self.PREVIEW_W - 2 * self.PREVIEW_PAD
+            preview_area_h = self.PREVIEW_H - 2 * self.PREVIEW_PAD
+            scale = min(preview_area_w / sheet_w, preview_area_h / sheet_h)
+            width_px = sheet_w * scale
+            height_px = sheet_h * scale
+            offset_x = (self.PREVIEW_W - width_px) // 2
+            offset_y = (self.PREVIEW_H - height_px) // 2
+            margin_top_px = margin_top * scale
+            margin_left_px = margin_left * scale
+            margin_right_px = margin_right * scale
+            margin_bottom_px = margin_bottom * scale
+            spacing_x_px = spacing_x * scale
+            spacing_y_px = spacing_y * scale
+
+            self.preview_canvas.delete("all")
+            # Tło papieru (A4 lub poziomo) - wyśrodkowany
+            self.preview_canvas.create_rectangle(
+                offset_x, offset_y, offset_x + width_px, offset_y + height_px, fill="white", outline="#bbb", width=1
+            )
+
+            if cols == 1:
+                cell_w = sheet_w - margin_left - margin_right
+            else:
+                cell_w = (sheet_w - margin_left - margin_right - (cols - 1) * spacing_x) / cols
+            if rows == 1:
+                cell_h = sheet_h - margin_top - margin_bottom
+            else:
+                cell_h = (sheet_h - margin_top - margin_bottom - (rows - 1) * spacing_y) / rows
+            cell_w_px = cell_w * scale
+            cell_h_px = cell_h * scale
+
+            for r in range(rows):
+                for c in range(cols):
+                    x0 = offset_x + margin_left_px + c * (cell_w_px + spacing_x_px)
+                    y0 = offset_y + margin_top_px + r * (cell_h_px + spacing_y_px)
+                    x1 = x0 + cell_w_px
+                    y1 = y0 + cell_h_px
+                    idx = r * cols + c
+                    color = "#d0e6f8" if idx < num_pages else "#f5f5f5"
+                    self.preview_canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline="#666", width=1)
+                    if idx < num_pages:
+                        self.preview_canvas.create_text((x0+x1)/2, (y0+y1)/2, text=str(idx + 1), fill="#345", font=("Arial", 11, "bold"))
+        except Exception:
+            self.preview_canvas.delete("all")
+
     def center_dialog(self, parent):
         self.update_idletasks()
         parent_x = parent.winfo_rootx()
@@ -1164,36 +1300,53 @@ class MergePageGridDialog(tk.Toplevel):
         x = parent_x + (parent_w - dialog_w) // 2
         y = parent_y + (parent_h - dialog_h) // 2
         self.geometry(f"+{x}+{y}")
-    
+
     def ok(self, event=None):
         try:
-            # Walidacja danych
-            margin = float(self.margin_mm.get().replace(",", "."))
-            spacing = float(self.spacing_mm.get().replace(",", "."))
-            
-            if margin < 0:
-                raise ValueError("Margines musi być nieujemny.")
-            if spacing < 0:
-                raise ValueError("Odstęp musi być nieujemny.")
-            
+            margin_top = float(self.margin_top_mm.get().replace(",", "."))
+            margin_bottom = float(self.margin_bottom_mm.get().replace(",", "."))
+            margin_left = float(self.margin_left_mm.get().replace(",", "."))
+            margin_right = float(self.margin_right_mm.get().replace(",", "."))
+            spacing_x = float(self.spacing_x_mm.get().replace(",", "."))
+            spacing_y = float(self.spacing_y_mm.get().replace(",", "."))
+            if any(m < 0 for m in [margin_top, margin_bottom, margin_left, margin_right]):
+                raise ValueError("Marginesy muszą być nieujemne.")
+            if spacing_x < 0 or spacing_y < 0:
+                raise ValueError("Odstępy muszą być nieujemne.")
+            rows = int(self.rows_var.get())
+            cols = int(self.cols_var.get())
+            if rows < 1 or cols < 1:
+                raise ValueError("Liczba wierszy i kolumn musi być dodatnia.")
+
             format_name = self.sheet_format.get()
             sheet_dims = self.PAPER_FORMATS[format_name]
-            
+            orientation = self.orientation.get()
+            # Zamiana szerokości i wysokości jeśli pozioma
+            if orientation == "Pozioma":
+                sheet_dims = (sheet_dims[1], sheet_dims[0])
+
             self.result = {
                 "format_name": format_name,
                 "sheet_width_mm": sheet_dims[0],
                 "sheet_height_mm": sheet_dims[1],
-                "margin_mm": margin,
-                "spacing_mm": spacing,
+                "margin_top_mm": margin_top,
+                "margin_bottom_mm": margin_bottom,
+                "margin_left_mm": margin_left,
+                "margin_right_mm": margin_right,
+                "spacing_x_mm": spacing_x,
+                "spacing_y_mm": spacing_y,
+                "rows": rows,
+                "cols": cols,
+                "orientation": orientation
             }
             self.destroy()
         except Exception as e:
             messagebox.showerror("Błąd", f"Nieprawidłowe dane: {e}", parent=self)
-    
+
     def cancel(self, event=None):
         self.result = None
         self.destroy()
-
+        
 # ====================================================================
 # GŁÓWNA KLASA PROGRAMU: SELECTABLEPDFVIEWER
 # ====================================================================
@@ -2335,7 +2488,7 @@ class SelectablePDFViewer:
     
         # ODRACANIE KOLEJNOŚCI
         menu_obj.add_separator()
-        menu_obj.add_command(label="Przytnij zaznaczone strony...", command=self.apply_page_crop_resize_dialog, state=tk.DISABLED, accelerator="F8")
+        menu_obj.add_command(label="Przytnij / zmień rozmiar...", command=self.apply_page_crop_resize_dialog, state=tk.DISABLED, accelerator="F8")
         menu_obj.add_command(label="Scal strony na arkuszu...", command=self.merge_pages_to_grid, state=tk.DISABLED)
         menu_obj.add_command(label="Odwróć kolejność wszystkich stron", command=self._reverse_pages, state=tk.DISABLED)
     
@@ -2551,8 +2704,8 @@ class SelectablePDFViewer:
             "Usuń numery stron...": delete_state, 
             "Wstaw numery stron...": delete_state, 
             "Przesuń zawartość zaznaczonych stron...": delete_state,
-            "Przytnij zaznaczone strony...": delete_state,
-            "Scal strony na arkuszu...": tk.NORMAL if doc_loaded else tk.DISABLED
+            "Przytnij / zmień rozmiar...": delete_state,
+            "Scal strony na arkuszu...": delete_state,
         }
         
         for menu in menus_to_update:
@@ -3132,163 +3285,153 @@ class SelectablePDFViewer:
         if not self.pdf_document or len(self.selected_pages) != 1:
             self._update_status("BŁĄD: Zaznacz dokładnie jedną stronę, aby ją zduplikować.")
             return
-        
+
         page_index = list(self.selected_pages)[0]
-        
+
         try:
             self._save_state_to_undo()
-            
-            # Wstawienie kopii strony zaraz po oryginale
+            # Tworzymy tymczasowy dokument
+            temp_doc = fitz.open()
+            temp_doc.insert_pdf(self.pdf_document, from_page=page_index, to_page=page_index)
+            # Wstawiamy kopię z temp_doc do oryginału
             self.pdf_document.insert_pdf(
-                self.pdf_document,
-                from_page=page_index,
-                to_page=page_index,
+                temp_doc,
+                from_page=0,
+                to_page=0,
                 start_at=page_index + 1
             )
-            
+            temp_doc.close()
+
             # Odświeżenie GUI
             self.selected_pages.clear()
             self.tk_images.clear()
-            for widget in list(self.scrollable_frame.winfo_children()): 
+            for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
             self.thumb_frames.clear()
             self._reconfigure_grid()
             self.update_tool_button_states()
             self.update_focus_display()
-            
+
             self._update_status(f"Zduplikowano stronę {page_index + 1}. Aktualna liczba stron: {len(self.pdf_document)}.")
         except Exception as e:
             self._update_status(f"BŁĄD: Wystąpił błąd podczas duplikowania strony: {e}")
-    
+  
     def merge_pages_to_grid(self):
-        """Scala zaznaczone strony w siatkę na nowym arkuszu."""
+        """
+        Scala zaznaczone strony w siatkę na nowym arkuszu.
+        Bitmapy renderowane są w 600dpi (bardzo wysoka jakość do druku).
+        Przed renderowaniem każda strona jest automatycznie obracana jeśli jej orientacja nie pasuje do komórki siatki.
+        Marginesy i odstępy pobierane są z dialogu (osobno dla każdej krawędzi/osi).
+        """
+        import io
+
         if not self.pdf_document:
             self._update_status("BŁĄD: Otwórz najpierw dokument PDF.")
             return
-        
-        # Otwórz dialog
-        dialog = MergePageGridDialog(self.master)
+        if len(self.selected_pages) == 0:
+            self._update_status("BŁĄD: Zaznacz przynajmniej jedną stronę do scalenia.")
+            return
+
+        selected_indices = sorted(list(self.selected_pages))
+        num_pages = len(selected_indices)
+
+        dialog = MergePageGridDialog(self.master, page_count=num_pages)
         params = dialog.result
-        
         if params is None:
             self._update_status("Anulowano scalanie stron.")
             return
-        
+
         try:
-            # Przygotowanie listy stron do scalenia
-            if len(self.selected_pages) == 0:
-                self._update_status("BŁĄD: Zaznacz przynajmniej jedną stronę do scalenia.")
-                return
-            elif len(self.selected_pages) == 1:
-                # Wypełnij siatkę kopiami pojedynczej strony
-                page_index = list(self.selected_pages)[0]
-                source_pages = [page_index] * 12  # Maksymalnie 12 kopii (np. 3x4)
-            else:
-                # Użyj zaznaczonych stron
-                source_pages = sorted(list(self.selected_pages))
-            
-            # Konwersja wymiarów
             sheet_width_pt = params["sheet_width_mm"] * self.MM_TO_POINTS
             sheet_height_pt = params["sheet_height_mm"] * self.MM_TO_POINTS
-            margin_pt = params["margin_mm"] * self.MM_TO_POINTS
-            spacing_pt = params["spacing_mm"] * self.MM_TO_POINTS
-            
-            # Obliczenie optymalnej siatki
-            num_pages = len(source_pages)
-            best_grid = self._calculate_optimal_grid(
-                num_pages, 
-                sheet_width_pt, 
-                sheet_height_pt, 
-                margin_pt, 
-                spacing_pt
-            )
-            
-            if best_grid is None:
-                self._update_status("BŁĄD: Nie można zmieścić stron na wybranym arkuszu z podanymi marginesami.")
-                return
-            
-            rows, cols, cell_width, cell_height = best_grid
-            
-            # Tworzenie nowej strony
+            margin_top_pt = params["margin_top_mm"] * self.MM_TO_POINTS
+            margin_bottom_pt = params["margin_bottom_mm"] * self.MM_TO_POINTS
+            margin_left_pt = params["margin_left_mm"] * self.MM_TO_POINTS
+            margin_right_pt = params["margin_right_mm"] * self.MM_TO_POINTS
+            spacing_x_pt = params["spacing_x_mm"] * self.MM_TO_POINTS
+            spacing_y_pt = params["spacing_y_mm"] * self.MM_TO_POINTS
+            rows = params["rows"]
+            cols = params["cols"]
+
+            TARGET_DPI = 600  # Bardzo wysoka rozdzielczość bitmapy
+            PT_TO_INCH = 1 / 72
+
+            total_cells = rows * cols
+            source_pages = []
+            for i in range(total_cells):
+                if i < num_pages:
+                    source_pages.append(selected_indices[i])
+                else:
+                    source_pages.append(selected_indices[-1])
+
+            # Oblicz rozmiar komórki (punkt PDF)
+            if cols == 1:
+                cell_width = sheet_width_pt - margin_left_pt - margin_right_pt
+            else:
+                cell_width = (sheet_width_pt - margin_left_pt - margin_right_pt - (cols - 1) * spacing_x_pt) / cols
+            if rows == 1:
+                cell_height = sheet_height_pt - margin_top_pt - margin_bottom_pt
+            else:
+                cell_height = (sheet_height_pt - margin_top_pt - margin_bottom_pt - (rows - 1) * spacing_y_pt) / rows
+
             self._save_state_to_undo()
             new_page = self.pdf_document.new_page(width=sheet_width_pt, height=sheet_height_pt)
-            
-            # Umieszczanie stron w siatce
-            page_idx = 0
-            for row in range(rows):
-                for col in range(cols):
-                    if page_idx >= num_pages:
-                        break
-                    
-                    source_page_idx = source_pages[page_idx]
-                    source_page = self.pdf_document[source_page_idx]
-                    
-                    # Obliczenie pozycji komórki
-                    x = margin_pt + col * (cell_width + spacing_pt)
-                    y = sheet_height_pt - margin_pt - (row + 1) * cell_height - row * spacing_pt
-                    
-                    # Renderowanie strony jako obrazu
-                    pix = source_page.get_pixmap(matrix=fitz.Matrix(2, 2))  # Wysoka rozdzielczość
-                    img_bytes = pix.tobytes("png")
-                    
-                    # Wstawienie obrazu do komórki
-                    rect = fitz.Rect(x, y, x + cell_width, y + cell_height)
-                    new_page.insert_image(rect, stream=img_bytes)
-                    
-                    page_idx += 1
-            
+
+            for idx, src_idx in enumerate(source_pages):
+                row = idx // cols
+                col = idx % cols
+                if row >= rows:
+                    break
+
+                x = margin_left_pt + col * (cell_width + spacing_x_pt)
+                y = margin_top_pt + row * (cell_height + spacing_y_pt)
+
+                src_page = self.pdf_document[src_idx]
+                page_rect = src_page.rect
+                page_w = page_rect.width
+                page_h = page_rect.height
+
+                # Automatyczny obrót jeśli orientacja strony nie pasuje do komórki
+                page_landscape = page_w > page_h
+                cell_landscape = cell_width > cell_height
+                rotate = 0
+                if page_landscape != cell_landscape:
+                    rotate = 90  # Obróć o 90 stopni
+
+                # Skala renderowania: bitmapa ma dokładnie tyle pikseli, ile wynosi rozmiar komórki w punktach * 600 / 72
+                bitmap_w = int(round(cell_width * TARGET_DPI * PT_TO_INCH))
+                bitmap_h = int(round(cell_height * TARGET_DPI * PT_TO_INCH))
+
+                if rotate == 90:
+                    # Zamień szerokość i wysokość strony do przeliczenia skali
+                    scale_x = bitmap_w / page_h
+                    scale_y = bitmap_h / page_w
+                else:
+                    scale_x = bitmap_w / page_w
+                    scale_y = bitmap_h / page_h
+
+                # Renderuj bitmapę w bardzo wysokiej rozdzielczości, z ewentualnym obrotem
+                pix = src_page.get_pixmap(matrix=fitz.Matrix(scale_x, scale_y).prerotate(rotate), alpha=False)
+                img_bytes = pix.tobytes("png")
+                rect = fitz.Rect(x, y, x + cell_width, y + cell_height)
+                new_page.insert_image(rect, stream=img_bytes)
+
             # Odświeżenie GUI
             self.selected_pages.clear()
             self.tk_images.clear()
-            for widget in list(self.scrollable_frame.winfo_children()): 
+            for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
             self.thumb_frames.clear()
             self._reconfigure_grid()
             self.update_tool_button_states()
             self.update_focus_display()
-            
             self._update_status(
-                f"Scalono {min(page_idx, num_pages)} stron w siatkę {rows}x{cols} "
-                f"na nowym arkuszu {params['format_name']}. Nowa strona dodana na końcu dokumentu."
+                f"Scalono {num_pages} stron w siatkę {rows}x{cols} na nowym arkuszu {params['format_name']} (bitmapy 600dpi)."
             )
         except Exception as e:
             self._update_status(f"BŁĄD: Nie udało się scalić stron: {e}")
             import traceback
             traceback.print_exc()
-    
-    def _calculate_optimal_grid(self, num_pages, sheet_width, sheet_height, margin, spacing):
-        """
-        Oblicza optymalny układ siatki (wiersze x kolumny) aby zmaksymalizować rozmiar stron.
-        Zwraca: (rows, cols, cell_width, cell_height) lub None jeśli nie można zmieścić.
-        """
-        best_grid = None
-        max_area = 0
-        
-        # Sprawdź różne konfiguracje siatki
-        for cols in range(1, num_pages + 1):
-            rows = math.ceil(num_pages / cols)
-            
-            # Oblicz wymiary komórki dla tej siatki
-            available_width = sheet_width - 2 * margin - (cols - 1) * spacing
-            available_height = sheet_height - 2 * margin - (rows - 1) * spacing
-            
-            if available_width <= 0 or available_height <= 0:
-                continue
-            
-            cell_width = available_width / cols
-            cell_height = available_height / rows
-            
-            if cell_width <= 0 or cell_height <= 0:
-                continue
-            
-            # Powierzchnia pojedynczej komórki
-            area = cell_width * cell_height
-            
-            if area > max_area:
-                max_area = area
-                best_grid = (rows, cols, cell_width, cell_height)
-        
-        return best_grid
             
     # --- Metody obsługi widoku/GUI (Bez zmian) ---
     def _on_mousewheel(self, event):
