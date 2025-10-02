@@ -79,6 +79,7 @@ def resource_path(relative_path):
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+
 class PageCropResizeDialog(tk.Toplevel):
     PAPER_FORMATS = {
         'A0': (841, 1189),
@@ -93,7 +94,7 @@ class PageCropResizeDialog(tk.Toplevel):
 
     def __init__(self, parent):
         super().__init__(parent)
-        self.title("Kadrowanie i zmiana rozmiaru strony PDF")
+        self.title("Kadrowanie i zmiana rozmiaru stron")
         self.transient(parent)
         self.result = None
 
@@ -118,6 +119,12 @@ class PageCropResizeDialog(tk.Toplevel):
         self.focus_force()
         self.protocol("WM_DELETE_WINDOW", self.cancel)
         self.resizable(False, False)
+
+        # --- Obsługa Enter i Esc jak w innych dialogach ---
+        self.bind("<Return>", lambda e: self.ok())
+        self.bind("<KP_Enter>", lambda e: self.ok())
+        self.bind("<Escape>", lambda e: self.cancel())
+
         self.wait_window(self)
 
     def build_ui(self):
@@ -149,10 +156,10 @@ class PageCropResizeDialog(tk.Toplevel):
         self.e_margin_bottom = ttk.Entry(margin_frame, textvariable=self.margin_bottom, width=6)
         self.e_margin_bottom.grid(row=0, column=3, sticky="w", padx=(0,0), pady=pady_row1)
 
-        ttk.Label(margin_frame, text="Lewy [mm]:").grid(row=1, column=0, sticky="w", padx=(0,6), pady=pady_row2)
+        ttk.Label(margin_frame, text="Lewo [mm]:").grid(row=1, column=0, sticky="w", padx=(0,6), pady=pady_row2)
         self.e_margin_left = ttk.Entry(margin_frame, textvariable=self.margin_left, width=6)
         self.e_margin_left.grid(row=1, column=1, sticky="w", padx=(0,16), pady=pady_row2)
-        ttk.Label(margin_frame, text="Prawy [mm]:").grid(row=1, column=2, sticky="w", padx=(0,6), pady=pady_row2)
+        ttk.Label(margin_frame, text="Prawo [mm]:").grid(row=1, column=2, sticky="w", padx=(0,6), pady=pady_row2)
         self.e_margin_right = ttk.Entry(margin_frame, textvariable=self.margin_right, width=6)
         self.e_margin_right.grid(row=1, column=3, sticky="w", padx=(0,0), pady=pady_row2)
         self.margin_entries = [self.e_margin_top, self.e_margin_bottom, self.e_margin_left, self.e_margin_right]
@@ -190,7 +197,7 @@ class PageCropResizeDialog(tk.Toplevel):
         self.custom_entries = [self.e_custom_width, self.e_custom_height]
 
         # --- POSITION SECTION (osobna ramka) ---
-        self.position_frame = ttk.LabelFrame(self, text="Położenie obrazu (przy odpowiednich opcjach)")
+        self.position_frame = ttk.LabelFrame(self, text="Położenie obrazu")
         self.position_frame.pack(fill="x", padx=12, pady=(8, 0))
         position_modes = [
             ("Wyśrodkuj", "center"),
@@ -204,10 +211,10 @@ class PageCropResizeDialog(tk.Toplevel):
 
         self.offset_frame = ttk.Frame(self.position_frame)
         self.offset_frame.pack(fill="x", padx=18, pady=(0,0))
-        ttk.Label(self.offset_frame, text="Offset X [mm]:").grid(row=0, column=0, sticky="w", padx=(0,6), pady=pady_row1)
+        ttk.Label(self.offset_frame, text="Od lewej [mm]:").grid(row=0, column=0, sticky="w", padx=(0,6), pady=pady_row1)
         self.e_offset_x = ttk.Entry(self.offset_frame, textvariable=self.offset_x, width=8)
         self.e_offset_x.grid(row=0, column=1, sticky="w", padx=(0,16), pady=pady_row1)
-        ttk.Label(self.offset_frame, text="Offset Y [mm]:").grid(row=0, column=2, sticky="w", padx=(0,6), pady=pady_row1)
+        ttk.Label(self.offset_frame, text="Od dołu [mm]:").grid(row=0, column=2, sticky="w", padx=(0,6), pady=pady_row1)
         self.e_offset_y = ttk.Entry(self.offset_frame, textvariable=self.offset_y, width=8)
         self.e_offset_y.grid(row=0, column=3, sticky="w", padx=(0,0), pady=pady_row1)
         self.offset_entries = [self.e_offset_x, self.e_offset_y]
@@ -243,7 +250,7 @@ class PageCropResizeDialog(tk.Toplevel):
         # Pozycjonowanie i offsety:
         # Aktywne dla (crop_only) lub (resize_noscale), ale tylko jeśli odpowiednie sekcje nie są zablokowane
         enable_position = (
-            (self.crop_mode.get() == "crop_only" and not resize_selected) or
+           # (self.crop_mode.get() == "crop_only" and not resize_selected) or
             (self.resize_mode.get() == "resize_noscale" and not crop_selected)
         )
         state_radio = tk.NORMAL if enable_position else tk.DISABLED
@@ -266,7 +273,7 @@ class PageCropResizeDialog(tk.Toplevel):
         y = parent_y + (parent_h - dialog_h) // 2
         self.geometry(f"+{x}+{y}")
 
-    def ok(self):
+    def ok(self, event=None):
         try:
             crop_mode = self.crop_mode.get()
             resize_mode = self.resize_mode.get()
@@ -333,7 +340,7 @@ class PageCropResizeDialog(tk.Toplevel):
         except Exception as e:
             messagebox.showerror("Błąd", f"Nieprawidłowe dane: {e}", parent=self)
 
-    def cancel(self):
+    def cancel(self, event=None):
         self.result = None
         self.destroy()
 
@@ -396,182 +403,143 @@ class Tooltip:
 # Przykład użycia tej klasy na przycisku:
 # Tooltip(przycisk_numeracja, "Wstawia numerację na zaznaczonych stronach.")
   
+import tkinter as tk
+from tkinter import ttk, messagebox
+
 class PageNumberingDialog(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
         self.transient(parent)
-        self.title("Ustawienia Numeracji Stron PDF")
+        self.title("Dodawanie numeracji stron")
         self.result = None
-        
-        # Dostosowanie wysokości, aby pomieścić nowe pole (lekkie zwiększenie)
-        self.geometry("400x520") 
-        self.resizable(False, False)
 
         self.create_variables()
-        self.create_widgets()
-        
-        # Konfiguracja okna
-        self.grab_set() 
-        self.focus_force() 
+        self.build_ui()
+
+        self.resizable(False, False)
+        self.grab_set()
+        self.focus_force()
         self.protocol("WM_DELETE_WINDOW", self.cancel)
         self.bind('<Escape>', lambda e: self.cancel())
         self.bind('<Return>', lambda e: self.ok())
-        
-        self.center_window() 
+        self.center_window()
         self.wait_window(self)
 
     def create_variables(self):
-        # === ZMIENNE ZGODNE Z KLUCZAMI W SŁOWNIKU RESULT ===
         self.v_margin_left = tk.StringVar(value="35")
         self.v_margin_right = tk.StringVar(value="25")
-        
-        # NOWA ZMIENNA: Odległość od góry/dołu (w mm)
-        self.v_margin_vertical_mm = tk.StringVar(value="15") 
-        
-        self.v_vertical_pos = tk.StringVar(value='dol') 
-        self.v_alignment = tk.StringVar(value='prawa') 
+        self.v_margin_vertical_mm = tk.StringVar(value="15")
+        self.v_vertical_pos = tk.StringVar(value='dol')
+        self.v_alignment = tk.StringVar(value='prawa')
         self.v_mode = tk.StringVar(value='normalna')
-        
-        self.v_start_page = tk.StringVar(value="1") 
-        self.v_start_number = tk.StringVar(value="1") 
-        
+        self.v_start_page = tk.StringVar(value="1")
+        self.v_start_number = tk.StringVar(value="1")
         self.font_options = ["Helvetica", "Times-Roman", "Courier", "Arial"]
         self.size_options = ["6", "8", "10", "11", "12", "13", "14"]
-        
         self.v_font_name = tk.StringVar(value=self.font_options[1])
         self.v_font_size = tk.StringVar(value="12")
-        
         self.v_mirror_margins = tk.BooleanVar(value=False)
         self.v_format_type = tk.StringVar(value='simple')
-        # ==================================================
 
     def center_window(self):
-          self.update_idletasks()
-          w = self.winfo_width()
-          h = self.winfo_height()
-          x = self.parent.winfo_x() + (self.parent.winfo_width() - w) // 2
-          y = self.parent.winfo_y() + (self.parent.winfo_height() - h) // 2
-          self.geometry(f'+{x}+{y}')
+        self.update_idletasks()
+        w = self.winfo_width()
+        h = self.winfo_height()
+        x = self.parent.winfo_x() + (self.parent.winfo_width() - w) // 2
+        y = self.parent.winfo_y() + (self.parent.winfo_height() - h) // 2
+        self.geometry(f'+{x}+{y}')
 
-    def create_widgets(self):
-        main_frame = ttk.Frame(self, padding="15")
+    def build_ui(self):
+        main_frame = ttk.Frame(self, padding="6")
         main_frame.pack(fill="both", expand=True)
-        
-        PADX_GROUP = 5
-        PADY_GROUP = 7
-        PADX_RADIO = 2 
-        PADX_FRAME = 0 
 
-        # === 1. KONFIGURACJA PLIKU (Marginesy poziome i Lustrzany) ===
-        config_frame = ttk.LabelFrame(main_frame, text="Marginesy Poziome (względem tekstu)")
+        PADX_GROUP = 8
+        PADY_GROUP = (8, 0)
+        ENTRY_WIDTH = 4
+
+        # 1. Marginesy poziome i lustrzane
+        config_frame = ttk.LabelFrame(main_frame, text="Marginesy poziome (mm)")
         config_frame.pack(fill="x", padx=PADX_GROUP, pady=PADY_GROUP)
-        config_frame.columnconfigure(0, weight=1) 
-        config_frame.columnconfigure(1, weight=1)
-        
-        # Marginesy (obok siebie)
-        margins_inner_frame = ttk.Frame(config_frame)
-        margins_inner_frame.grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 5))
-        
-        ttk.Label(margins_inner_frame, text="Lewy (mm):").pack(side='left', padx=5, pady=2)
-        ttk.Entry(margins_inner_frame, textvariable=self.v_margin_left, width=8).pack(side='left', padx=(0, 20), pady=2)
+        config_inner = ttk.Frame(config_frame)
+        config_inner.pack(anchor='w', padx=2, pady=(8, 2))
+        ttk.Label(config_inner, text="Lewy:").pack(side='left', padx=(0,4))
+        ttk.Entry(config_inner, textvariable=self.v_margin_left, width=ENTRY_WIDTH).pack(side='left', padx=(0,10))
+        ttk.Label(config_inner, text="Prawy:").pack(side='left', padx=(0,4))
+        ttk.Entry(config_inner, textvariable=self.v_margin_right, width=ENTRY_WIDTH).pack(side='left', padx=(0,0))
+        ttk.Checkbutton(config_frame, text="Plik ma marginesy lustrzane", variable=self.v_mirror_margins).pack(anchor='w', padx=2, pady=(6,6))
 
-        ttk.Label(margins_inner_frame, text="Prawy (mm):").pack(side='left', padx=5, pady=2)
-        ttk.Entry(margins_inner_frame, textvariable=self.v_margin_right, width=8).pack(side='left', padx=5, pady=2)
-        
-        # Checkbox 
-        ttk.Checkbutton(config_frame, text="Plik ma marginesy lustrzane", variable=self.v_mirror_margins).grid(row=1, column=0, columnspan=2, sticky='w', padx=5, pady=2)
-        
-
-        # === 2. POŁOŻENIE (Pionowe i Wyrównanie) ===
-        pos_frame = ttk.LabelFrame(main_frame, text="Położenie")
+        # 2. Położenie
+        pos_frame = ttk.LabelFrame(main_frame, text="Położenie numeru strony")
         pos_frame.pack(fill="x", padx=PADX_GROUP, pady=PADY_GROUP)
-        
-        pos_frame.columnconfigure(0, weight=0)
-        pos_frame.columnconfigure(1, weight=1)
-        
-        # NOWE POLE: Odległość od krawędzi (Pionowy margines)
-        margin_v_frame = ttk.Frame(pos_frame)
-        margin_v_frame.grid(row=0, column=0, columnspan=2, sticky='w', padx=5, pady=(2, 5))
-        ttk.Label(margin_v_frame, text="Odległość od krawędzi w pionie (mm):").pack(side='left', padx=(0, 5))
-        ttk.Entry(margin_v_frame, textvariable=self.v_margin_vertical_mm, width=8).pack(side='left')
-        
-        # Położenie w pionie
-        ttk.Label(pos_frame, text="Pion:").grid(row=1, column=0, sticky='w', padx=5, pady=2)
-        v_frame = ttk.Frame(pos_frame)
-        v_frame.grid(row=1, column=1, sticky='w', padx=PADX_FRAME, pady=2) 
-        ttk.Radiobutton(v_frame, text="Nagłówek", variable=self.v_vertical_pos, value='gora').pack(side='left', padx=PADX_RADIO)
-        ttk.Radiobutton(v_frame, text="Stopka", variable=self.v_vertical_pos, value='dol').pack(side='left', padx=PADX_RADIO)
-        
-        # Wyrównanie w poziomie (z "Środek")
-        ttk.Label(pos_frame, text="Poziom:").grid(row=2, column=0, sticky='w', padx=5, pady=2)
-        a_frame = ttk.Frame(pos_frame)
-        a_frame.grid(row=2, column=1, sticky='w', padx=PADX_FRAME, pady=2) 
-        ttk.Radiobutton(a_frame, text="Lewo", variable=self.v_alignment, value='lewa').pack(side='left', padx=PADX_RADIO)
-        ttk.Radiobutton(a_frame, text="Środek", variable=self.v_alignment, value='srodek').pack(side='left', padx=PADX_RADIO)
-        ttk.Radiobutton(a_frame, text="Prawo", variable=self.v_alignment, value='prawa').pack(side='left', padx=PADX_RADIO)
 
-        # Tryb Numeracji 
-        ttk.Label(pos_frame, text="Tryb:").grid(row=3, column=0, sticky='w', padx=5, pady=2)
-        m_frame = ttk.Frame(pos_frame)
-        m_frame.grid(row=3, column=1, sticky='w', padx=PADX_FRAME, pady=2) 
-        ttk.Radiobutton(m_frame, text="Normalna", variable=self.v_mode, value='normalna').pack(side='left', padx=PADX_RADIO)
-        ttk.Radiobutton(m_frame, text="Lustrzana", variable=self.v_mode, value='lustrzana').pack(side='left', padx=PADX_RADIO)
-        
-        
-        # --- 3. LICZNIKI STARTOWE ---
+        row_idx = 0
+        ttk.Label(pos_frame, text="Od krawędzi:").grid(row=row_idx, column=0, sticky="w", padx=(2,4), pady=(2,2))
+        ttk.Entry(pos_frame, textvariable=self.v_margin_vertical_mm, width=ENTRY_WIDTH).grid(row=row_idx, column=1, sticky="w", padx=(0,2), pady=(2,2))
+        row_idx += 1
+
+        # Radiobuttony PION
+        ttk.Label(pos_frame, text="Pion:").grid(row=row_idx, column=0, sticky="w", padx=(2,4), pady=(2,2))
+        ttk.Radiobutton(pos_frame, text="Nagłówek", variable=self.v_vertical_pos, value='gora').grid(row=row_idx, column=1, sticky="w", padx=(0,4))
+        ttk.Radiobutton(pos_frame, text="Stopka", variable=self.v_vertical_pos, value='dol').grid(row=row_idx, column=2, sticky="w", padx=(0,2))
+        row_idx += 1
+
+        # Radiobuttony POZIOM
+        ttk.Label(pos_frame, text="Poziom:").grid(row=row_idx, column=0, sticky="w", padx=(2,4), pady=(2,2))
+        ttk.Radiobutton(pos_frame, text="Lewo", variable=self.v_alignment, value='lewa').grid(row=row_idx, column=1, sticky="w", padx=(0,4))
+        ttk.Radiobutton(pos_frame, text="Środek", variable=self.v_alignment, value='srodek').grid(row=row_idx, column=2, sticky="w", padx=(0,4))
+        ttk.Radiobutton(pos_frame, text="Prawo", variable=self.v_alignment, value='prawa').grid(row=row_idx, column=3, sticky="w", padx=(0,2))
+        row_idx += 1
+
+        # Radiobuttony TRYP
+        ttk.Label(pos_frame, text="Tryb:").grid(row=row_idx, column=0, sticky="w", padx=(2,4), pady=(2,2))
+        ttk.Radiobutton(pos_frame, text="Normalna", variable=self.v_mode, value='normalna').grid(row=row_idx, column=1, sticky="w", padx=(0,4))
+        ttk.Radiobutton(pos_frame, text="Lustrzana", variable=self.v_mode, value='lustrzana').grid(row=row_idx, column=2, sticky="w", padx=(0,2))
+        row_idx += 1
+
+        # 3. Liczniki startowe
         counter_frame = ttk.LabelFrame(main_frame, text="Wartość numeracji")
-        counter_frame.pack(fill="x", padx=PADX_GROUP, pady=PADY_GROUP)
-        counter_frame.columnconfigure(1, weight=1)
+        counter_frame.pack(fill="x", padx=PADX_GROUP, pady=(8,0))
+        counter_inner = ttk.Frame(counter_frame)
+        counter_inner.pack(fill="x", padx=2, pady=(0,0))
+        ttk.Label(counter_inner, text="Licznik numeracji zacznij od numeru:").grid(row=0, column=0, sticky="w", padx=(2,4), pady=(0,10))
+        ttk.Entry(counter_inner, textvariable=self.v_start_number, width=ENTRY_WIDTH).grid(row=0, column=1, sticky="w", padx=(0,2), pady=(0,10))
 
-        # Numer Startowy (wartość licznika)
-        ttk.Label(counter_frame, text="Licznik numeracji zacznij od numeru:").grid(row=1, column=0, sticky='w', padx=5, pady=2)
-        ttk.Entry(counter_frame, textvariable=self.v_start_number, width=10).grid(row=1, column=1, sticky='w', padx=5, pady=2)
-
-
-        # --- 4. STYL I FORMAT ---
-        style_frame = ttk.LabelFrame(main_frame, text="Czcionka i Format")
+        # 4. Czcionka i format
+        style_frame = ttk.LabelFrame(main_frame, text="Czcionka i format numeracji")
         style_frame.pack(fill="x", padx=PADX_GROUP, pady=PADY_GROUP)
-        style_frame.columnconfigure(1, weight=1)
+        font_row = ttk.Frame(style_frame)
+        font_row.pack(anchor='w', padx=2, pady=(8, 2))
+        ttk.Label(font_row, text="Czcionka:").pack(side='left', padx=(0,6))
+        font_combo = ttk.Combobox(font_row, textvariable=self.v_font_name, values=self.font_options, state='readonly', width=16)
+        font_combo.pack(side='left', padx=(0,10))
+        ttk.Label(font_row, text="Rozmiar [pt]:").pack(side='left', padx=(0,6))
+        size_combo = ttk.Combobox(font_row, textvariable=self.v_font_size, values=self.size_options, state='readonly', width=ENTRY_WIDTH)
+        size_combo.pack(side='left', padx=(0,0))
 
-        # Nazwa Czcionki (Combobox)
-        ttk.Label(style_frame, text="Nazwa Czcionki:").grid(row=0, column=0, sticky='w', padx=5, pady=2)
-        font_combo = ttk.Combobox(style_frame, textvariable=self.v_font_name, values=self.font_options, state='readonly', width=18)
-        font_combo.grid(row=0, column=1, sticky='w', padx=5, pady=2)
-
-        # Rozmiar Czcionki (Combobox)
-        ttk.Label(style_frame, text="Rozmiar [pt]:").grid(row=1, column=0, sticky='w', padx=5, pady=2)
-        size_combo = ttk.Combobox(style_frame, textvariable=self.v_font_size, values=self.size_options, state='readonly', width=5)
-        size_combo.grid(row=1, column=1, sticky='w', padx=5, pady=2)
-        
-        # Format Numeracji 
-        ttk.Label(style_frame, text="Format numeracji:").grid(row=2, column=0, sticky='w', padx=5, pady=(5, 2))
         f_frame = ttk.Frame(style_frame)
-        f_frame.grid(row=3, column=0, columnspan=2, sticky='w', padx=5, pady=(0, 2))
-        ttk.Radiobutton(f_frame, text="Standardowy (1, 2...)", variable=self.v_format_type, value='simple').pack(side='left', padx=PADX_RADIO)
-        ttk.Radiobutton(f_frame, text="Strona 1 z 99", variable=self.v_format_type, value='full').pack(side='left', padx=PADX_RADIO)
+        f_frame.pack(anchor='w', padx=2, pady=(8, 6))
+        ttk.Label(f_frame, text="Format:").pack(side='left', padx=(0,6))
+        ttk.Radiobutton(f_frame, text="Standardowy (1, 2...)", variable=self.v_format_type, value='simple').pack(side='left', padx=(0,6))
+        ttk.Radiobutton(f_frame, text="Strona 1 z 99", variable=self.v_format_type, value='full').pack(side='left', padx=(0,0))
 
-
-        # --- 5. PRZYCISKI ---
+        # 5. Przyciski
         button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill='x', side='bottom', pady=10)
-        ttk.Button(button_frame, text="Wstaw Numerację", command=self.ok).pack(side='left', expand=True, padx=5)
+        button_frame.pack(fill='x', pady=(8,6))
+        ttk.Button(button_frame, text="Wstaw", command=self.ok).pack(side='left', expand=True, padx=5)
         ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side='right', expand=True, padx=5)
 
-    def ok(self):
+    def ok(self, event=None):
         try:
             start_page_val = int(self.v_start_page.get())
-            
             result = {
                 'margin_left_mm': float(self.v_margin_left.get().replace(',', '.')),
                 'margin_right_mm': float(self.v_margin_right.get().replace(',', '.')),
-                # NOWA WARTOŚĆ: Pionowy margines w mm
                 'margin_vertical_mm': float(self.v_margin_vertical_mm.get().replace(',', '.')),
-                
                 'vertical_pos': self.v_vertical_pos.get(),
                 'alignment': self.v_alignment.get(),
                 'mode': self.v_mode.get(),
-                'start_num': int(self.v_start_number.get()), 
+                'start_num': int(self.v_start_number.get()),
                 'start_page_idx': start_page_val - 1,
                 'font_name': self.v_font_name.get().strip(),
                 'font_size': float(self.v_font_size.get().replace(',', '.')),
@@ -579,43 +547,42 @@ class PageNumberingDialog(tk.Toplevel):
                 'format_type': self.v_format_type.get()
             }
             if result['start_num'] < 1 or start_page_val < 1:
-                 raise ValueError("Numery startowe i strony muszą być >= 1.")
-            
+                raise ValueError("Numery startowe i strony muszą być >= 1.")
             self.result = result
             self.destroy()
         except Exception as e:
-            messagebox.showerror("Błąd Wprowadzania", f"Sprawdź wprowadzone wartości: {e}")
+            messagebox.showerror("Błąd wprowadzania", f"Sprawdź wprowadzone wartości: {e}", parent=self)
 
-    def cancel(self):
+    def cancel(self, event=None):
         self.result = None
         self.destroy()
         
+import tkinter as tk
+from tkinter import ttk, messagebox
+
 class PageNumberMarginDialog(tk.Toplevel):
     """Okno dialogowe do określania wysokości marginesów (górnego i dolnego) do skanowania."""
     def __init__(self, parent, initial_margin_mm=20):
         super().__init__(parent)
         self.parent = parent
         self.transient(parent)
-        self.title("Podaj szerokości marginesów")
+        self.title("Usuwanie numeracji stron")
         self.result = None
-        
-        self.geometry("300x200")
-        self.resizable(False, False)
 
         self.create_widgets(initial_margin_mm)
+        self.resizable(False, False)
         self.protocol("WM_DELETE_WINDOW", self.cancel)
-        
+
         # Ustawienia modalności
-        self.grab_set() 
-        self.focus_force() 
+        self.grab_set()
+        self.focus_force()
         self.bind('<Escape>', lambda e: self.cancel())
         self.bind('<Return>', lambda e: self.ok())
-        
-        self.center_window() # Zakładam, że ta funkcja istnieje
+
+        self.center_window()
         self.wait_window(self)
 
     def center_window(self):
-        # Prosta wersja centrowania, jeśli nie masz jej w klasie
         self.update_idletasks()
         w = self.winfo_width()
         h = self.winfo_height()
@@ -624,32 +591,40 @@ class PageNumberMarginDialog(tk.Toplevel):
         self.geometry(f'+{x}+{y}')
 
     def create_widgets(self, initial_margin_mm):
-        main_frame = ttk.Frame(self, padding="15")
+        main_frame = ttk.Frame(self, padding="6")
         main_frame.pack(fill="both", expand=True)
 
-        # Margines Górny
-        ttk.Label(main_frame, text="Margines Górny [mm]:").pack(fill='x', pady=(0, 2))
-        self.top_margin_entry = ttk.Entry(main_frame)
-        self.top_margin_entry.insert(0, str(initial_margin_mm))
-        self.top_margin_entry.pack(fill='x', padx=5, pady=(0, 10))
+        margin_frame = ttk.LabelFrame(
+            main_frame, text="Wysokość pola z numerem (mm)", padding=(8, 4)
+        )
+        margin_frame.pack(fill="x", padx=4, pady=(6, 2))
 
-        # Margines Dolny
-        ttk.Label(main_frame, text="Margines Dolny [mm]:").pack(fill='x', pady=(0, 2))
-        self.bottom_margin_entry = ttk.Entry(main_frame)
-        self.bottom_margin_entry.insert(0, str(initial_margin_mm))
-        self.bottom_margin_entry.pack(fill='x', padx=5, pady=(0, 15))
+        ENTRY_WIDTH = 4
+
+        # Marginesy w jednej kolumnie grid
+        for idx, (label_text, var_name) in enumerate([
+            ("Od góry (nagłówek):", "top_margin_entry"),
+            ("Od dołu (stopka):", "bottom_margin_entry")
+        ]):
+            ttk.Label(margin_frame, text=label_text).grid(
+                row=idx, column=0, sticky="e", padx=(2, 6), pady=(2, 2)
+            )
+            entry = ttk.Entry(margin_frame, width=ENTRY_WIDTH)
+            entry.insert(0, str(initial_margin_mm))
+            entry.grid(row=idx, column=1, sticky="w", padx=(0, 2), pady=(2, 2))
+            setattr(self, var_name, entry)
 
         # Przyciski
         button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill='x', side='bottom')
-        ttk.Button(button_frame, text="OK", command=self.ok).pack(side='left', expand=True, padx=5)
+        button_frame.pack(fill='x', side='bottom', pady=(8, 4))
+        ttk.Button(button_frame, text="Usuń", command=self.ok).pack(side='left', expand=True, padx=5)
         ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side='right', expand=True, padx=5)
 
-    def ok(self):
+    def ok(self, event=None):
         try:
             top_mm = float(self.top_margin_entry.get().replace(',', '.'))
             bottom_mm = float(self.bottom_margin_entry.get().replace(',', '.'))
-            
+
             if top_mm < 0 or bottom_mm < 0:
                 raise ValueError("Wartości marginesów muszą być nieujemne.")
 
@@ -658,7 +633,7 @@ class PageNumberMarginDialog(tk.Toplevel):
         except ValueError:
             messagebox.showerror("Błąd Wprowadzania", "Wprowadź prawidłowe, nieujemne liczby (w mm).")
 
-    def cancel(self):
+    def cancel(self, event=None):
         self.result = None
         self.destroy()
 
@@ -668,112 +643,73 @@ class ShiftContentDialog(tk.Toplevel):
         super().__init__(parent)
         self.parent = parent
         self.transient(parent)
-        self.title("Przesuń Zawartość Strony")
+        self.title("Przesuwanie zawartości stron")
         self.result = None
-        
-        # Rozmiar okna
-        self.geometry("300x320") 
-        self.resizable(False, False)
 
         self.create_widgets()
+        self.resizable(False, False)
         self.protocol("WM_DELETE_WINDOW", self.cancel)
-        
-        # === KLUCZOWE ZMIANY DLA FOKUSU I MODALNOŚCI ===
-        
-        # 1. Ustawienie trybu modalnego (globalnego, nie tylko dla potomków)
-        self.grab_set() 
-        
-        # 2. Wiązania klawiszowe (przed ustawieniem fokusu)
+
+        self.grab_set()
+        self.focus_force()
         self.bind('<Escape>', lambda event: self.cancel())
         self.bind('<Return>', lambda event: self.ok())
-        
-        # 3. Wymuszenie fokusu na okno dialogowe (zapobiega przypadkowym kliknięciom)
-        self.focus_force() 
-        
-        # =================================================
 
         self.center_window()
-        
-        # Zatrzymanie głównego programu, dopóki okno nie zostanie zamknięte
-        self.wait_window(self) 
+        self.wait_window(self)
 
     def center_window(self):
-        """Oblicza i ustawia pozycję okna dialogowego na środku okna nadrzędnego."""
         self.update_idletasks()
-        
         dialog_width = self.winfo_width()
         dialog_height = self.winfo_height()
-
         parent_x = self.parent.winfo_x()
         parent_y = self.parent.winfo_y()
         parent_width = self.parent.winfo_width()
         parent_height = self.parent.winfo_height()
-
         position_x = parent_x + (parent_width // 2) - (dialog_width // 2)
         position_y = parent_y + (parent_height // 2) - (dialog_height // 2)
-
         self.geometry(f'+{position_x}+{position_y}')
 
     def create_widgets(self):
-        # Główna ramka kontenera
-        main_frame = ttk.Frame(self, padding="15")
+        main_frame = ttk.Frame(self, padding="8")
         main_frame.pack(fill="both", expand=True)
-        
-        # === Sekcja Przesunięcie Poziome (X) ===
-        
-        # Tytuł sekcji
-        ttk.Label(main_frame, text="Przesunięcie Poziome (X):", font='Helvetica 10 bold').pack(fill='x', pady=(0, 5))
-        
-        # Ramka na przyciski radiowe X
-        self.x_direction = tk.StringVar(value='P') 
-        x_frame = ttk.Frame(main_frame)
-        x_frame.pack(fill='x', pady=5)
-        ttk.Radiobutton(x_frame, text="Prawo (+)", variable=self.x_direction, value='P').pack(side='left', expand=True)
-        ttk.Radiobutton(x_frame, text="Lewo (-)", variable=self.x_direction, value='L').pack(side='left', expand=True)
-        
-        # Wartość X
-        ttk.Label(main_frame, text="Wartość X [mm]:").pack(fill='x', pady=(5, 0))
-        self.x_value = ttk.Entry(main_frame)
+
+        # Ramka sekcji X i Y razem, jak w innych dialogach
+        xy_frame = ttk.LabelFrame(main_frame, text="Kierunek i wartość przesunięcia (mm)", padding=(8, 6))
+        xy_frame.pack(fill='x', padx=4, pady=(8, 0))
+
+        ENTRY_WIDTH = 4
+
+        # Przesunięcie X - grid, zwarty układ
+        ttk.Label(xy_frame, text="Poziome:").grid(row=0, column=0, sticky="w", padx=(2, 8), pady=(4,2))
+        self.x_value = ttk.Entry(xy_frame, width=ENTRY_WIDTH)
         self.x_value.insert(0, "0")
-        self.x_value.pack(fill='x', padx=0)
+        self.x_value.grid(row=0, column=1, sticky="w", padx=(0,2), pady=(4,2))
+        self.x_direction = tk.StringVar(value='P')
+        ttk.Radiobutton(xy_frame, text="Lewo", variable=self.x_direction, value='L').grid(row=0, column=2, sticky="w", padx=(8, 4))
+        ttk.Radiobutton(xy_frame, text="Prawo", variable=self.x_direction, value='P').grid(row=0, column=3, sticky="w", padx=(0,2))
 
-        # === Separator ===
-        ttk.Separator(main_frame, orient='horizontal').pack(fill='x', pady=15)
-
-        # === Sekcja Przesunięcie Pionowe (Y) ===
-        
-        # Tytuł sekcji
-        ttk.Label(main_frame, text="Przesunięcie Pionowe (Y):", font='Helvetica 10 bold').pack(fill='x', pady=(0, 5))
-        
-        # Ramka na przyciski radiowe Y
-        self.y_direction = tk.StringVar(value='G') 
-        y_frame = ttk.Frame(main_frame)
-        y_frame.pack(fill='x', pady=5)
-        ttk.Radiobutton(y_frame, text="Góra (+)", variable=self.y_direction, value='G').pack(side='left', expand=True)
-        ttk.Radiobutton(y_frame, text="Dół (-)", variable=self.y_direction, value='D').pack(side='left', expand=True)
-
-        # Wartość Y
-        ttk.Label(main_frame, text="Wartość Y [mm]:").pack(fill='x', pady=(5, 0))
-        self.y_value = ttk.Entry(main_frame)
+        # Przesunięcie Y
+        ttk.Label(xy_frame, text="Pionowe:").grid(row=1, column=0, sticky="w", padx=(2, 8), pady=(8,2))
+        self.y_value = ttk.Entry(xy_frame, width=ENTRY_WIDTH)
         self.y_value.insert(0, "0")
-        self.y_value.pack(fill='x', padx=0)
+        self.y_value.grid(row=1, column=1, sticky="w", padx=(0,2), pady=(8,2))
+        self.y_direction = tk.StringVar(value='G')
+        ttk.Radiobutton(xy_frame, text="Dół", variable=self.y_direction, value='D').grid(row=1, column=2, sticky="w", padx=(8, 4))
+        ttk.Radiobutton(xy_frame, text="Góra", variable=self.y_direction, value='G').grid(row=1, column=3, sticky="w", padx=(0,2))
 
-        # === Ramka Przycisków ===
-        # Ta ramka znajduje się na samym dole głównej ramki, oddzielona pustą przestrzenią (pady)
+        # Przyciski
         button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill='x', pady=(20, 0)) # Większy odstęp na górze, brak na dole
-        
+        button_frame.pack(fill='x', side='bottom', pady=(10, 4))
         ttk.Button(button_frame, text="Przesuń", command=self.ok).pack(side='left', expand=True, padx=5)
         ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side='right', expand=True, padx=5)
 
-    def ok(self):
+    def ok(self, event=None):
         try:
             x_mm = float(self.x_value.get().replace(',', '.'))
             y_mm = float(self.y_value.get().replace(',', '.'))
-            
             if x_mm < 0 or y_mm < 0:
                  raise ValueError("Wartości przesunięcia muszą być nieujemne.")
-
             self.result = {
                 'x_dir': self.x_direction.get(),
                 'y_dir': self.y_direction.get(),
@@ -784,9 +720,13 @@ class ShiftContentDialog(tk.Toplevel):
         except ValueError as e:
             messagebox.showerror("Błąd Wprowadzania", f"Nieprawidłowa wartość: {e}. Użyj cyfr, kropki lub przecinka.")
 
-    def cancel(self):
+    def cancel(self, event=None):
         self.result = None
         self.destroy()
+
+import tkinter as tk
+from tkinter import ttk, messagebox
+from PIL import Image
 
 class ImageImportSettingsDialog(tk.Toplevel):
     def __init__(self, parent, title, image_path):
@@ -795,10 +735,10 @@ class ImageImportSettingsDialog(tk.Toplevel):
         self.title(title)
         self.image_path = image_path
         self.result = None
-        
+
         self.image_pixel_width, self.image_pixel_height = 0, 0
         self.image_dpi = 96
-        
+
         try:
             img = Image.open(image_path)
             self.image_pixel_width, self.image_pixel_height = img.size
@@ -806,145 +746,117 @@ class ImageImportSettingsDialog(tk.Toplevel):
             self.image_dpi = dpi_info[0] if isinstance(dpi_info, tuple) else 96
             img.close()
         except Exception:
-            pass 
+            pass
 
-        # --- ZMIENNE KLASY ---
         self.scaling_mode = tk.StringVar(value="DOPASUJ")
         self.alignment_mode = tk.StringVar(value="SRODEK")
         self.scale_factor = tk.DoubleVar(value=100.0)
         self.page_orientation = tk.StringVar(value="PIONOWO")
-        
-        # --- TWORZENIE WIDŻETÓW (POZWALA NA WYLICZENIE WYSOKOŚCI) ---
+
         self.initial_focus = self.body()
-        self.buttonbox() 
+        self.buttonbox()
         self.update_scale_controls()
-        
-        # --- USTAWIENIE GEOMETRII I CENTROWANIE (POPRAWIONE) ---
-        
-        # 1. Wymuszenie rysowania i wylizenie rozmiaru
-        self.update_idletasks() 
-        
-        # 2. Używamy stałej szerokości, ale bierzemy wylaną wysokość
-        dialog_width = 450
-        dialog_height = self.winfo_height() # Używamy wysokości dopasowanej do zawartości
-        
-        # 3. Obliczanie centrowania
+
+        self.update_idletasks()
+
+        dialog_width = 360
+        dialog_height = self.winfo_height()
         parent_x, parent_y = parent.winfo_rootx(), parent.winfo_rooty()
         parent_width, parent_height = parent.winfo_width(), parent.winfo_height()
-        
         x = parent_x + parent_width // 2 - dialog_width // 2
         y = parent_y + parent_height // 2 - dialog_height // 2
-        
-        # 4. Zastosowanie geometrii
         self.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
         self.resizable(False, False)
         self.grab_set()
-        
-        # --- FINALIZACJA ---
-        if self.initial_focus: self.initial_focus.focus_set()
+
+        if self.initial_focus:
+            self.initial_focus.focus_set()
         self.wait_window(self)
 
     def body(self):
-        # ... (metoda body() bez zmian) ...
-        main_frame = tk.Frame(self, bg=BG_PRIMARY, padx=15, pady=15)
+        main_frame = ttk.Frame(self, padding="10")
         main_frame.pack(fill="both", expand=True)
 
         # Sekcja 1: Informacje o obrazie
-        info_frame = tk.LabelFrame(main_frame, text="Informacje o obrazie źródłowym", bg=BG_PRIMARY, fg=FG_TEXT, padx=10, pady=5)
-        info_frame.pack(fill='x', pady=(0, 10))
-        
-        tk.Label(info_frame, text=f"Wymiary: {self.image_pixel_width} x {self.image_pixel_height} px", anchor="w", bg=BG_PRIMARY, fg=FG_TEXT).pack(fill='x')
-        tk.Label(info_frame, text=f"DPI: {self.image_dpi}", anchor="w", bg=BG_PRIMARY, fg=FG_TEXT).pack(fill='x')
+        info_frame = ttk.LabelFrame(main_frame, text="Informacje o obrazie źródłowym", padding=(8, 4))
+        info_frame.pack(fill='x', pady=(0, 8))
+        ttk.Label(info_frame, text=f"Wymiary: {self.image_pixel_width} x {self.image_pixel_height} px", anchor="w").pack(fill='x')
+        ttk.Label(info_frame, text=f"DPI: {self.image_dpi}", anchor="w").pack(fill='x')
 
         # Sekcja 2: Orientacja strony A4
-        orient_frame = tk.LabelFrame(main_frame, text="Orientacja strony docelowej (A4)", bg=BG_PRIMARY, fg=FG_TEXT, padx=10, pady=5)
-        orient_frame.pack(fill='x', pady=(0, 10))
-        
-        tk.Radiobutton(orient_frame, text="Pionowo", variable=self.page_orientation, value="PIONOWO", bg=BG_PRIMARY, fg=FG_TEXT, selectcolor=BG_PRIMARY).pack(anchor="w")
-        tk.Radiobutton(orient_frame, text="Poziomo", variable=self.page_orientation, value="POZIOMO", bg=BG_PRIMARY, fg=FG_TEXT, selectcolor=BG_PRIMARY).pack(anchor="w")
+        orient_frame = ttk.LabelFrame(main_frame, text="Orientacja strony docelowej (A4)", padding=(8, 4))
+        orient_frame.pack(fill='x', pady=(0, 8))
+        ttk.Radiobutton(orient_frame, text="Pionowo", variable=self.page_orientation, value="PIONOWO").pack(anchor="w", pady=2)
+        ttk.Radiobutton(orient_frame, text="Poziomo", variable=self.page_orientation, value="POZIOMO").pack(anchor="w", pady=2)
 
         # Sekcja 3: Skalowanie
-        scale_frame = tk.LabelFrame(main_frame, text="Ustawienia Skalowania", bg=BG_PRIMARY, fg=FG_TEXT, padx=10, pady=5)
-        scale_frame.pack(fill='x', pady=(0, 10))
-        
+        scale_frame = ttk.LabelFrame(main_frame, text="Ustawienia skalowania", padding=(8, 4))
+        scale_frame.pack(fill='x', pady=(0, 8))
         options = [
             ("Dopasuj do strony A4", "DOPASUJ"),
-            ("Oryginalny rozmiar (100%)", "ORYGINALNY"), 
+            ("Oryginalny rozmiar (100%)", "ORYGINALNY"),
             ("Skala niestandardowa", "SKALA")
         ]
-        
         for text, value in options:
-            rb = tk.Radiobutton(scale_frame, text=text, variable=self.scaling_mode, value=value, 
-                                 command=self.update_scale_controls, bg=BG_PRIMARY, fg=FG_TEXT, selectcolor=BG_PRIMARY)
-            rb.pack(anchor="w")
+            rb = ttk.Radiobutton(
+                scale_frame, text=text, variable=self.scaling_mode, value=value,
+                command=self.update_scale_controls
+            )
+            rb.pack(anchor="w", pady=2)
 
-        self.scale_entry_frame = tk.Frame(scale_frame, bg=BG_PRIMARY)
-        self.scale_entry_frame.pack(fill='x', pady=5, padx=20)
-        tk.Label(self.scale_entry_frame, text="Skala (%):", bg=BG_PRIMARY, fg=FG_TEXT).pack(side=tk.LEFT)
-        self.scale_entry = tk.Entry(self.scale_entry_frame, textvariable=self.scale_factor, width=8, relief=tk.FLAT, bd=1)
+        self.scale_entry_frame = ttk.Frame(scale_frame)
+        self.scale_entry_frame.pack(fill='x', pady=4, padx=12)
+        ttk.Label(self.scale_entry_frame, text="Skala [%]:").pack(side=tk.LEFT)
+        self.scale_entry = ttk.Entry(self.scale_entry_frame, textvariable=self.scale_factor, width=6)
         self.scale_entry.pack(side=tk.LEFT, padx=5)
 
         # Sekcja 4: Wyrównanie
-        align_frame = tk.LabelFrame(main_frame, text="Wyrównanie na stronie", bg=BG_PRIMARY, fg=FG_TEXT, padx=10, pady=5)
+        align_frame = ttk.LabelFrame(main_frame, text="Wyrównanie na stronie", padding=(8, 4))
         align_frame.pack(fill='x')
-
         align_options = [
             ("Środek strony", "SRODEK"),
             ("Góra", "GORA"),
             ("Dół", "DOL")
         ]
-        
         for text, value in align_options:
-            mapped_value = value if value in ("SRODEK", "GORA") else "DOL" 
-            rb = tk.Radiobutton(align_frame, text=text, variable=self.alignment_mode, value=mapped_value, bg=BG_PRIMARY, fg=FG_TEXT, selectcolor=BG_PRIMARY)
-            rb.pack(anchor="w")
-            
+            ttk.Radiobutton(align_frame, text=text, variable=self.alignment_mode, value=value).pack(anchor="w", pady=2)
+
         return self.scale_entry
-    
+
     def update_scale_controls(self):
-        # ... (metoda update_scale_controls() bez zmian) ...
         if self.scaling_mode.get() == "SKALA":
             self.scale_entry.config(state=tk.NORMAL)
         else:
             self.scale_entry.config(state=tk.DISABLED)
 
     def buttonbox(self):
-        # NOWA RAMKA dla przycisków, używamy pakowania na środek
-        box = tk.Frame(self, bg=BG_PRIMARY)
-        
-        # Ramka wewnątrz, aby wyśrodkować przyciski w poziomie
-        center_frame = tk.Frame(box, bg=BG_PRIMARY)
-        center_frame.pack(expand=True, padx=5, pady=5) # Pakowanie ramki centującej na środku ramki "box"
-        
-        # Przycisk "Importuj" (pakowany pierwszy po lewej, by był pierwszy)
-        tk.Button(center_frame, text="Importuj", width=12, command=self.ok, default=tk.ACTIVE, 
-                  bg=BG_BUTTON_DEFAULT, fg=FG_TEXT, relief=tk.FLAT, bd=0).pack(
-                      side=tk.LEFT, padx=5)
-        
-        # Przycisk "Anuluj" (pakowany drugi po lewej)
-        tk.Button(center_frame, text="Anuluj", width=12, command=self.cancel, 
-                  bg=BG_BUTTON_DEFAULT, fg=FG_TEXT, relief=tk.FLAT, bd=0).pack(
-                      side=tk.LEFT, padx=5)
-        
-        # Pakowanie ramki przycisków na dole okna dialogowego
-        box.pack(fill=tk.X, pady=(0, 5)) 
+        # Wyśrodkowane przyciski z większym odstępem między nimi i mniejszym od góry
+        box = ttk.Frame(self)
+        box.pack(fill=tk.X, pady=(8, 10))
+        center = ttk.Frame(box)
+        center.pack(anchor="center")
+        ttk.Button(center, text="Importuj", width=12, command=self.ok).pack(side=tk.LEFT, padx=20)
+        ttk.Button(center, text="Anuluj", width=12, command=self.cancel).pack(side=tk.LEFT, padx=20)
         self.bind("<Return>", self.ok)
         self.bind("<Escape>", lambda e: self.cancel())
 
     def ok(self, event=None):
-        # ... (metoda ok() bez zmian) ...
         if self.scaling_mode.get() == "SKALA":
-             try:
-                 scale_val = self.scale_factor.get()
-                 if not (0.1 <= scale_val <= 1000):
-                     messagebox.showerror("Błąd", "Skala musi być wartością liczbową od 0.1 do 1000%.", parent=self)
-                     self.scale_entry.focus_set()
-                     return
-             except tk.TclError:
-                 messagebox.showerror("Błąd", "Wprowadź poprawną wartość liczbową skali.", parent=self)
-                 self.scale_entry.focus_set()
-                 return
-                 
+            try:
+                scale_val = self.scale_factor.get()
+                if not (0.1 <= scale_val <= 1000):
+                    messagebox.showerror(
+                        "Błąd", "Skala musi być wartością liczbową od 0.1 do 1000%.", parent=self
+                    )
+                    self.scale_entry.focus_set()
+                    return
+            except tk.TclError:
+                messagebox.showerror(
+                    "Błąd", "Wprowadź poprawną wartość liczbową skali.", parent=self
+                )
+                self.scale_entry.focus_set()
+                return
+
         self.result = {
             'scaling_mode': self.scaling_mode.get(),
             'scale_factor': self.scale_factor.get() / 100,
@@ -954,80 +866,90 @@ class ImageImportSettingsDialog(tk.Toplevel):
         }
         self.destroy()
 
-    def cancel(self):
+    def cancel(self, event=None):
         self.result = None
         self.destroy()
-
-
-
 # ====================================================================
 # KLASA: OKNO DIALOGOWE WYBORU ZAKRESU STRON (Bez zmian)
 # ====================================================================
 
+import tkinter as tk
+from tkinter import ttk, messagebox
+import re
+from typing import Optional, List
+
 class EnhancedPageRangeDialog(tk.Toplevel):
-    def __init__(self, parent, title, imported_doc: fitz.Document):
+    def __init__(self, parent, title, imported_doc):
         super().__init__(parent)
         self.transient(parent)
         self.title(title)
         self.imported_doc = imported_doc
-        
+
         try:
-             self.max_pages = len(imported_doc)
+            self.max_pages = len(imported_doc)
         except ValueError:
-             self.max_pages = 0
-             messagebox.showerror("Błąd", "Dokument PDF został zamknięty przed otwarciem dialogu.")
-             self.destroy()
-             self.result = None
-             return
-             
+            self.max_pages = 0
+            messagebox.showerror("Błąd", "Dokument PDF został zamknięty przed otwarciem dialogu.")
+            self.destroy()
+            self.result = None
+            return
+
         self.result = None
-        
-        # Stylizacja i geometria (skrócono dla czytelności)
-        self.configure(bg=BG_PRIMARY) 
-        dialog_width, dialog_height = 300, 150
+
+        dialog_width, dialog_height = 300, 155
         parent_x, parent_y = parent.winfo_rootx(), parent.winfo_rooty()
         parent_width, parent_height = parent.winfo_width(), parent.winfo_height()
         x = parent_x + parent_width // 2 - dialog_width // 2
         y = parent_y + parent_height // 2 - dialog_height // 2
         self.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
         self.resizable(False, False)
-        
         self.grab_set()
+
         self.initial_focus = self.body()
         self.buttonbox()
-        
+
         if self.initial_focus:
-             self.initial_focus.focus_set()
-             
+            self.initial_focus.focus_set()
+
         self.wait_window(self)
 
-
     def body(self):
-        main_frame = tk.Frame(self, bg=BG_PRIMARY)
-        main_frame.pack(padx=5, pady=5, fill="both", expand=True)
-        range_frame = tk.Frame(main_frame, bg=BG_PRIMARY)
-        range_frame.pack(fill='x', expand=True, pady=(2, 0)) 
-        
-        tk.Label(range_frame, text=f"Zakres stron do importu (1 - {self.max_pages}):", anchor="w", font=("Helvetica", 10, "bold"), bg=BG_PRIMARY).pack(fill='x', pady=(0, 2))
-        self.entry = tk.Entry(range_frame, relief=tk.FLAT, bd=2)
-        self.entry.pack(pady=2, fill='x')
-        tk.Label(range_frame, text="Format: 1, 3-5, 7", fg="gray", anchor="w", bg=BG_PRIMARY).pack(fill='x', pady=(2, 0))
-        button_frame = tk.Frame(range_frame, bg=BG_PRIMARY)
-        button_frame.pack(pady=(2, 0), fill='x') 
-        
-        tk.Button(button_frame, text="Wszystkie strony", 
-                  command=lambda: self.entry.delete(0, tk.END) or self.entry.insert(0, f"1-{self.max_pages}"), 
-                  bg=BG_BUTTON_DEFAULT, relief=tk.FLAT, bd=1).pack(padx=1, pady=1) 
-                  
-        return self.entry 
-    
+        main_frame = ttk.Frame(self, padding=(10, 10))
+        main_frame.pack(fill="both")
+
+        range_frame = ttk.LabelFrame(main_frame, text="Zakres stron do importu", padding=(10, 8))
+        range_frame.pack(fill='x', pady=(0, 2))
+
+        label = ttk.Label(
+            range_frame,
+            text=f"Podaj strony z zakresu [1 - {self.max_pages}]:",
+            anchor="w"
+        )
+        label.grid(row=0, column=0, sticky="w", pady=(0, 2))
+
+        self.entry = ttk.Entry(range_frame, width=18)
+        self.entry.insert(0, f"1-{self.max_pages}")
+        self.entry.grid(row=1, column=0, sticky="we", pady=(0, 0))
+
+        helper = ttk.Label(
+            range_frame,
+            text="Format: 1, 3-5, 7",
+            foreground="gray"
+        )
+        helper.grid(row=2, column=0, sticky="w", pady=(2, 0))
+
+        range_frame.columnconfigure(0, weight=1)
+
+        return self.entry
+
     def buttonbox(self):
-        box = tk.Frame(self, bg=BG_PRIMARY)
-        tk.Button(box, text="Importuj", width=12, command=self.ok, default=tk.ACTIVE, 
-                  bg=BG_BUTTON_DEFAULT, fg=FG_TEXT, relief=tk.FLAT, bd=0).pack(side=tk.LEFT, padx=5, pady=5)
-        tk.Button(box, text="Anuluj", width=12, command=self.cancel, 
-                  bg=BG_BUTTON_DEFAULT, fg=FG_TEXT, relief=tk.FLAT, bd=1).pack(side=tk.LEFT, padx=5, pady=5)
-        box.pack(pady=(0, 5)) 
+        # Przycisk importuj/anuluj – tuż pod ramką, bez odstępu od dołu
+        box = ttk.Frame(self)
+        box.pack(fill=tk.X, pady=(4, 0))
+        center = ttk.Frame(box)
+        center.pack(anchor="center")
+        ttk.Button(center, text="Importuj", width=12, command=self.ok).pack(side=tk.LEFT, padx=14)
+        ttk.Button(center, text="Anuluj", width=12, command=self.cancel).pack(side=tk.LEFT, padx=14)
         self.bind("<Return>", self.ok)
         self.bind("<Escape>", lambda e: self.cancel())
 
@@ -1037,45 +959,47 @@ class EnhancedPageRangeDialog(tk.Toplevel):
             messagebox.showerror("Błąd", "Wprowadź zakres stron.", parent=self)
             self.entry.focus_set()
             return
-            
+
         page_indices = self._parse_range(raw_range)
         if page_indices is None:
             messagebox.showerror("Błąd formatu", "Niepoprawny format zakresu. Użyj np. 1, 3-5, 7.", parent=self)
             self.entry.focus_set()
             return
-            
+
         self.result = page_indices
         self.destroy()
 
-    def cancel(self):
+    def cancel(self, event=None):
         self.result = None
         self.destroy()
-        
+
     def _parse_range(self, raw_range: str) -> Optional[List[int]]:
         selected_pages = set()
         if not re.fullmatch(r'[\d,\-\s]+', raw_range):
-             return None
+            return None
         parts = raw_range.split(',')
         for part in parts:
             part = part.strip()
-            if not part: continue
+            if not part:
+                continue
             if '-' in part:
                 try:
                     start, end = map(int, part.split('-'))
                     start = max(1, start)
                     end = min(self.max_pages, end)
-                    if start > end: continue
+                    if start > end:
+                        continue
                     for page_num in range(start, end + 1):
                         selected_pages.add(page_num - 1)
                 except ValueError:
-                    return None 
+                    return None
             else:
                 try:
                     page_num = int(part)
                     if 1 <= page_num <= self.max_pages:
                         selected_pages.add(page_num - 1)
                 except ValueError:
-                    return None 
+                    return None
         return sorted(list(selected_pages))
 
 # ====================================================================
@@ -1166,7 +1090,8 @@ class SelectablePDFViewer:
             if i not in selected_indices:
                 writer.add_page(page)
                 continue
-            x0, y0, x1, y1 = [float(v) for v in page.mediabox]
+            orig_mediabox = RectangleObject([float(v) for v in page.mediabox])
+            x0, y0, x1, y1 = [float(v) for v in orig_mediabox]
             new_x0 = x0 + mm2pt(left_mm)
             new_y0 = y0 + mm2pt(bottom_mm)
             new_x1 = x1 - mm2pt(right_mm)
@@ -1176,21 +1101,62 @@ class SelectablePDFViewer:
                 continue
             new_rect = RectangleObject([new_x0, new_y0, new_x1, new_y1])
 
+            # Ustaw tylko cropbox, trimbox, artbox - mediabox zostaje oryginalny!
+            page.cropbox = new_rect
+            page.trimbox = new_rect
+            page.artbox = new_rect
+            # Przywracamy mediabox (nie zmieniamy!)
+            page.mediabox = orig_mediabox
+
+            # opcjonalnie: przesuwanie zawartości strony (zostawiam bez zmian)
             if reposition:
-                page.cropbox = new_rect
                 dx = mm2pt(offset_x_mm) if pos_mode == "custom" else 0
                 dy = mm2pt(offset_y_mm) if pos_mode == "custom" else 0
                 if dx != 0 or dy != 0:
                     transform = Transformation().translate(tx=dx, ty=dy)
                     page.add_transformation(transform)
-            else:
-                page.cropbox = new_rect
-                page.mediabox = new_rect
+
             writer.add_page(page)
         out = io.BytesIO()
         writer.write(out)
         out.seek(0)
         return out.read()
+        
+    import fitz  # PyMuPDF
+
+    def _mask_crop_pages(self, pdf_bytes, selected_indices, top_mm, bottom_mm, left_mm, right_mm):
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        MM_TO_PT = 72 / 25.4
+        for i in selected_indices:
+            page = doc[i]
+            rect = page.rect
+
+            # Wylicz marginesy w punktach
+            left_pt   = left_mm * MM_TO_PT
+            right_pt  = right_mm * MM_TO_PT
+            top_pt    = top_mm * MM_TO_PT
+            bottom_pt = bottom_mm * MM_TO_PT
+
+            # Lewy margines
+            if left_pt > 0:
+                mask_rect = fitz.Rect(rect.x0, rect.y0, rect.x0 + left_pt, rect.y1)
+                page.draw_rect(mask_rect, color=(1,1,1), fill=(1,1,1), overlay=True)
+            # Prawy margines
+            if right_pt > 0:
+                mask_rect = fitz.Rect(rect.x1 - right_pt, rect.y0, rect.x1, rect.y1)
+                page.draw_rect(mask_rect, color=(1,1,1), fill=(1,1,1), overlay=True)
+            # Górny margines
+            if top_pt > 0:
+                mask_rect = fitz.Rect(rect.x0, rect.y1 - top_pt, rect.x1, rect.y1)
+                page.draw_rect(mask_rect, color=(1,1,1), fill=(1,1,1), overlay=True)
+            # Dolny margines
+            if bottom_pt > 0:
+                mask_rect = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y0 + bottom_pt)
+                page.draw_rect(mask_rect, color=(1,1,1), fill=(1,1,1), overlay=True)
+
+        output_bytes = doc.write()
+        doc.close()
+        return output_bytes
 
     def _resize_scale(self, pdf_bytes, selected_indices, width_mm, height_mm):
         reader = PdfReader(io.BytesIO(pdf_bytes))
@@ -1268,16 +1234,12 @@ class SelectablePDFViewer:
 
         try:
             if crop_mode == "crop_only" and resize_mode == "noresize":
-                new_pdf_bytes = self._crop_pages(
+                new_pdf_bytes = self._mask_crop_pages(
                     pdf_bytes_val, indices,
                     result["crop_top_mm"], result["crop_bottom_mm"],
                     result["crop_left_mm"], result["crop_right_mm"],
-                    reposition=True,
-                    pos_mode=result.get("position_mode") or "center",
-                    offset_x_mm=result.get("offset_x_mm") or 0,
-                    offset_y_mm=result.get("offset_y_mm") or 0,
                 )
-                msg = "Zastosowano przycięcie (bez zmiany rozmiaru arkusza)."
+                msg = "Dodano białe maski zamiast przycinania stron."
             elif crop_mode == "crop_resize" and resize_mode == "noresize":
                 new_pdf_bytes = self._crop_pages(
                     pdf_bytes_val, indices,
@@ -1304,7 +1266,7 @@ class SelectablePDFViewer:
             else:
                 self._update_status("Nie wybrano żadnej operacji do wykonania.")
                 return
-            self._save_state() 
+            self._save_state_to_undo() 
             self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", new_pdf_bytes)
             self._update_status(msg)
@@ -1352,7 +1314,7 @@ class SelectablePDFViewer:
         MM_PT = self.MM_TO_POINTS 
 
         try:
-            self._save_state() 
+            self._save_state_to_undo() 
             
             # 2. Pobieranie parametrów
             start_number = settings['start_num']
@@ -1581,7 +1543,7 @@ class SelectablePDFViewer:
                     
             # 3. Finalizacja
             if modified_count > 0:
-                self._save_state()
+                self._save_state_to_undo()
                 self._reconfigure_grid() 
                 self._update_status(f"Usunięto numery stron na {modified_count} stronach, używając marginesów: G={top_mm:.1f}mm, D={bottom_mm:.1f}mm.")
             else:
@@ -1653,7 +1615,7 @@ class SelectablePDFViewer:
             self.pdf_document = fitz.open("pdf", new_pdf_bytes)
             
             # 3. Zapisanie stanu i odświeżenie GUI
-            self._save_state() # Zapisuje nowy stan do historii
+            self._save_state_to_undo() # Zapisuje nowy stan do historii
             self._reconfigure_grid() 
             self._update_status(f"Przesunięto zawartość na {len(pages_to_shift)} stronach o {result['x_mm']} mm (X) i {result['y_mm']} mm (Y) za pomocą PyPDF.")
             
@@ -1667,7 +1629,7 @@ class SelectablePDFViewer:
             return
 
         # 1. Zapisz obecny stan do historii przed zmianą
-        self._save_state() 
+        self._save_state_to_undo() 
         
         try:
             doc = self.pdf_document
@@ -1702,8 +1664,7 @@ class SelectablePDFViewer:
             
         except Exception as e:
             messagebox.showerror("Błąd", f"Wystąpił błąd podczas odwracania stron: {e}")
-            # Cofnij do stanu sprzed próby odwrócenia stron
-            self.undo_last_action()
+            # W przypadku błędu użytkownik może użyć przycisku Cofnij aby przywrócić stan
     
     def _apply_selection_by_indices(self, indices_to_select):
         """Ogólna metoda do zaznaczania stron na podstawie listy indeksów."""
@@ -1851,11 +1812,12 @@ class SelectablePDFViewer:
         self.target_num_cols = 4     
         self.min_cols = 2            
         self.max_cols = 10           
-        self.MIN_WINDOW_WIDTH = 950    
+        self.MIN_WINDOW_WIDTH = 1000    
         self.render_dpi_factor = 0.833 
         
-        self.history: List[bytes] = []
-        self.max_history_size = 10 
+        self.undo_stack: List[bytes] = []
+        self.redo_stack: List[bytes] = []
+        self.max_stack_size = 50
         
         self._set_initial_geometry() 
         self._load_icons_or_fallback(size=28) 
@@ -1930,7 +1892,8 @@ class SelectablePDFViewer:
         self.image_import_button = create_tool_button(tools_frame, 'image_import', self.import_image_to_new_page, self.BG_IMPORT, GRAY_FG, state=tk.DISABLED, padx=(0, PADX_SMALL)) 
         self.export_image_button = create_tool_button(tools_frame, 'export_image', self.export_selected_pages_to_image, self.BG_EXPORT, GRAY_FG, state=tk.DISABLED, padx=(0, PADX_LARGE))
         
-        self.undo_button = create_tool_button(tools_frame, 'undo', self.undo_last_action, self.BG_UNDO, GRAY_FG, state=tk.DISABLED, padx=(0, PADX_LARGE)) 
+        self.undo_button = create_tool_button(tools_frame, 'undo', self.undo, self.BG_UNDO, GRAY_FG, state=tk.DISABLED, padx=(0, PADX_SMALL))
+        self.redo_button = create_tool_button(tools_frame, 'redo', self.redo, self.BG_UNDO, GRAY_FG, state=tk.DISABLED, padx=(0, PADX_LARGE))
         
         # 2. PRZYCISKI EDYCJI STRON
         self.delete_button = create_tool_button(tools_frame, 'delete', self.delete_selected_pages, self.BG_DELETE, GRAY_FG, state=tk.DISABLED, padx=(0, PADX_SMALL)) 
@@ -1962,7 +1925,8 @@ class SelectablePDFViewer:
         Tooltip(self.image_import_button, "Importuj strony z pliku obrazu.\n" "Strony zostaną wstawione po bieżącej, a przy braku zazanczenia - na końcu pliku.")
         Tooltip(self.export_image_button, "Eksportuj strony do plików PNG.\n" "Wymaga zaznaczenia przynajniej jednej strony.")
         
-        Tooltip(self.undo_button, "Cofnij ostanią zmianę.\n" "Obsługuje 10 kroków wstecz.")
+        Tooltip(self.undo_button, "Cofnij ostatnią zmianę.\n" "Obsługuje do 50 kroków wstecz.")
+        Tooltip(self.redo_button, "Ponów cofniętą zmianę.\n" "Obsługuje do 50 kroków do przodu.")
         
         Tooltip(self.delete_button, "Usuń zaznaczone strony.\n" "Wymaga zaznaczenia przynajniej jednej strony.")
         Tooltip(self.cut_button, "Wytnij zaznaczone strony.\n" "Wymaga zaznaczenia przynajniej jednej strony.")
@@ -2024,7 +1988,8 @@ class SelectablePDFViewer:
 
     # --- Metody obsługi GUI i zdarzeń (Bez zmian) ---
     def on_close_window(self):
-        if self.pdf_document is not None and len(self.history) > 1:
+        # Sprawdź czy są niezapisane zmiany (niepusty stos undo)
+        if self.pdf_document is not None and len(self.undo_stack) > 0:
             response = messagebox.askyesnocancel(
                 "Niezapisane zmiany",
                 "Czy chcesz zapisać zmiany w dokumencie przed zamknięciem programu?"
@@ -2033,7 +1998,7 @@ class SelectablePDFViewer:
                 return
             elif response is True: 
                 self.save_document() 
-                if len(self.history) > 1:
+                if len(self.undo_stack) > 0:
                     return 
                 self.master.quit() 
             else: 
@@ -2056,6 +2021,7 @@ class SelectablePDFViewer:
             'open': ('📂', "open.png"),
             'save': ('💾', "save.png"),
             'undo': ('↩️', "undo.png"),
+            'redo': ('↪️', "redo.png"),
             'delete': ('🗑️', "delete.png"),
             'cut': ('✂️', "cut.png"),  
             'copy': ('📋', "copy.png"),  
@@ -2207,7 +2173,8 @@ class SelectablePDFViewer:
         self._populate_edit_menu(self.context_menu)
     
     def _populate_edit_menu(self, menu_obj):
-        menu_obj.add_command(label="Cofnij", command=self.undo_last_action, accelerator="Ctrl+Z")
+        menu_obj.add_command(label="Cofnij", command=self.undo, accelerator="Ctrl+Z")
+        menu_obj.add_command(label="Ponów", command=self.redo, accelerator="Ctrl+Y")
         menu_obj.add_separator()
         menu_obj.add_command(label="Usuń zaznaczone", command=self.delete_selected_pages, accelerator="Delete/Backspace")
         menu_obj.add_command(label="Wytnij zaznaczone", command=self.cut_selected_pages, accelerator="Ctrl+X")
@@ -2243,8 +2210,9 @@ class SelectablePDFViewer:
     def _setup_key_bindings(self):
         self.master.bind('<Control-x>', lambda e: self.cut_selected_pages())
         self.master.bind('<Control-c>', lambda e: self.copy_selected_pages())
-        self.master.bind('<Control-z>', lambda e: self.undo_last_action())
-        self.master.bind('<Delete>', lambda e: self.delete_selected_pages())  
+        self.master.bind('<Control-z>', lambda e: self.undo())
+        self.master.bind('<Control-y>', lambda e: self.redo())
+        self.master.bind('<Delete>', lambda e: self.delete_selected_pages())
         self.master.bind('<BackSpace>', lambda e: self.delete_selected_pages())
         self.master.bind('<Control-a>', lambda e: self._select_all())
         self.master.bind('<F4>', lambda e: self._select_all())
@@ -2373,20 +2341,23 @@ class SelectablePDFViewer:
         doc_loaded = self.pdf_document is not None
         has_selection = len(self.selected_pages) > 0
         has_single_selection = len(self.selected_pages) == 1
-        has_history_to_undo = len(self.history) > 1
+        has_undo = len(self.undo_stack) > 0
+        has_redo = len(self.redo_stack) > 0
         has_clipboard_content = self.clipboard is not None
         
         delete_state = tk.NORMAL if doc_loaded and has_selection else tk.DISABLED
         insert_state = tk.NORMAL if doc_loaded and has_single_selection else tk.DISABLED
         paste_enable_state = tk.NORMAL if has_clipboard_content and doc_loaded and (len(self.selected_pages) <= 1) else tk.DISABLED 
         rotate_state = tk.NORMAL if doc_loaded and has_selection else tk.DISABLED
-        undo_state = tk.NORMAL if has_history_to_undo else tk.DISABLED
+        undo_state = tk.NORMAL if has_undo else tk.DISABLED
+        redo_state = tk.NORMAL if has_redo else tk.DISABLED
         import_state = tk.NORMAL if doc_loaded else tk.DISABLED 
         select_state = tk.NORMAL if doc_loaded else tk.DISABLED
         reverse_state = tk.NORMAL if doc_loaded else tk.DISABLED
          
         # 1. Aktualizacja przycisków w panelu głównym
         self.undo_button.config(state=undo_state)
+        self.redo_button.config(state=redo_state)
         self.delete_button.config(state=delete_state)
         self.cut_button.config(state=delete_state)
         self.copy_button.config(state=delete_state)
@@ -2427,7 +2398,8 @@ class SelectablePDFViewer:
             "Eksportuj strony do PDF...": delete_state,
             "Eksportuj strony jako obrazy PNG...": delete_state,            
             "Cofnij": undo_state,
-            "Wszystkie strony": select_state, 
+            "Ponów": redo_state,
+            "Wszystkie strony": select_state,
             "Strony nieparzyste": select_state,
             "Strony parzyste": select_state,
             "Strony pionowe": select_state,
@@ -2471,12 +2443,13 @@ class SelectablePDFViewer:
             self.pdf_document = fitz.open(filepath)
             self.selected_pages = set()
             self.tk_images = {}
-            self.history.clear()  
+            self.undo_stack.clear()
+            self.redo_stack.clear()
             self.clipboard = None
             self.pages_in_clipboard_count = 0
             self.active_page_index = 0
             self.thumb_frames.clear()
-            self._save_state()
+            self._save_state_to_undo()
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
             self.target_num_cols = 4  
@@ -2512,7 +2485,7 @@ class SelectablePDFViewer:
             imported_doc = fitz.open(import_path)
             max_pages = len(imported_doc)
             self.master.update_idletasks() 
-            dialog = EnhancedPageRangeDialog(self.master, "Wybór stron do importu", imported_doc)
+            dialog = EnhancedPageRangeDialog(self.master, "Ustawienia importu PDF", imported_doc)
             selected_indices = dialog.result 
             if selected_indices is None or not selected_indices:
                 self._update_status("Anulowano importowanie lub nie wybrano stron.")
@@ -2526,7 +2499,7 @@ class SelectablePDFViewer:
             else:
                  insert_index = len(self.pdf_document)
                  
-            self._save_state()
+            self._save_state_to_undo()
             num_inserted = len(selected_indices)
             temp_doc_for_insert = fitz.open()
             for page_index_to_import in selected_indices:
@@ -2671,7 +2644,7 @@ class SelectablePDFViewer:
                 insert_index = len(self.pdf_document)
             
             # Zapis stanu przed modyfikacją głównego dokumentu
-            self._save_state()
+            self._save_state_to_undo()
             
             # *** KLUCZOWA ZMIANA: Wstawienie tymczasowego dokumentu do głównego ***
             # Wykorzystujemy fitz.Document.insert_pdf() w taki sam sposób jak w Twojej działającej funkcji:
@@ -2709,15 +2682,19 @@ class SelectablePDFViewer:
     def _update_status(self, message):
         self.status_bar.config(text=message, fg="black")
             
-    def _save_state(self):
+    def _save_state_to_undo(self):
+        """Zapisuje bieżący stan dokumentu na stosie undo i czyści stos redo."""
         if self.pdf_document:
             buffer = self.pdf_document.write()
-            self.history.append(buffer)
-            if len(self.history) > self.max_history_size:
-                self.history.pop(0)
+            self.undo_stack.append(buffer)
+            if len(self.undo_stack) > self.max_stack_size:
+                self.undo_stack.pop(0)
+            # Każda nowa modyfikacja czyści stos redo
+            self.redo_stack.clear()
             self.update_tool_button_states()
         else:
-            self.history.clear()
+            self.undo_stack.clear()
+            self.redo_stack.clear()
             self.update_tool_button_states()
             
     def _get_page_bytes(self, page_indices: Set[int]) -> bytes:
@@ -2747,7 +2724,7 @@ class SelectablePDFViewer:
             self._update_status("BŁĄD: Zaznacz strony do wycięcia.")
             return
         try:
-            self._save_state()
+            self._save_state_to_undo()
             self.clipboard = self._get_page_bytes(self.selected_pages)
             self.pages_in_clipboard_count = len(self.selected_pages)
             pages_to_delete = sorted(list(self.selected_pages), reverse=True)
@@ -2791,7 +2768,7 @@ class SelectablePDFViewer:
 
     def _perform_paste(self, target_index: int):
         try:
-            self._save_state()
+            self._save_state_to_undo()
             temp_doc = fitz.open("pdf", self.clipboard)
             self.pdf_document.insert_pdf(temp_doc, start_at=target_index)
             num_inserted = len(temp_doc)
@@ -2816,7 +2793,7 @@ class SelectablePDFViewer:
         deleted_count = 0
         try:
             if save_state:
-                self._save_state()
+                self._save_state_to_undo()
             for page_index in pages_to_delete:
                 self.pdf_document.delete_page(page_index)
                 deleted_count += 1
@@ -2856,17 +2833,25 @@ class SelectablePDFViewer:
         except Exception as e:
             self._update_status(f"BŁĄD Eksportu: Nie udało się zapisać nowego pliku: {e}")
 
-    def undo_last_action(self):
-        if len(self.history) < 2:
+    def undo(self):
+        """Cofnij ostatnią operację - przywraca stan ze stosu undo."""
+        if len(self.undo_stack) == 0:
             self._update_status("Brak operacji do cofnięcia!")
-            self.update_tool_button_states()
             return
 
-        self.history.pop()  
-        previous_state_bytes = self.history[-1]  
+        # Zapisz bieżący stan na stos redo
+        if self.pdf_document:
+            current_state = self.pdf_document.write()
+            self.redo_stack.append(current_state)
+            if len(self.redo_stack) > self.max_stack_size:
+                self.redo_stack.pop(0)
+
+        # Pobierz poprzedni stan ze stosu undo
+        previous_state_bytes = self.undo_stack.pop()
         
         try:
-            if self.pdf_document: self.pdf_document.close()
+            if self.pdf_document: 
+                self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", previous_state_bytes)
             self.selected_pages.clear()
             self.tk_images.clear()
@@ -2882,6 +2867,43 @@ class SelectablePDFViewer:
         except Exception as e:
             self._update_status(f"BŁĄD: Nie udało się cofnąć operacji: {e}")
             self.pdf_document = None
+            self.update_tool_button_states()
+            
+    def redo(self):
+        """Ponów cofniętą operację - przywraca stan ze stosu redo."""
+        if len(self.redo_stack) == 0:
+            self._update_status("Brak operacji do ponowienia!")
+            return
+
+        # Zapisz bieżący stan na stos undo
+        if self.pdf_document:
+            current_state = self.pdf_document.write()
+            self.undo_stack.append(current_state)
+            if len(self.undo_stack) > self.max_stack_size:
+                self.undo_stack.pop(0)
+
+        # Pobierz następny stan ze stosu redo
+        next_state_bytes = self.redo_stack.pop()
+        
+        try:
+            if self.pdf_document:
+                self.pdf_document.close()
+            self.pdf_document = fitz.open("pdf", next_state_bytes)
+            self.selected_pages.clear()
+            self.tk_images.clear()
+            self.thumb_frames.clear()
+            for widget in list(self.scrollable_frame.winfo_children()):
+                widget.destroy()
+
+            self.active_page_index = min(self.active_page_index, len(self.pdf_document) - 1)
+            self._reconfigure_grid()
+            self.update_tool_button_states()
+            self.update_focus_display()
+            self._update_status("Ponowiono operację.")
+        except Exception as e:
+            self._update_status(f"BŁĄD: Nie udało się ponowić operacji: {e}")
+            self.pdf_document = None
+            self.update_tool_button_states()
             
     def save_document(self):
         if not self.pdf_document: return
@@ -2896,10 +2918,10 @@ class SelectablePDFViewer:
         try:
             self.pdf_document.save(filepath, garbage=4, clean=True, pretty=True)  
             self._update_status(f"Dokument pomyślnie zapisany jako: {filepath}")
-            if self.history:
-                 current_state = self.history[-1]
-                 self.history = [current_state]
-                 self.update_tool_button_states() 
+            # Po zapisaniu czyścimy stosy undo/redo
+            self.undo_stack.clear()
+            self.redo_stack.clear()
+            self.update_tool_button_states() 
         except Exception as e:
             self._update_status(f"BŁĄD: Nie udało się zapisać pliku: {e}")
             
@@ -2909,7 +2931,7 @@ class SelectablePDFViewer:
             return
         pages_to_rotate = sorted(list(self.selected_pages))
         try:
-            self._save_state()
+            self._save_state_to_undo()
             rotated_count = 0
             for page_index in pages_to_rotate:
                 page = self.pdf_document.load_page(page_index)
@@ -2953,7 +2975,7 @@ class SelectablePDFViewer:
               target_page = page_index + 1
               
         try:
-            self._save_state()
+            self._save_state_to_undo()
             self.pdf_document.insert_page(
                 pno=target_page,  
                 width=width,  
