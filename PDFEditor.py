@@ -28,7 +28,7 @@ FOCUS_HIGHLIGHT_WIDTH = 2        # Szerokość ramki fokusu (stała)
 
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
-PROGRAM_VERSION = "3.6.0"
+PROGRAM_VERSION = "4.1.1"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
 # === STAŁE DLA A4 (w punktach PDF i mm) ===
@@ -1574,7 +1574,7 @@ class SelectablePDFViewer:
         (self.selected_pages) oraz poprawnej logiki centrowania ('srodek').
         """
         if not self.pdf_document:
-            self._update_status("Błąd: Musisz najpierw załadować plik PDF.")
+            self._update_status("Musisz najpierw załadować plik PDF.")
             return
 
         # POPRAWKA: Sprawdzamy i używamy atrybutu self.selected_pages
@@ -1782,6 +1782,8 @@ class SelectablePDFViewer:
 
         try:
             pages_to_process = sorted(list(self.selected_pages))
+            if pages_to_process:     # Zapisz stan tylko jeśli są strony do modyfikacji
+                self._save_state_to_undo()
             modified_count = 0
             
             for page_index in pages_to_process:
@@ -1825,7 +1827,7 @@ class SelectablePDFViewer:
                     
             # 3. Finalizacja
             if modified_count > 0:
-                self._save_state_to_undo()
+          #      self._save_state_to_undo()
                 self._reconfigure_grid() 
                 self._update_status(f"Usunięto numery stron na {modified_count} stronach, używając marginesów: G={top_mm:.1f}mm, D={bottom_mm:.1f}mm.")
             else:
@@ -1833,7 +1835,91 @@ class SelectablePDFViewer:
                 
         except Exception as e:
             self._update_status(f"BŁĄD: Nie udało się usunąć numerów stron: {e}")
+            
+    def show_shortcuts_dialog(self):
+        shortcuts_left = [
+            ("Otwórz PDF", "Ctrl+O"),
+            ("Zapisz jako...", "Ctrl+S"),
+            ("Importuj PDF", "Ctrl+I"),
+            ("Importuj obraz", "Ctrl+Shift+I"),
+            ("Eksportuj PDF", "Ctrl+E"),
+            ("Eksportuj obrazy", "Ctrl+Shift+E"),
+            ("Cofnij", "Ctrl+Z"),
+            ("Ponów", "Ctrl+Y"),
+            ("Wytnij strony", "Ctrl+X"),
+            ("Kopiuj strony", "Ctrl+C"),
+            ("Wklej po", "Ctrl+V"),
+            ("Wklej przed", "Ctrl+Shift+V"),
+            ("Usuń strony", "Delete/Backspace"),
+            ("Duplikuj stronę", "Ctrl+D"),
+            ("Nowa strona po", "Ctrl+N"),
+            ("Nowa strona przed", "Ctrl+Shift+N"),
+        ]
+        shortcuts_right = [
+            ("Zaznacz wszystkie", "Ctrl+A / F4"),
+            ("Nieparzyste strony", "F1"),
+            ("Parzyste strony", "F2"),
+            ("Pionowe strony", "Ctrl+F1"),
+            ("Poziome strony", "Ctrl+F2"),
+            ("Obróć w lewo", "Ctrl+Shift+-"),
+            ("Obróć w prawo", "Ctrl+Shift++"),
+            ("Przesuń zawartość", "F5"),
+            ("Usuń numery", "F6"),
+            ("Wstaw numery", "F7"),
+            ("Przytnij/zmień rozmiar", "F8"),
+            ("Zoom +", "+"),
+            ("Zoom -", "-"),
+            ("Nawigacja", "Strzałki, Spacja, Esc"),
+        ]
 
+        import tkinter as tk
+        dialog = tk.Toplevel(self.master)
+        dialog.title("Skróty klawiszowe")
+        dialog.resizable(False, False)
+        dialog.transient(self.master)
+        width, height = 650, 490
+        x = self.master.winfo_x() + (self.master.winfo_width() - width) // 2
+        y = self.master.winfo_y() + (self.master.winfo_height() - height) // 2
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
+
+        bg = "white"
+        grid_color = "#e3e3e3"
+        table = tk.Frame(dialog, bg=bg, bd=1, relief="solid", highlightbackground=grid_color, highlightthickness=1)
+        table.pack(padx=24, pady=24, fill="both", expand=False)
+
+        max_rows = max(len(shortcuts_left), len(shortcuts_right))
+        for i in range(max_rows):
+            row_idx = i * 2
+            # Lewa kolumna
+            if i < len(shortcuts_left):
+                op, key = shortcuts_left[i]
+                l_op = tk.Label(table, text=op, bg=bg, anchor="w", font=("Arial", 10))
+                l_key = tk.Label(table, text=key, bg=bg, anchor="e", font=("Arial", 10, "bold"), fg="#234")
+                l_op.grid(row=row_idx, column=0, sticky="ew", padx=(10, 6), pady=(2,2))
+                l_key.grid(row=row_idx, column=1, sticky="ew", padx=(2, 20), pady=(2,2))
+            else:
+                tk.Label(table, text="", bg=bg).grid(row=row_idx, column=0)
+                tk.Label(table, text="", bg=bg).grid(row=row_idx, column=1)
+            # Prawa kolumna
+            if i < len(shortcuts_right):
+                op, key = shortcuts_right[i]
+                r_op = tk.Label(table, text=op, bg=bg, anchor="w", font=("Arial", 10))
+                r_key = tk.Label(table, text=key, bg=bg, anchor="e", font=("Arial", 10, "bold"), fg="#234")
+                r_op.grid(row=row_idx, column=2, sticky="ew", padx=(20, 6), pady=(2,2))
+                r_key.grid(row=row_idx, column=3, sticky="ew", padx=(2, 10), pady=(2,2))
+            else:
+                tk.Label(table, text="", bg=bg).grid(row=row_idx, column=2)
+                tk.Label(table, text="", bg=bg).grid(row=row_idx, column=3)
+            # Linia pozioma pod każdym wierszem (poza ostatnim)
+            if i < max_rows-1:
+                for col in range(4):
+                    frame = tk.Frame(table, bg=grid_color, height=1)
+                    frame.grid(row=row_idx+1, column=col, sticky="ewns")
+        for col in range(4):
+            table.grid_columnconfigure(col, weight=1)
+        dialog.bind('<Escape>', lambda e: dialog.destroy())
+        dialog.focus_force()
+        
     def shift_page_content(self):
         """
         Otwiera okno dialogowe i przesuwa zawartość zaznaczonych stron,
@@ -2009,7 +2095,7 @@ class SelectablePDFViewer:
             if page.rect.width >= page.rect.height:
                 indices.append(i)
         self._apply_selection_by_indices(indices)
-    
+
     def export_selected_pages_to_image(self):
         """Eksportuje wybrane strony do plików PNG o wysokiej rozdzielczości."""
         
@@ -2094,7 +2180,7 @@ class SelectablePDFViewer:
         self.target_num_cols = 4     
         self.min_cols = 2            
         self.max_cols = 10           
-        self.MIN_WINDOW_WIDTH = 1000    
+        self.MIN_WINDOW_WIDTH = 997
         self.render_dpi_factor = 0.833 
         
         self.undo_stack: List[bytes] = []
@@ -2274,7 +2360,8 @@ class SelectablePDFViewer:
         if self.pdf_document is not None and len(self.undo_stack) > 0:
             response = messagebox.askyesnocancel(
                 "Niezapisane zmiany",
-                "Czy chcesz zapisać zmiany w dokumencie przed zamknięciem programu?"
+                "Czy chcesz zapisać zmiany w dokumencie przed zamknięciem programu?",
+                parent=self.master
             )
             if response is None: 
                 return
@@ -2370,10 +2457,9 @@ class SelectablePDFViewer:
         
         self.help_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Pomoc", menu=self.help_menu)
+        self.help_menu.add_command(label="Skróty klawiszowe...", command=self.show_shortcuts_dialog)
         self.help_menu.add_command(label="O programie", command=self.show_about_dialog)
         
-        
-
     def show_about_dialog(self):
         PROGRAM_LOGO_PATH = resource_path(os.path.join('icons', 'logo.png'))
         # STAŁE WYMIARY OKNA
@@ -2394,15 +2480,18 @@ class SelectablePDFViewer:
         # 2. Centralizacja Okna (Matematyczna, używając stałych)
         dialog.update_idletasks() # Wymuś odświeżenie dla bezpieczeństwa
         
-        screen_width = dialog.winfo_screenwidth()
-        screen_height = dialog.winfo_screenheight()
-        
-        # Obliczenia bazujące na stałych
-        position_top = int(screen_height / 2 - DIALOG_HEIGHT / 2)
-        position_right = int(screen_width / 2 - DIALOG_WIDTH / 2)
-        
-        # Zastosowanie pozycji (nie zmieniamy rozmiaru w tym wywołaniu)
-        dialog.geometry(f'+{position_right}+{position_top}')
+        self.master.update_idletasks()
+        dialog.update_idletasks()
+        master_x = self.master.winfo_rootx()
+        master_y = self.master.winfo_rooty()
+        master_w = self.master.winfo_width()
+        master_h = self.master.winfo_height()
+        dialog_w = DIALOG_WIDTH
+        dialog_h = DIALOG_HEIGHT
+        position_right = master_x + (master_w - dialog_w) // 2
+        position_top = master_y + (master_h - dialog_h) // 2
+        dialog.geometry(f"+{position_right}+{position_top}")
+                
         
         # --- Ramka Centrująca Treść ---
         main_frame = ttk.Frame(dialog)
@@ -2448,6 +2537,8 @@ class SelectablePDFViewer:
         copy_label.pack(pady=(5, 0))
         
         # 5. Blokowanie
+        dialog.bind('<Escape>', lambda e: dialog.destroy())
+        dialog.focus_force()
         dialog.wait_window()
     
     def _setup_context_menu(self):
@@ -2510,7 +2601,11 @@ class SelectablePDFViewer:
         self.master.bind('<F6>', lambda e: self.remove_page_numbers())
         self.master.bind('<F7>', lambda e: self.insert_page_numbers())
         self.master.bind('<F8>', lambda e: self.apply_page_crop_resize_dialog())
-        
+        self.master.bind('<plus>', lambda e: self.zoom_in())
+        self.master.bind('<minus>', lambda e: self.zoom_out())
+        self.master.bind('<KP_Add>', lambda e: self.zoom_in())
+        self.master.bind('<KP_Subtract>', lambda e: self.zoom_out())
+                     
         self.master.bind('<Control-F1>', lambda e: self._select_portrait_pages())
         self.master.bind('<Control-F2>', lambda e: self._select_landscape_pages())
         self.master.bind('<Control-v>', lambda e: self.paste_pages_after())
@@ -2720,6 +2815,19 @@ class SelectablePDFViewer:
 
     # --- Metody obsługi plików i edycji (Ze zmianami w import_image_to_new_page) ---
     def open_pdf(self, event=None, filepath=None):
+        if self.pdf_document is not None and len(self.undo_stack) > 0:
+            response = messagebox.askyesnocancel(
+                "Niezapisane zmiany",
+                "Dokument został zmodyfikowany. Czy chcesz zapisać zmiany przed otwarciem nowego pliku?",
+                parent=self.master
+            )
+            if response is None:
+                return  # Anuluj
+            elif response:  # Tak - zapisz
+                self.save_document()
+                if len(self.undo_stack) > 0:
+                    return  # Jeśli nie udało się zapisać, nie otwieraj nowego pliku
+            # jeśli Nie - kontynuuj
         if not filepath:
             filepath = filedialog.askopenfilename(filetypes=[("Pliki PDF", "*.pdf")])
             if not filepath:  
@@ -2737,7 +2845,8 @@ class SelectablePDFViewer:
             self.pages_in_clipboard_count = 0
             self.active_page_index = 0
             self.thumb_frames.clear()
-            self._save_state_to_undo()
+            self.undo_stack.clear()
+            self.redo_stack.clear()
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
             self.target_num_cols = 4  
@@ -3617,6 +3726,11 @@ class SelectablePDFViewer:
 if __name__ == '__main__':
     try:
         root = tk.Tk()
+        from PIL import Image, ImageTk
+        icon_path = resource_path(os.path.join('icons', 'gryf.ico'))  # lub .ico jeśli masz na Windows
+        icon_img = Image.open(icon_path).resize((32, 32), Image.LANCZOS)
+        icon_tk = ImageTk.PhotoImage(icon_img)
+        root.iconphoto(True, icon_tk)
         app = SelectablePDFViewer(root)
         root.mainloop()
     except ImportError as e:
