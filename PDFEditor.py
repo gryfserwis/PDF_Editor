@@ -1304,7 +1304,7 @@ class SelectablePDFViewer:
             else:
                 self._update_status("Nie wybrano żadnej operacji do wykonania.")
                 return
-            self._save_state() 
+            self._save_state_to_undo() 
             self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", new_pdf_bytes)
             self._update_status(msg)
@@ -1352,7 +1352,7 @@ class SelectablePDFViewer:
         MM_PT = self.MM_TO_POINTS 
 
         try:
-            self._save_state() 
+            self._save_state_to_undo() 
             
             # 2. Pobieranie parametrów
             start_number = settings['start_num']
@@ -1581,7 +1581,7 @@ class SelectablePDFViewer:
                     
             # 3. Finalizacja
             if modified_count > 0:
-                self._save_state()
+                self._save_state_to_undo()
                 self._reconfigure_grid() 
                 self._update_status(f"Usunięto numery stron na {modified_count} stronach, używając marginesów: G={top_mm:.1f}mm, D={bottom_mm:.1f}mm.")
             else:
@@ -1653,7 +1653,7 @@ class SelectablePDFViewer:
             self.pdf_document = fitz.open("pdf", new_pdf_bytes)
             
             # 3. Zapisanie stanu i odświeżenie GUI
-            self._save_state() # Zapisuje nowy stan do historii
+            self._save_state_to_undo() # Zapisuje nowy stan do historii
             self._reconfigure_grid() 
             self._update_status(f"Przesunięto zawartość na {len(pages_to_shift)} stronach o {result['x_mm']} mm (X) i {result['y_mm']} mm (Y) za pomocą PyPDF.")
             
@@ -1667,7 +1667,7 @@ class SelectablePDFViewer:
             return
 
         # 1. Zapisz obecny stan do historii przed zmianą
-        self._save_state() 
+        self._save_state_to_undo() 
         
         try:
             doc = self.pdf_document
@@ -1702,8 +1702,7 @@ class SelectablePDFViewer:
             
         except Exception as e:
             messagebox.showerror("Błąd", f"Wystąpił błąd podczas odwracania stron: {e}")
-            # Cofnij do stanu sprzed próby odwrócenia stron
-            self.undo_last_action()
+            # W przypadku błędu użytkownik może użyć przycisku Cofnij aby przywrócić stan
     
     def _apply_selection_by_indices(self, indices_to_select):
         """Ogólna metoda do zaznaczania stron na podstawie listy indeksów."""
@@ -1854,8 +1853,9 @@ class SelectablePDFViewer:
         self.MIN_WINDOW_WIDTH = 950    
         self.render_dpi_factor = 0.833 
         
-        self.history: List[bytes] = []
-        self.max_history_size = 10 
+        self.undo_stack: List[bytes] = []
+        self.redo_stack: List[bytes] = []
+        self.max_stack_size = 50
         
         self._set_initial_geometry() 
         self._load_icons_or_fallback(size=28) 
@@ -1930,7 +1930,8 @@ class SelectablePDFViewer:
         self.image_import_button = create_tool_button(tools_frame, 'image_import', self.import_image_to_new_page, self.BG_IMPORT, GRAY_FG, state=tk.DISABLED, padx=(0, PADX_SMALL)) 
         self.export_image_button = create_tool_button(tools_frame, 'export_image', self.export_selected_pages_to_image, self.BG_EXPORT, GRAY_FG, state=tk.DISABLED, padx=(0, PADX_LARGE))
         
-        self.undo_button = create_tool_button(tools_frame, 'undo', self.undo_last_action, self.BG_UNDO, GRAY_FG, state=tk.DISABLED, padx=(0, PADX_LARGE)) 
+        self.undo_button = create_tool_button(tools_frame, 'undo', self.undo, self.BG_UNDO, GRAY_FG, state=tk.DISABLED, padx=(0, PADX_SMALL))
+        self.redo_button = create_tool_button(tools_frame, 'redo', self.redo, self.BG_UNDO, GRAY_FG, state=tk.DISABLED, padx=(0, PADX_LARGE))
         
         # 2. PRZYCISKI EDYCJI STRON
         self.delete_button = create_tool_button(tools_frame, 'delete', self.delete_selected_pages, self.BG_DELETE, GRAY_FG, state=tk.DISABLED, padx=(0, PADX_SMALL)) 
@@ -1962,7 +1963,8 @@ class SelectablePDFViewer:
         Tooltip(self.image_import_button, "Importuj strony z pliku obrazu.\n" "Strony zostaną wstawione po bieżącej, a przy braku zazanczenia - na końcu pliku.")
         Tooltip(self.export_image_button, "Eksportuj strony do plików PNG.\n" "Wymaga zaznaczenia przynajniej jednej strony.")
         
-        Tooltip(self.undo_button, "Cofnij ostanią zmianę.\n" "Obsługuje 10 kroków wstecz.")
+        Tooltip(self.undo_button, "Cofnij ostatnią zmianę.\n" "Obsługuje do 50 kroków wstecz.")
+        Tooltip(self.redo_button, "Ponów cofniętą zmianę.\n" "Obsługuje do 50 kroków do przodu.")
         
         Tooltip(self.delete_button, "Usuń zaznaczone strony.\n" "Wymaga zaznaczenia przynajniej jednej strony.")
         Tooltip(self.cut_button, "Wytnij zaznaczone strony.\n" "Wymaga zaznaczenia przynajniej jednej strony.")
@@ -2024,7 +2026,8 @@ class SelectablePDFViewer:
 
     # --- Metody obsługi GUI i zdarzeń (Bez zmian) ---
     def on_close_window(self):
-        if self.pdf_document is not None and len(self.history) > 1:
+        # Sprawdź czy są niezapisane zmiany (niepusty stos undo)
+        if self.pdf_document is not None and len(self.undo_stack) > 0:
             response = messagebox.askyesnocancel(
                 "Niezapisane zmiany",
                 "Czy chcesz zapisać zmiany w dokumencie przed zamknięciem programu?"
@@ -2033,7 +2036,7 @@ class SelectablePDFViewer:
                 return
             elif response is True: 
                 self.save_document() 
-                if len(self.history) > 1:
+                if len(self.undo_stack) > 0:
                     return 
                 self.master.quit() 
             else: 
@@ -2056,6 +2059,7 @@ class SelectablePDFViewer:
             'open': ('📂', "open.png"),
             'save': ('💾', "save.png"),
             'undo': ('↩️', "undo.png"),
+            'redo': ('↪️', "redo.png"),
             'delete': ('🗑️', "delete.png"),
             'cut': ('✂️', "cut.png"),  
             'copy': ('📋', "copy.png"),  
@@ -2207,7 +2211,8 @@ class SelectablePDFViewer:
         self._populate_edit_menu(self.context_menu)
     
     def _populate_edit_menu(self, menu_obj):
-        menu_obj.add_command(label="Cofnij", command=self.undo_last_action, accelerator="Ctrl+Z")
+        menu_obj.add_command(label="Cofnij", command=self.undo, accelerator="Ctrl+Z")
+        menu_obj.add_command(label="Ponów", command=self.redo, accelerator="Ctrl+Y")
         menu_obj.add_separator()
         menu_obj.add_command(label="Usuń zaznaczone", command=self.delete_selected_pages, accelerator="Delete/Backspace")
         menu_obj.add_command(label="Wytnij zaznaczone", command=self.cut_selected_pages, accelerator="Ctrl+X")
@@ -2243,8 +2248,9 @@ class SelectablePDFViewer:
     def _setup_key_bindings(self):
         self.master.bind('<Control-x>', lambda e: self.cut_selected_pages())
         self.master.bind('<Control-c>', lambda e: self.copy_selected_pages())
-        self.master.bind('<Control-z>', lambda e: self.undo_last_action())
-        self.master.bind('<Delete>', lambda e: self.delete_selected_pages())  
+        self.master.bind('<Control-z>', lambda e: self.undo())
+        self.master.bind('<Control-y>', lambda e: self.redo())
+        self.master.bind('<Delete>', lambda e: self.delete_selected_pages())
         self.master.bind('<BackSpace>', lambda e: self.delete_selected_pages())
         self.master.bind('<Control-a>', lambda e: self._select_all())
         self.master.bind('<F4>', lambda e: self._select_all())
@@ -2373,20 +2379,23 @@ class SelectablePDFViewer:
         doc_loaded = self.pdf_document is not None
         has_selection = len(self.selected_pages) > 0
         has_single_selection = len(self.selected_pages) == 1
-        has_history_to_undo = len(self.history) > 1
+        has_undo = len(self.undo_stack) > 0
+        has_redo = len(self.redo_stack) > 0
         has_clipboard_content = self.clipboard is not None
         
         delete_state = tk.NORMAL if doc_loaded and has_selection else tk.DISABLED
         insert_state = tk.NORMAL if doc_loaded and has_single_selection else tk.DISABLED
         paste_enable_state = tk.NORMAL if has_clipboard_content and doc_loaded and (len(self.selected_pages) <= 1) else tk.DISABLED 
         rotate_state = tk.NORMAL if doc_loaded and has_selection else tk.DISABLED
-        undo_state = tk.NORMAL if has_history_to_undo else tk.DISABLED
+        undo_state = tk.NORMAL if has_undo else tk.DISABLED
+        redo_state = tk.NORMAL if has_redo else tk.DISABLED
         import_state = tk.NORMAL if doc_loaded else tk.DISABLED 
         select_state = tk.NORMAL if doc_loaded else tk.DISABLED
         reverse_state = tk.NORMAL if doc_loaded else tk.DISABLED
          
         # 1. Aktualizacja przycisków w panelu głównym
         self.undo_button.config(state=undo_state)
+        self.redo_button.config(state=redo_state)
         self.delete_button.config(state=delete_state)
         self.cut_button.config(state=delete_state)
         self.copy_button.config(state=delete_state)
@@ -2427,7 +2436,8 @@ class SelectablePDFViewer:
             "Eksportuj strony do PDF...": delete_state,
             "Eksportuj strony jako obrazy PNG...": delete_state,            
             "Cofnij": undo_state,
-            "Wszystkie strony": select_state, 
+            "Ponów": redo_state,
+            "Wszystkie strony": select_state,
             "Strony nieparzyste": select_state,
             "Strony parzyste": select_state,
             "Strony pionowe": select_state,
@@ -2471,12 +2481,13 @@ class SelectablePDFViewer:
             self.pdf_document = fitz.open(filepath)
             self.selected_pages = set()
             self.tk_images = {}
-            self.history.clear()  
+            self.undo_stack.clear()
+            self.redo_stack.clear()
             self.clipboard = None
             self.pages_in_clipboard_count = 0
             self.active_page_index = 0
             self.thumb_frames.clear()
-            self._save_state()
+            self._save_state_to_undo()
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
             self.target_num_cols = 4  
@@ -2526,7 +2537,7 @@ class SelectablePDFViewer:
             else:
                  insert_index = len(self.pdf_document)
                  
-            self._save_state()
+            self._save_state_to_undo()
             num_inserted = len(selected_indices)
             temp_doc_for_insert = fitz.open()
             for page_index_to_import in selected_indices:
@@ -2671,7 +2682,7 @@ class SelectablePDFViewer:
                 insert_index = len(self.pdf_document)
             
             # Zapis stanu przed modyfikacją głównego dokumentu
-            self._save_state()
+            self._save_state_to_undo()
             
             # *** KLUCZOWA ZMIANA: Wstawienie tymczasowego dokumentu do głównego ***
             # Wykorzystujemy fitz.Document.insert_pdf() w taki sam sposób jak w Twojej działającej funkcji:
@@ -2709,15 +2720,19 @@ class SelectablePDFViewer:
     def _update_status(self, message):
         self.status_bar.config(text=message, fg="black")
             
-    def _save_state(self):
+    def _save_state_to_undo(self):
+        """Zapisuje bieżący stan dokumentu na stosie undo i czyści stos redo."""
         if self.pdf_document:
             buffer = self.pdf_document.write()
-            self.history.append(buffer)
-            if len(self.history) > self.max_history_size:
-                self.history.pop(0)
+            self.undo_stack.append(buffer)
+            if len(self.undo_stack) > self.max_stack_size:
+                self.undo_stack.pop(0)
+            # Każda nowa modyfikacja czyści stos redo
+            self.redo_stack.clear()
             self.update_tool_button_states()
         else:
-            self.history.clear()
+            self.undo_stack.clear()
+            self.redo_stack.clear()
             self.update_tool_button_states()
             
     def _get_page_bytes(self, page_indices: Set[int]) -> bytes:
@@ -2747,7 +2762,7 @@ class SelectablePDFViewer:
             self._update_status("BŁĄD: Zaznacz strony do wycięcia.")
             return
         try:
-            self._save_state()
+            self._save_state_to_undo()
             self.clipboard = self._get_page_bytes(self.selected_pages)
             self.pages_in_clipboard_count = len(self.selected_pages)
             pages_to_delete = sorted(list(self.selected_pages), reverse=True)
@@ -2791,7 +2806,7 @@ class SelectablePDFViewer:
 
     def _perform_paste(self, target_index: int):
         try:
-            self._save_state()
+            self._save_state_to_undo()
             temp_doc = fitz.open("pdf", self.clipboard)
             self.pdf_document.insert_pdf(temp_doc, start_at=target_index)
             num_inserted = len(temp_doc)
@@ -2816,7 +2831,7 @@ class SelectablePDFViewer:
         deleted_count = 0
         try:
             if save_state:
-                self._save_state()
+                self._save_state_to_undo()
             for page_index in pages_to_delete:
                 self.pdf_document.delete_page(page_index)
                 deleted_count += 1
@@ -2856,17 +2871,25 @@ class SelectablePDFViewer:
         except Exception as e:
             self._update_status(f"BŁĄD Eksportu: Nie udało się zapisać nowego pliku: {e}")
 
-    def undo_last_action(self):
-        if len(self.history) < 2:
+    def undo(self):
+        """Cofnij ostatnią operację - przywraca stan ze stosu undo."""
+        if len(self.undo_stack) == 0:
             self._update_status("Brak operacji do cofnięcia!")
-            self.update_tool_button_states()
             return
 
-        self.history.pop()  
-        previous_state_bytes = self.history[-1]  
+        # Zapisz bieżący stan na stos redo
+        if self.pdf_document:
+            current_state = self.pdf_document.write()
+            self.redo_stack.append(current_state)
+            if len(self.redo_stack) > self.max_stack_size:
+                self.redo_stack.pop(0)
+
+        # Pobierz poprzedni stan ze stosu undo
+        previous_state_bytes = self.undo_stack.pop()
         
         try:
-            if self.pdf_document: self.pdf_document.close()
+            if self.pdf_document: 
+                self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", previous_state_bytes)
             self.selected_pages.clear()
             self.tk_images.clear()
@@ -2882,6 +2905,43 @@ class SelectablePDFViewer:
         except Exception as e:
             self._update_status(f"BŁĄD: Nie udało się cofnąć operacji: {e}")
             self.pdf_document = None
+            self.update_tool_button_states()
+            
+    def redo(self):
+        """Ponów cofniętą operację - przywraca stan ze stosu redo."""
+        if len(self.redo_stack) == 0:
+            self._update_status("Brak operacji do ponowienia!")
+            return
+
+        # Zapisz bieżący stan na stos undo
+        if self.pdf_document:
+            current_state = self.pdf_document.write()
+            self.undo_stack.append(current_state)
+            if len(self.undo_stack) > self.max_stack_size:
+                self.undo_stack.pop(0)
+
+        # Pobierz następny stan ze stosu redo
+        next_state_bytes = self.redo_stack.pop()
+        
+        try:
+            if self.pdf_document:
+                self.pdf_document.close()
+            self.pdf_document = fitz.open("pdf", next_state_bytes)
+            self.selected_pages.clear()
+            self.tk_images.clear()
+            self.thumb_frames.clear()
+            for widget in list(self.scrollable_frame.winfo_children()):
+                widget.destroy()
+
+            self.active_page_index = min(self.active_page_index, len(self.pdf_document) - 1)
+            self._reconfigure_grid()
+            self.update_tool_button_states()
+            self.update_focus_display()
+            self._update_status("Ponowiono operację.")
+        except Exception as e:
+            self._update_status(f"BŁĄD: Nie udało się ponowić operacji: {e}")
+            self.pdf_document = None
+            self.update_tool_button_states()
             
     def save_document(self):
         if not self.pdf_document: return
@@ -2896,10 +2956,10 @@ class SelectablePDFViewer:
         try:
             self.pdf_document.save(filepath, garbage=4, clean=True, pretty=True)  
             self._update_status(f"Dokument pomyślnie zapisany jako: {filepath}")
-            if self.history:
-                 current_state = self.history[-1]
-                 self.history = [current_state]
-                 self.update_tool_button_states() 
+            # Po zapisaniu czyścimy stosy undo/redo
+            self.undo_stack.clear()
+            self.redo_stack.clear()
+            self.update_tool_button_states() 
         except Exception as e:
             self._update_status(f"BŁĄD: Nie udało się zapisać pliku: {e}")
             
@@ -2909,7 +2969,7 @@ class SelectablePDFViewer:
             return
         pages_to_rotate = sorted(list(self.selected_pages))
         try:
-            self._save_state()
+            self._save_state_to_undo()
             rotated_count = 0
             for page_index in pages_to_rotate:
                 page = self.pdf_document.load_page(page_index)
@@ -2953,7 +3013,7 @@ class SelectablePDFViewer:
               target_page = page_index + 1
               
         try:
-            self._save_state()
+            self._save_state_to_undo()
             self.pdf_document.insert_page(
                 pno=target_page,  
                 width=width,  
