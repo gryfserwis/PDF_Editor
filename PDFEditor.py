@@ -1066,6 +1066,135 @@ class ThumbnailFrame(tk.Frame):
         self.viewer_app.context_menu.tk_popup(event.x_root, event.y_root)
 
 # ====================================================================
+# DIALOG SCALANIA STRON NA ARKUSZU
+# ====================================================================
+
+class MergePageGridDialog(tk.Toplevel):
+    """Dialog do scalania wielu stron na jeden arkusz w układzie siatki."""
+    
+    PAPER_FORMATS = {
+        'A0': (841, 1189),
+        'A1': (594, 841),
+        'A2': (420, 594),
+        'A3': (297, 420),
+        'A4': (210, 297),
+        'A5': (148, 210),
+        'A6': (105, 148),
+    }
+    
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Scal strony na arkuszu")
+        self.transient(parent)
+        self.result = None
+        
+        # Zmienne
+        self.sheet_format = tk.StringVar(value="A4")
+        self.margin_mm = tk.StringVar(value="10")
+        self.spacing_mm = tk.StringVar(value="5")
+        
+        self.build_ui()
+        self.center_dialog(parent)
+        self.grab_set()
+        self.focus_force()
+        self.protocol("WM_DELETE_WINDOW", self.cancel)
+        self.resizable(False, False)
+        
+        # Obsługa Enter i Esc
+        self.bind("<Return>", lambda e: self.ok())
+        self.bind("<KP_Enter>", lambda e: self.ok())
+        self.bind("<Escape>", lambda e: self.cancel())
+        
+        self.wait_window(self)
+    
+    def build_ui(self):
+        pad = {'padx': 8, 'pady': 4}
+        
+        # Format arkusza
+        format_frame = ttk.LabelFrame(self, text="Format arkusza docelowego")
+        format_frame.pack(fill="x", padx=12, pady=(12, 8))
+        
+        ttk.Label(format_frame, text="Format:").pack(anchor="w", **pad)
+        format_combo = ttk.Combobox(
+            format_frame, 
+            textvariable=self.sheet_format, 
+            values=list(self.PAPER_FORMATS.keys()), 
+            state="readonly", 
+            width=20
+        )
+        format_combo.pack(anchor="w", padx=8, pady=(0, 8))
+        
+        # Marginesy i odstępy
+        spacing_frame = ttk.LabelFrame(self, text="Marginesy i odstępy")
+        spacing_frame.pack(fill="x", padx=12, pady=8)
+        
+        margin_row = ttk.Frame(spacing_frame)
+        margin_row.pack(fill="x", padx=8, pady=4)
+        ttk.Label(margin_row, text="Margines do krawędzi arkusza [mm]:").pack(side="left")
+        ttk.Entry(margin_row, textvariable=self.margin_mm, width=8).pack(side="left", padx=(8, 0))
+        
+        spacing_row = ttk.Frame(spacing_frame)
+        spacing_row.pack(fill="x", padx=8, pady=(0, 8))
+        ttk.Label(spacing_row, text="Odstęp między stronami [mm]:").pack(side="left")
+        ttk.Entry(spacing_row, textvariable=self.spacing_mm, width=8).pack(side="left", padx=(8, 0))
+        
+        # Informacja
+        info_frame = ttk.Frame(self)
+        info_frame.pack(fill="x", padx=12, pady=8)
+        info_text = (
+            "Program automatycznie obliczy optymalną siatkę (wiersze/kolumny)\n"
+            "aby zmaksymalizować rozmiar scalonych stron na arkuszu."
+        )
+        ttk.Label(info_frame, text=info_text, foreground="gray", font=("Helvetica", 8)).pack()
+        
+        # Przyciski
+        button_frame = ttk.Frame(self)
+        button_frame.pack(fill="x", padx=12, pady=(8, 12))
+        ttk.Button(button_frame, text="Zastosuj", command=self.ok).pack(side="left", expand=True, padx=5)
+        ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side="right", expand=True, padx=5)
+    
+    def center_dialog(self, parent):
+        self.update_idletasks()
+        parent_x = parent.winfo_rootx()
+        parent_y = parent.winfo_rooty()
+        parent_w = parent.winfo_width()
+        parent_h = parent.winfo_height()
+        dialog_w = self.winfo_width()
+        dialog_h = self.winfo_height()
+        x = parent_x + (parent_w - dialog_w) // 2
+        y = parent_y + (parent_h - dialog_h) // 2
+        self.geometry(f"+{x}+{y}")
+    
+    def ok(self, event=None):
+        try:
+            # Walidacja danych
+            margin = float(self.margin_mm.get().replace(",", "."))
+            spacing = float(self.spacing_mm.get().replace(",", "."))
+            
+            if margin < 0:
+                raise ValueError("Margines musi być nieujemny.")
+            if spacing < 0:
+                raise ValueError("Odstęp musi być nieujemny.")
+            
+            format_name = self.sheet_format.get()
+            sheet_dims = self.PAPER_FORMATS[format_name]
+            
+            self.result = {
+                "format_name": format_name,
+                "sheet_width_mm": sheet_dims[0],
+                "sheet_height_mm": sheet_dims[1],
+                "margin_mm": margin,
+                "spacing_mm": spacing,
+            }
+            self.destroy()
+        except Exception as e:
+            messagebox.showerror("Błąd", f"Nieprawidłowe dane: {e}", parent=self)
+    
+    def cancel(self, event=None):
+        self.result = None
+        self.destroy()
+
+# ====================================================================
 # GŁÓWNA KLASA PROGRAMU: SELECTABLEPDFVIEWER
 # ====================================================================
 
@@ -2182,6 +2311,8 @@ class SelectablePDFViewer:
         menu_obj.add_command(label="Wklej przed", command=self.paste_pages_before, accelerator="Ctrl+Shift+V")
         menu_obj.add_command(label="Wklej po", command=self.paste_pages_after, accelerator="Ctrl+V")
         menu_obj.add_separator()
+        menu_obj.add_command(label="Duplikuj stronę", command=self.duplicate_selected_page, accelerator="Ctrl+D")
+        menu_obj.add_separator()
         menu_obj.add_command(label="Wstaw nową stronę przed", command=self.insert_blank_page_before, accelerator="Ctrl+Shift+N")
         menu_obj.add_command(label="Wstaw nową stronę po", command=self.insert_blank_page_after, accelerator="Ctrl+N")
         #menu_obj.add_separator()
@@ -2205,11 +2336,13 @@ class SelectablePDFViewer:
         # ODRACANIE KOLEJNOŚCI
         menu_obj.add_separator()
         menu_obj.add_command(label="Przytnij zaznaczone strony...", command=self.apply_page_crop_resize_dialog, state=tk.DISABLED, accelerator="F8")
+        menu_obj.add_command(label="Scal strony na arkuszu...", command=self.merge_pages_to_grid, state=tk.DISABLED)
         menu_obj.add_command(label="Odwróć kolejność wszystkich stron", command=self._reverse_pages, state=tk.DISABLED)
     
     def _setup_key_bindings(self):
         self.master.bind('<Control-x>', lambda e: self.cut_selected_pages())
         self.master.bind('<Control-c>', lambda e: self.copy_selected_pages())
+        self.master.bind('<Control-d>', lambda e: self.duplicate_selected_page())
         self.master.bind('<Control-z>', lambda e: self.undo())
         self.master.bind('<Control-y>', lambda e: self.redo())
         self.master.bind('<Delete>', lambda e: self.delete_selected_pages())
@@ -2409,6 +2542,7 @@ class SelectablePDFViewer:
             "Usuń zaznaczone": delete_state,
             "Wklej przed": paste_enable_state,
             "Wklej po": paste_enable_state,
+            "Duplikuj stronę": insert_state,
             "Wstaw nową stronę przed": insert_state,
             "Wstaw nową stronę po": insert_state,
             "Obróć w lewo (-90°)": rotate_state,
@@ -2417,7 +2551,8 @@ class SelectablePDFViewer:
             "Usuń numery stron...": delete_state, 
             "Wstaw numery stron...": delete_state, 
             "Przesuń zawartość zaznaczonych stron...": delete_state,
-            "Przytnij zaznaczone strony...": delete_state
+            "Przytnij zaznaczone strony...": delete_state,
+            "Scal strony na arkuszu...": tk.NORMAL if doc_loaded else tk.DISABLED
         }
         
         for menu in menus_to_update:
@@ -2991,6 +3126,169 @@ class SelectablePDFViewer:
             self._update_status(f"Wstawiono nową, pustą stronę. Aktualna liczba stron: {len(self.pdf_document)}.")
         except Exception as e:
             self._update_status(f"BŁĄD: Wystąpił błąd podczas wstawiania: {e}")
+    
+    def duplicate_selected_page(self):
+        """Duplikuje aktualnie zaznaczoną stronę i wstawia ją zaraz po oryginale."""
+        if not self.pdf_document or len(self.selected_pages) != 1:
+            self._update_status("BŁĄD: Zaznacz dokładnie jedną stronę, aby ją zduplikować.")
+            return
+        
+        page_index = list(self.selected_pages)[0]
+        
+        try:
+            self._save_state_to_undo()
+            
+            # Wstawienie kopii strony zaraz po oryginale
+            self.pdf_document.insert_pdf(
+                self.pdf_document,
+                from_page=page_index,
+                to_page=page_index,
+                start_at=page_index + 1
+            )
+            
+            # Odświeżenie GUI
+            self.selected_pages.clear()
+            self.tk_images.clear()
+            for widget in list(self.scrollable_frame.winfo_children()): 
+                widget.destroy()
+            self.thumb_frames.clear()
+            self._reconfigure_grid()
+            self.update_tool_button_states()
+            self.update_focus_display()
+            
+            self._update_status(f"Zduplikowano stronę {page_index + 1}. Aktualna liczba stron: {len(self.pdf_document)}.")
+        except Exception as e:
+            self._update_status(f"BŁĄD: Wystąpił błąd podczas duplikowania strony: {e}")
+    
+    def merge_pages_to_grid(self):
+        """Scala zaznaczone strony w siatkę na nowym arkuszu."""
+        if not self.pdf_document:
+            self._update_status("BŁĄD: Otwórz najpierw dokument PDF.")
+            return
+        
+        # Otwórz dialog
+        dialog = MergePageGridDialog(self.master)
+        params = dialog.result
+        
+        if params is None:
+            self._update_status("Anulowano scalanie stron.")
+            return
+        
+        try:
+            # Przygotowanie listy stron do scalenia
+            if len(self.selected_pages) == 0:
+                self._update_status("BŁĄD: Zaznacz przynajmniej jedną stronę do scalenia.")
+                return
+            elif len(self.selected_pages) == 1:
+                # Wypełnij siatkę kopiami pojedynczej strony
+                page_index = list(self.selected_pages)[0]
+                source_pages = [page_index] * 12  # Maksymalnie 12 kopii (np. 3x4)
+            else:
+                # Użyj zaznaczonych stron
+                source_pages = sorted(list(self.selected_pages))
+            
+            # Konwersja wymiarów
+            sheet_width_pt = params["sheet_width_mm"] * self.MM_TO_POINTS
+            sheet_height_pt = params["sheet_height_mm"] * self.MM_TO_POINTS
+            margin_pt = params["margin_mm"] * self.MM_TO_POINTS
+            spacing_pt = params["spacing_mm"] * self.MM_TO_POINTS
+            
+            # Obliczenie optymalnej siatki
+            num_pages = len(source_pages)
+            best_grid = self._calculate_optimal_grid(
+                num_pages, 
+                sheet_width_pt, 
+                sheet_height_pt, 
+                margin_pt, 
+                spacing_pt
+            )
+            
+            if best_grid is None:
+                self._update_status("BŁĄD: Nie można zmieścić stron na wybranym arkuszu z podanymi marginesami.")
+                return
+            
+            rows, cols, cell_width, cell_height = best_grid
+            
+            # Tworzenie nowej strony
+            self._save_state_to_undo()
+            new_page = self.pdf_document.new_page(width=sheet_width_pt, height=sheet_height_pt)
+            
+            # Umieszczanie stron w siatce
+            page_idx = 0
+            for row in range(rows):
+                for col in range(cols):
+                    if page_idx >= num_pages:
+                        break
+                    
+                    source_page_idx = source_pages[page_idx]
+                    source_page = self.pdf_document[source_page_idx]
+                    
+                    # Obliczenie pozycji komórki
+                    x = margin_pt + col * (cell_width + spacing_pt)
+                    y = sheet_height_pt - margin_pt - (row + 1) * cell_height - row * spacing_pt
+                    
+                    # Renderowanie strony jako obrazu
+                    pix = source_page.get_pixmap(matrix=fitz.Matrix(2, 2))  # Wysoka rozdzielczość
+                    img_bytes = pix.tobytes("png")
+                    
+                    # Wstawienie obrazu do komórki
+                    rect = fitz.Rect(x, y, x + cell_width, y + cell_height)
+                    new_page.insert_image(rect, stream=img_bytes)
+                    
+                    page_idx += 1
+            
+            # Odświeżenie GUI
+            self.selected_pages.clear()
+            self.tk_images.clear()
+            for widget in list(self.scrollable_frame.winfo_children()): 
+                widget.destroy()
+            self.thumb_frames.clear()
+            self._reconfigure_grid()
+            self.update_tool_button_states()
+            self.update_focus_display()
+            
+            self._update_status(
+                f"Scalono {min(page_idx, num_pages)} stron w siatkę {rows}x{cols} "
+                f"na nowym arkuszu {params['format_name']}. Nowa strona dodana na końcu dokumentu."
+            )
+        except Exception as e:
+            self._update_status(f"BŁĄD: Nie udało się scalić stron: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _calculate_optimal_grid(self, num_pages, sheet_width, sheet_height, margin, spacing):
+        """
+        Oblicza optymalny układ siatki (wiersze x kolumny) aby zmaksymalizować rozmiar stron.
+        Zwraca: (rows, cols, cell_width, cell_height) lub None jeśli nie można zmieścić.
+        """
+        best_grid = None
+        max_area = 0
+        
+        # Sprawdź różne konfiguracje siatki
+        for cols in range(1, num_pages + 1):
+            rows = math.ceil(num_pages / cols)
+            
+            # Oblicz wymiary komórki dla tej siatki
+            available_width = sheet_width - 2 * margin - (cols - 1) * spacing
+            available_height = sheet_height - 2 * margin - (rows - 1) * spacing
+            
+            if available_width <= 0 or available_height <= 0:
+                continue
+            
+            cell_width = available_width / cols
+            cell_height = available_height / rows
+            
+            if cell_width <= 0 or cell_height <= 0:
+                continue
+            
+            # Powierzchnia pojedynczej komórki
+            area = cell_width * cell_height
+            
+            if area > max_area:
+                max_area = area
+                best_grid = (rows, cols, cell_width, cell_height)
+        
+        return best_grid
             
     # --- Metody obsługi widoku/GUI (Bez zmian) ---
     def _on_mousewheel(self, event):
