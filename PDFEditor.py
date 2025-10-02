@@ -36,6 +36,10 @@ A4_WIDTH_POINTS = 595.276
 A4_HEIGHT_POINTS = 841.89
 MM_TO_POINTS = 72 / 25.4 # ~2.8346
 
+def mm2pt(mm):
+    return float(mm) * MM_TO_POINTS
+
+
 # === STAŁE KOLORY NARZĘDZIOWE (jeśli ich nie masz) ===
 # Musisz zdefiniować te kolory, jeśli ich nie masz, dla przycisku importu
 BG_IMPORT = "#F0AD4E" # np. Jakiś pomarańczowy dla importu
@@ -72,234 +76,267 @@ def resource_path(relative_path):
         
     return os.path.join(base_path, relative_path)
   
-class CropDialog(tk.Toplevel):
-    """Dialog do ustawiania marginesów kadrowania (crop) i opcji dopasowania."""
+import tkinter as tk
+from tkinter import ttk, messagebox
+
+class PageCropResizeDialog(tk.Toplevel):
+    PAPER_FORMATS = {
+        'A0': (841, 1189),
+        'A1': (594, 841),
+        'A2': (420, 594),
+        'A3': (297, 420),
+        'A4': (210, 297),
+        'A5': (148, 210),
+        'A6': (105, 148),
+        'Niestandardowy': (0, 0)
+    }
+
     def __init__(self, parent):
         super().__init__(parent)
-        self.parent = parent
+        self.title("Kadrowanie i zmiana rozmiaru strony PDF")
         self.transient(parent)
-        self.title("Ustawienia Kadrowania Stron i Formatowania")
         self.result = None
-        
-        # Zmniejszenie wysokości okna po usunięciu opcji
-        self.geometry("450x700") 
-        self.resizable(False, False)
 
-        self.create_variables()
-        self.create_widgets()
-        self.bind_shortcuts()
-        
+        self.crop_mode = tk.StringVar(value="nocrop")
+        self.margin_top = tk.StringVar(value="10")
+        self.margin_bottom = tk.StringVar(value="10")
+        self.margin_left = tk.StringVar(value="10")
+        self.margin_right = tk.StringVar(value="10")
+
+        self.resize_mode = tk.StringVar(value="noresize")
+        self.target_format = tk.StringVar(value="A4")
+        self.custom_width = tk.StringVar(value="")
+        self.custom_height = tk.StringVar(value="")
+        self.position_mode = tk.StringVar(value="center")
+        self.offset_x = tk.StringVar(value="0")
+        self.offset_y = tk.StringVar(value="0")
+
+        self.build_ui()
+        self.update_field_states()
+        self.center_dialog(parent)
         self.grab_set()
         self.focus_force()
         self.protocol("WM_DELETE_WINDOW", self.cancel)
-        self.center_window()
+        self.resizable(False, False)
         self.wait_window(self)
 
-    def create_variables(self):
-        # Marginesy (w milimetrach)
-        self.v_top = tk.StringVar(value="5")
-        self.v_bottom = tk.StringVar(value="5")
-        self.v_left = tk.StringVar(value="5")
-        self.v_right = tk.StringVar(value="5")
-        
-        # Opcje dopasowania formatu po kadrowaniu 
-        self.v_mode = tk.StringVar(value='no_op') # Domyślnie zmienione na 'Nie przycinaj'
-        
-        # Nowe opcje eksperymentalne: Skalowanie formatu
-        self.v_scaling_mode = tk.StringVar(value='none')
-        self.v_target_format = tk.StringVar(value='A4') # Domyślny format docelowy (A4)
-        
-        # Nowe: Wymiary niestandardowe dla docelowego arkusza (w mm)
-        self.v_custom_width = tk.StringVar(value="")
-        self.v_custom_height = tk.StringVar(value="")
-        
-        # Nowe: Pozycjonowanie obrazu
-        self.v_position_mode = tk.StringVar(value='center') # 'center' or 'offset'
-        self.v_offset_x = tk.StringVar(value="0") # w mm (od lewej krawędzi)
-        self.v_offset_y = tk.StringVar(value="0") # w mm (od dolnej krawędzi)
+    def build_ui(self):
+        pad = {'padx': 8, 'pady': 4}
+        pady_row1 = (0, 6)
+        pady_row2 = (0, 0)
 
-    def center_window(self):
+        # --- CROP SECTION ---
+        crop_frame = ttk.LabelFrame(self, text="Przycinanie strony")
+        crop_frame.pack(fill="x", padx=12, pady=(12, 4))
+
+        crop_modes = [
+            ("Nie przycinaj", "nocrop"),
+            ("Przytnij obraz bez zmiany rozmiaru arkusza", "crop_only"),
+            ("Przytnij obraz i dostosuj rozmiar arkusza", "crop_resize"),
+        ]
+        self.crop_radiobuttons = []
+        for txt, val in crop_modes:
+            rb = ttk.Radiobutton(crop_frame, text=txt, variable=self.crop_mode, value=val, command=self.update_field_states)
+            rb.pack(anchor="w", **pad)
+            self.crop_radiobuttons.append(rb)
+
+        margin_frame = ttk.Frame(crop_frame)
+        margin_frame.pack(fill="x", padx=12, pady=(4, 6))
+        ttk.Label(margin_frame, text="Góra [mm]:").grid(row=0, column=0, sticky="w", padx=(0,6), pady=pady_row1)
+        self.e_margin_top = ttk.Entry(margin_frame, textvariable=self.margin_top, width=6)
+        self.e_margin_top.grid(row=0, column=1, sticky="w", padx=(0,16), pady=pady_row1)
+        ttk.Label(margin_frame, text="Dół [mm]:").grid(row=0, column=2, sticky="w", padx=(0,6), pady=pady_row1)
+        self.e_margin_bottom = ttk.Entry(margin_frame, textvariable=self.margin_bottom, width=6)
+        self.e_margin_bottom.grid(row=0, column=3, sticky="w", padx=(0,0), pady=pady_row1)
+
+        ttk.Label(margin_frame, text="Lewy [mm]:").grid(row=1, column=0, sticky="w", padx=(0,6), pady=pady_row2)
+        self.e_margin_left = ttk.Entry(margin_frame, textvariable=self.margin_left, width=6)
+        self.e_margin_left.grid(row=1, column=1, sticky="w", padx=(0,16), pady=pady_row2)
+        ttk.Label(margin_frame, text="Prawy [mm]:").grid(row=1, column=2, sticky="w", padx=(0,6), pady=pady_row2)
+        self.e_margin_right = ttk.Entry(margin_frame, textvariable=self.margin_right, width=6)
+        self.e_margin_right.grid(row=1, column=3, sticky="w", padx=(0,0), pady=pady_row2)
+        self.margin_entries = [self.e_margin_top, self.e_margin_bottom, self.e_margin_left, self.e_margin_right]
+
+        # --- RESIZE SECTION ---
+        resize_frame = ttk.LabelFrame(self, text="Zmiana rozmiaru arkusza")
+        resize_frame.pack(fill="x", padx=12, pady=8)
+
+        resize_modes = [
+            ("Nie zmieniaj rozmiaru", "noresize"),
+            ("Zmień rozmiar i skaluj obraz", "resize_scale"),
+            ("Zmień rozmiar i nie skaluj obrazu", "resize_noscale"),
+        ]
+        self.resize_radiobuttons = []
+        for txt, val in resize_modes:
+            rb = ttk.Radiobutton(resize_frame, text=txt, variable=self.resize_mode, value=val, command=self.update_field_states)
+            rb.pack(anchor="w", **pad)
+            self.resize_radiobuttons.append(rb)
+
+        format_frame = ttk.Frame(resize_frame)
+        format_frame.pack(fill="x", padx=12, pady=(4, 0))
+        ttk.Label(format_frame, text="Format:").grid(row=0, column=0, sticky="w")
+        self.format_combo = ttk.Combobox(format_frame, textvariable=self.target_format, values=list(self.PAPER_FORMATS.keys()), state="readonly", width=16)
+        self.format_combo.grid(row=0, column=1, sticky="w", padx=(0,12))
+        self.format_combo.bind("<<ComboboxSelected>>", lambda e: self.update_field_states())
+
+        self.custom_size_frame = ttk.Frame(format_frame)
+        self.custom_size_frame.grid(row=1, column=0, columnspan=2, sticky="w", pady=(8,0))
+        ttk.Label(self.custom_size_frame, text="Szerokość [mm]:").grid(row=0, column=0, sticky="w", padx=(0,6), pady=pady_row1)
+        self.e_custom_width = ttk.Entry(self.custom_size_frame, textvariable=self.custom_width, width=8)
+        self.e_custom_width.grid(row=0, column=1, sticky="w", padx=(0,12), pady=pady_row1)
+        ttk.Label(self.custom_size_frame, text="Wysokość [mm]:").grid(row=0, column=2, sticky="w", padx=(0,6), pady=pady_row1)
+        self.e_custom_height = ttk.Entry(self.custom_size_frame, textvariable=self.custom_height, width=8)
+        self.e_custom_height.grid(row=0, column=3, sticky="w", padx=(0,0), pady=pady_row1)
+        self.custom_entries = [self.e_custom_width, self.e_custom_height]
+
+        # --- POSITION SECTION (osobna ramka) ---
+        self.position_frame = ttk.LabelFrame(self, text="Położenie obrazu (przy odpowiednich opcjach)")
+        self.position_frame.pack(fill="x", padx=12, pady=(8, 0))
+        position_modes = [
+            ("Wyśrodkuj", "center"),
+            ("Niestandardowe położenie", "custom")
+        ]
+        self.position_radiobuttons = []
+        for txt, val in position_modes:
+            rb = ttk.Radiobutton(self.position_frame, text=txt, variable=self.position_mode, value=val, command=self.update_field_states)
+            rb.pack(anchor="w", **pad)
+            self.position_radiobuttons.append(rb)
+
+        self.offset_frame = ttk.Frame(self.position_frame)
+        self.offset_frame.pack(fill="x", padx=18, pady=(0,0))
+        ttk.Label(self.offset_frame, text="Offset X [mm]:").grid(row=0, column=0, sticky="w", padx=(0,6), pady=pady_row1)
+        self.e_offset_x = ttk.Entry(self.offset_frame, textvariable=self.offset_x, width=8)
+        self.e_offset_x.grid(row=0, column=1, sticky="w", padx=(0,16), pady=pady_row1)
+        ttk.Label(self.offset_frame, text="Offset Y [mm]:").grid(row=0, column=2, sticky="w", padx=(0,6), pady=pady_row1)
+        self.e_offset_y = ttk.Entry(self.offset_frame, textvariable=self.offset_y, width=8)
+        self.e_offset_y.grid(row=0, column=3, sticky="w", padx=(0,0), pady=pady_row1)
+        self.offset_entries = [self.e_offset_x, self.e_offset_y]
+
+        # --- BUTTONS ---
+        button_frame = ttk.Frame(self)
+        button_frame.pack(fill="x", padx=12, pady=(12,10))
+        ttk.Button(button_frame, text="Zastosuj", command=self.ok).pack(side="left", expand=True, padx=5)
+        ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side="right", expand=True, padx=5)
+
+    def update_field_states(self):
+        crop_selected = self.crop_mode.get() != "nocrop"
+        resize_selected = self.resize_mode.get() != "noresize"
+
+        # Ekskluzywność crop <-> resize
+        for rb in self.resize_radiobuttons:
+            rb["state"] = tk.DISABLED if crop_selected else tk.NORMAL
+        for rb in self.crop_radiobuttons:
+            rb["state"] = tk.DISABLED if resize_selected else tk.NORMAL
+
+        # Pola crop (marginesy)
+        enable_crop = self.crop_mode.get() != "nocrop" and not resize_selected
+        for entry in self.margin_entries:
+            entry["state"] = tk.NORMAL if enable_crop else tk.DISABLED
+
+        # Pole wyboru formatu i niestandardowe rozmiary tylko dla resize_xxx
+        enable_format = self.resize_mode.get() != "noresize" and not crop_selected
+        self.format_combo["state"] = "readonly" if enable_format else tk.DISABLED
+        enable_custom = enable_format and self.target_format.get() == "Niestandardowy"
+        for entry in self.custom_entries:
+            entry["state"] = tk.NORMAL if enable_custom else tk.DISABLED
+
+        # Pozycjonowanie i offsety:
+        # Aktywne dla (crop_only) lub (resize_noscale), ale tylko jeśli odpowiednie sekcje nie są zablokowane
+        enable_position = (
+            (self.crop_mode.get() == "crop_only" and not resize_selected) or
+            (self.resize_mode.get() == "resize_noscale" and not crop_selected)
+        )
+        state_radio = tk.NORMAL if enable_position else tk.DISABLED
+        for rb in self.position_radiobuttons:
+            rb["state"] = state_radio
+
+        enable_offsets = enable_position and self.position_mode.get() == "custom"
+        for entry in self.offset_entries:
+            entry["state"] = tk.NORMAL if enable_offsets else tk.DISABLED
+
+    def center_dialog(self, parent):
         self.update_idletasks()
-        w = self.winfo_width()
-        h = self.winfo_height()
-        x = self.parent.winfo_rootx() + (self.parent.winfo_width() - w) // 2
-        y = self.parent.winfo_rooty() + (self.parent.winfo_height() - h) // 2
-        self.geometry(f'+{x}+{y}')
-
-    def bind_shortcuts(self):
-        """Dodaje skróty klawiaturowe do obsługi dialogu."""
-        self.bind('<Return>', lambda e: self.ok())
-        self.bind('<Escape>', lambda e: self.cancel())
-        
-        # Zachowano bindowanie dla opcjonalnych metod z klasy głównej
-        self.bind('<Control-1>', lambda e: self._select_pages_in_parent('odd'))
-        self.bind('<Control-2>', lambda e: self._select_pages_in_parent('even'))
-
-    def _select_pages_in_parent(self, rule):
-        """Wywołuje metodę wyboru stron w oknie głównym."""
-        if hasattr(self.parent, 'select_pages_by_rule'):
-            self.parent.select_pages_by_rule(rule)
-            self.title(f"Ustawienia Kadrowania Stron - Wybrano: {rule.upper()}")
-        else:
-            messagebox.showwarning("Błąd Bindowania", f"Metoda select_pages_by_rule({rule}) nie jest dostępna.")
-
-    def create_widgets(self):
-        main_frame = ttk.Frame(self, padding="15")
-        main_frame.pack(fill="both", expand=True)
-        
-        # --- 1. MARGINESY KADROWANIA ---
-        margin_frame = ttk.LabelFrame(main_frame, text="Marginesy do przycięcia [mm]")
-        margin_frame.pack(fill="x", pady=5)
-        margin_frame.columnconfigure(0, weight=1)
-        margin_frame.columnconfigure(1, weight=1)
-        
-        # Wejścia dla marginesów
-        ttk.Label(margin_frame, text="Góra:").grid(row=0, column=0, sticky='w', padx=5, pady=2)
-        ttk.Entry(margin_frame, textvariable=self.v_top, width=8).grid(row=0, column=1, sticky='e', padx=5, pady=2)
-        
-        ttk.Label(margin_frame, text="Dół:").grid(row=1, column=0, sticky='w', padx=5, pady=2)
-        ttk.Entry(margin_frame, textvariable=self.v_bottom, width=8).grid(row=1, column=1, sticky='e', padx=5, pady=2)
-        
-        ttk.Label(margin_frame, text="Lewy:").grid(row=2, column=0, sticky='w', padx=5, pady=2)
-        ttk.Entry(margin_frame, textvariable=self.v_left, width=8).grid(row=2, column=1, sticky='e', padx=5, pady=2)
-        
-        ttk.Label(margin_frame, text="Prawy:").grid(row=3, column=0, sticky='w', padx=5, pady=2)
-        ttk.Entry(margin_frame, textvariable=self.v_right, width=8).grid(row=3, column=1, sticky='e', padx=5, pady=2)
-
-        # --- 2. OPCJE KADROWANIA I ROZMIARU ARKUSZA (MediaBox) ---
-        mode_frame = ttk.LabelFrame(main_frame, text="Opcje Kadrowania i Rozmiaru Arkusza")
-        mode_frame.pack(fill="x", pady=5)
-        
-        # Opcja 0: Nie przycinaj 
-        ttk.Radiobutton(mode_frame, text="0. Nie przycinaj (ignoruje marginesy).", 
-                        variable=self.v_mode, value='no_op').pack(anchor='w', padx=5, pady=2)
-        
-        # Opcja 1 (crop_and_reposition) - Przytnij obraz i zachowaj rozmiar arkusza
-        ttk.Radiobutton(mode_frame, text="1. Przytnij obraz i zachowaj pierwotny rozmiar arkusza (repozycja treści).", 
-                        variable=self.v_mode, value='crop_and_reposition').pack(anchor='w', padx=5, pady=2)
-                        
-        # Opcja 2 (keep_crop) - Przytnij obraz razem z arkuszem
-        ttk.Radiobutton(mode_frame, text="2. Przytnij obraz razem z arkuszem (zmień rozmiar strony na przycięty).", 
-                        variable=self.v_mode, value='keep_crop').pack(anchor='w', padx=5, pady=2)
-                        
-        # UWAGA: Opcja 'crop_and_resize' została usunięta zgodnie z żądaniem.
-
-        # --- 3. EKSPERYMENTALNE SKALOWANIE FORMATU (pypdf) ---
-        scale_frame = ttk.LabelFrame(main_frame, text="Eksperymentalne formatowanie (pypdf)")
-        scale_frame.pack(fill="x", pady=5)
-        
-        # Tryby skalowania
-        ttk.Radiobutton(scale_frame, text="Nie skaluj / Zignoruj", 
-                        variable=self.v_scaling_mode, value='none').grid(row=0, column=0, columnspan=3, sticky='w', padx=5, pady=2)
-        
-        ttk.Radiobutton(scale_frame, text="Skaluj zawartość do nowego formatu (Fit):", 
-                        variable=self.v_scaling_mode, value='scale').grid(row=1, column=0, sticky='w', padx=5, pady=2)
-                        
-        ttk.Radiobutton(scale_frame, text="Zmień format arkusza BEZ SKALOWANIA:", 
-                        variable=self.v_scaling_mode, value='enlarge').grid(row=2, column=0, sticky='w', padx=5, pady=2)
-                        
-        # Wybór formatu dla wierszy 1 i 2 (zaktualizowana lista)
-        format_combobox = ttk.Combobox(scale_frame, textvariable=self.v_target_format, 
-                     values=['A4', 'A3', 'A2', 'A1', 'A0', 'Niestandardowy'], state='readonly', width=15)
-        format_combobox.grid(row=1, column=1, rowspan=2, columnspan=2, sticky='e', padx=5, pady=2)
-        
-        # --- Niestandardowy rozmiar ---
-        custom_frame = ttk.LabelFrame(scale_frame, text="Niestandardowy rozmiar arkusza [mm] (jeśli wybrano 'Niestandardowy')")
-        custom_frame.grid(row=3, column=0, columnspan=3, sticky='ew', padx=5, pady=5)
-        
-        ttk.Label(custom_frame, text="Szerokość:").grid(row=0, column=0, sticky='w', padx=5, pady=2)
-        ttk.Entry(custom_frame, textvariable=self.v_custom_width, width=10).grid(row=0, column=1, sticky='w', padx=5, pady=2)
-        
-        ttk.Label(custom_frame, text="Wysokość:").grid(row=0, column=2, sticky='w', padx=5, pady=2)
-        ttk.Entry(custom_frame, textvariable=self.v_custom_height, width=10).grid(row=0, column=3, sticky='w', padx=5, pady=2)
-        custom_frame.columnconfigure(1, weight=1)
-        custom_frame.columnconfigure(3, weight=1)
-
-        # --- Pozycjonowanie obrazu (dla trybów scale/enlarge) ---
-        position_frame = ttk.LabelFrame(scale_frame, text="Położenie oryginalnego obrazu na nowym arkuszu")
-        position_frame.grid(row=4, column=0, columnspan=3, sticky='ew', padx=5, pady=5)
-        
-        ttk.Radiobutton(position_frame, text="Wyśrodkuj", 
-                        variable=self.v_position_mode, value='center').grid(row=0, column=0, columnspan=2, sticky='w', padx=5, pady=2)
-                        
-        ttk.Radiobutton(position_frame, text="Niestandardowy offset [mm] (od lewej/dolnej krawędzi):", 
-                        variable=self.v_position_mode, value='offset').grid(row=1, column=0, columnspan=2, sticky='w', padx=5, pady=2)
-                        
-        offset_sub_frame = ttk.Frame(position_frame)
-        offset_sub_frame.grid(row=2, column=0, columnspan=2, sticky='ew', padx=15)
-        
-        ttk.Label(offset_sub_frame, text="Offset X:").grid(row=0, column=0, sticky='w', padx=5)
-        ttk.Entry(offset_sub_frame, textvariable=self.v_offset_x, width=10).grid(row=0, column=1, sticky='w', padx=5)
-        
-        ttk.Label(offset_sub_frame, text="Offset Y:").grid(row=0, column=2, sticky='w', padx=5)
-        ttk.Entry(offset_sub_frame, textvariable=self.v_offset_y, width=10).grid(row=0, column=3, sticky='w', padx=5)
-        offset_sub_frame.columnconfigure(1, weight=1)
-        offset_sub_frame.columnconfigure(3, weight=1)
-
-
-        # --- 4. PRZYCISKI ---
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill='x', side='bottom', pady=(10, 0))
-        ttk.Button(button_frame, text="Zastosuj", command=self.ok).pack(side='left', expand=True, padx=5)
-        ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side='right', expand=True, padx=5)
+        parent_x = parent.winfo_rootx()
+        parent_y = parent.winfo_rooty()
+        parent_w = parent.winfo_width()
+        parent_h = parent.winfo_height()
+        dialog_w = self.winfo_width()
+        dialog_h = self.winfo_height()
+        x = parent_x + (parent_w - dialog_w) // 2
+        y = parent_y + (parent_h - dialog_h) // 2
+        self.geometry(f"+{x}+{y}")
 
     def ok(self):
         try:
-            # Walidacja i konwersja do float (w mm)
-            result = {
-                'top_mm': float(self.v_top.get().replace(',', '.')),
-                'bottom_mm': float(self.v_bottom.get().replace(',', '.')),
-                'left_mm': float(self.v_left.get().replace(',', '.')),
-                'right_mm': float(self.v_right.get().replace(',', '.')),
-            }
-            # W trybie 'no_op' marginesy są ignorowane, ale reszta logiki musi być poprawna.
-            
-            if self.v_mode.get() != 'no_op':
-                if any(v < 0 for v in result.values()):
-                    raise ValueError("Marginesy nie mogą być ujemne.")
-                if any(self.v_top.get() == '' for v in result.values()):
-                    raise ValueError("Wszystkie marginesy muszą być wypełnione.")
-            
-            result['mode'] = self.v_mode.get()
-            result['scaling_mode'] = self.v_scaling_mode.get()
-            result['target_format'] = self.v_target_format.get()
-            
-            # Nowa walidacja dla wymiarów niestandardowych
-            if result['target_format'] == 'Niestandardowy':
-                w_mm = float(self.v_custom_width.get().replace(',', '.'))
-                h_mm = float(self.v_custom_height.get().replace(',', '.'))
-                if w_mm <= 0 or h_mm <= 0:
-                     raise ValueError("Niestandardowa szerokość i wysokość muszą być większe niż 0.")
-                result['custom_width_mm'] = w_mm
-                result['custom_height_mm'] = h_mm
-            else:
-                result['custom_width_mm'] = None
-                result['custom_height_mm'] = None
-                
-            # Nowa walidacja dla pozycjonowania
-            result['position_mode'] = self.v_position_mode.get()
-            if result['position_mode'] == 'offset':
-                offset_x_mm = float(self.v_offset_x.get().replace(',', '.'))
-                offset_y_mm = float(self.v_offset_y.get().replace(',', '.'))
-                result['offset_x_mm'] = offset_x_mm
-                result['offset_y_mm'] = offset_y_mm
-            else:
-                result['offset_x_mm'] = 0.0
-                result['offset_y_mm'] = 0.0 # Będą obliczane w _apply_scaling_pypdf dla 'center'
+            crop_mode = self.crop_mode.get()
+            resize_mode = self.resize_mode.get()
 
-            self.result = result
+            # Marginesy
+            if crop_mode == "nocrop":
+                top = bottom = left = right = 0.0
+            else:
+                top = float(self.margin_top.get().replace(",", "."))
+                bottom = float(self.margin_bottom.get().replace(",", "."))
+                left = float(self.margin_left.get().replace(",", "."))
+                right = float(self.margin_right.get().replace(",", "."))
+                for v in [top, bottom, left, right]:
+                    if v < 0:
+                        raise ValueError("Marginesy muszą być nieujemne.")
+
+            # Format i wymiary docelowe
+            if resize_mode != "noresize":
+                format_name = self.target_format.get()
+                if format_name == "Niestandardowy":
+                    w = float(self.custom_width.get().replace(",", "."))
+                    h = float(self.custom_height.get().replace(",", "."))
+                    if w <= 0 or h <= 0:
+                        raise ValueError("Rozmiar niestandardowy musi być większy od zera.")
+                    target_dims = (w, h)
+                else:
+                    target_dims = self.PAPER_FORMATS[format_name]
+            else:
+                format_name = None
+                target_dims = (None, None)
+
+            # Pozycjonowanie
+            enable_position = (
+                (self.crop_mode.get() == "crop_only" and not (self.resize_mode.get() != "noresize")) or
+                (self.resize_mode.get() == "resize_noscale" and not (self.crop_mode.get() != "nocrop"))
+            )
+            if enable_position:
+                position_mode = self.position_mode.get()
+                offset_x = offset_y = 0.0
+                if position_mode == "custom":
+                    offset_x = float(self.offset_x.get().replace(",", "."))
+                    offset_y = float(self.offset_y.get().replace(",", "."))
+                    if offset_x < 0 or offset_y < 0:
+                        raise ValueError("Offset musi być nieujemny.")
+            else:
+                position_mode = None
+                offset_x = offset_y = None
+
+            self.result = {
+                "crop_mode": crop_mode,
+                "crop_top_mm": top,
+                "crop_bottom_mm": bottom,
+                "crop_left_mm": left,
+                "crop_right_mm": right,
+                "resize_mode": resize_mode,
+                "target_format": format_name,
+                "target_width_mm": target_dims[0],
+                "target_height_mm": target_dims[1],
+                "position_mode": position_mode if enable_position else None,
+                "offset_x_mm": offset_x if enable_position else None,
+                "offset_y_mm": offset_y if enable_position else None,
+            }
             self.destroy()
-        except ValueError as ve:
-            messagebox.showerror("Błąd Wprowadzania", f"Sprawdź wprowadzone wartości (oczekiwana liczba): {ve}")
         except Exception as e:
-            messagebox.showerror("Błąd", str(e))
+            messagebox.showerror("Błąd", f"Nieprawidłowe dane: {e}", parent=self)
 
     def cancel(self):
         self.result = None
         self.destroy()
 
-
-        
 class Tooltip:
     """
     Tworzy prosty, wielokrotnie używalny dymek pomocy (tooltip) 
@@ -1115,315 +1152,174 @@ class SelectablePDFViewer:
     MARGIN_HEIGHT_MM = 20
     # Obliczamy wysokość w punktach, używając Twojej stałej konwersji
     MARGIN_HEIGHT_PT = MARGIN_HEIGHT_MM * MM_TO_POINTS 
-    PAPER_FORMATS = {
-        'A4': (595, 842),
-        'A3': (842, 1191),
-        'A2': (1191, 1684), # Dodany
-        'A1': (1684, 2384), # Dodany
-        'A0': (2384, 3370), # Dodany
-    }
+    import io
+    import fitz
+    from pypdf import PdfReader, PdfWriter, Transformation
+    from pypdf.generic import RectangleObject, FloatObject
 
- # Wewnątrz klasy SelectablePDFViewer
+    MM_TO_POINTS = 72 / 25.4
 
-# Zakładam, że ta stała jest zdefiniowana na poziomie klasy
-# MM_TO_POINTS = 72 / 25.4 # ~2.8346
+    def _crop_pages(self, pdf_bytes, selected_indices, top_mm, bottom_mm, left_mm, right_mm, reposition=False, pos_mode="center", offset_x_mm=0, offset_y_mm=0):
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        writer = PdfWriter()
+        for i, page in enumerate(reader.pages):
+            if i not in selected_indices:
+                writer.add_page(page)
+                continue
+            x0, y0, x1, y1 = [float(v) for v in page.mediabox]
+            new_x0 = x0 + mm2pt(left_mm)
+            new_y0 = y0 + mm2pt(bottom_mm)
+            new_x1 = x1 - mm2pt(right_mm)
+            new_y1 = y1 - mm2pt(top_mm)
+            if new_x0 >= new_x1 or new_y0 >= new_y1:
+                writer.add_page(page)
+                continue
+            new_rect = RectangleObject([new_x0, new_y0, new_x1, new_y1])
 
-   
-# import fitz # Potrzebny tylko do finalnego ładowania nowego pliku
+            if reposition:
+                page.cropbox = new_rect
+                dx = mm2pt(offset_x_mm) if pos_mode == "custom" else 0
+                dy = mm2pt(offset_y_mm) if pos_mode == "custom" else 0
+                if dx != 0 or dy != 0:
+                    transform = Transformation().translate(tx=dx, ty=dy)
+                    page.add_transformation(transform)
+            else:
+                page.cropbox = new_rect
+                page.mediabox = new_rect
+            writer.add_page(page)
+        out = io.BytesIO()
+        writer.write(out)
+        out.seek(0)
+        return out.read()
 
-    def apply_crop_to_pages(self):
+    def _resize_scale(self, pdf_bytes, selected_indices, width_mm, height_mm):
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        writer = PdfWriter()
+        target_width = mm2pt(width_mm)
+        target_height = mm2pt(height_mm)
+        for i, page in enumerate(reader.pages):
+            if i not in selected_indices:
+                writer.add_page(page)
+                continue
+            orig_w = float(page.mediabox.width)
+            orig_h = float(page.mediabox.height)
+            scale = min(target_width / orig_w, target_height / orig_h)
+            dx = (target_width - orig_w * scale) / 2
+            dy = (target_height - orig_h * scale) / 2
+            transform = Transformation().scale(sx=scale, sy=scale).translate(tx=dx, ty=dy)
+            page.add_transformation(transform)
+            page.mediabox = RectangleObject([0, 0, target_width, target_height])
+            page.cropbox = RectangleObject([0, 0, target_width, target_height])
+            writer.add_page(page)
+        out = io.BytesIO()
+        writer.write(out)
+        out.seek(0)
+        return out.read()
+
+    def _resize_noscale(self, pdf_bytes, selected_indices, width_mm, height_mm, pos_mode="center", offset_x_mm=0, offset_y_mm=0):
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        writer = PdfWriter()
+        target_width = mm2pt(width_mm)
+        target_height = mm2pt(height_mm)
+        for i, page in enumerate(reader.pages):
+            if i not in selected_indices:
+                writer.add_page(page)
+                continue
+            orig_w = float(page.mediabox.width)
+            orig_h = float(page.mediabox.height)
+            if pos_mode == "center":
+                dx = (target_width - orig_w) / 2
+                dy = (target_height - orig_h) / 2
+            else:
+                dx = mm2pt(offset_x_mm)
+                dy = mm2pt(offset_y_mm)
+            transform = Transformation().translate(tx=dx, ty=dy)
+            page.add_transformation(transform)
+            page.mediabox = RectangleObject([0, 0, target_width, target_height])
+            page.cropbox = RectangleObject([0, 0, target_width, target_height])
+            writer.add_page(page)
+        out = io.BytesIO()
+        writer.write(out)
+        out.seek(0)
+        return out.read()
+
+    def apply_page_crop_resize_dialog(self):
         """
-        Stosuje kadrowanie (crop) do zaznaczonych stron.
-        
-        UWAGA: Opcja 1 (crop_and_reposition) jest teraz delegowana do _apply_scaling_pypdf, 
-        aby wykorzystać wspólną logikę transformacji i zarządzać MediaBoxem.
+        Wywołaj ten kod np. w obsłudze przycisku „Kadruj/Zmień rozmiar”.
         """
         if not self.pdf_document or not self.selected_pages:
-            self._update_status("Musisz załadować dokument i zaznaczyć strony.")
+            self._update_status("Musisz zaznaczyć przynajmniej jedną stronę PDF.")
             return
 
-        dialog = CropDialog(self.master) 
-        settings = dialog.result
-
-        if settings is None:
-            self._update_status("Kadrowanie anulowane przez użytkownika.")
-            return
-            
-        # 1. DELEGACJA DLA Opcji 1 (crop_and_reposition)
-        # Używamy specjalnej flagi 'scaling_mode' do przekazania intencji do funkcji transformacji.
-        if settings['mode'] == 'crop_and_reposition':
-            # Używamy flagi w polu 'scaling_mode', aby wymusić użycie centralnej funkcji transformacji.
-            settings['scaling_mode'] = 'crop_reposition_v1' 
-            self._update_status(f"Tryb 1: Przywrócenie rozmiaru arkusza i repozycja (delegowanie do transformacji pypdf).")
-            self._apply_scaling_pypdf(settings)
-            return
-            
-        # 2. DELEGACJA DLA Trybów Eksperymentalnych (scale/enlarge)
-        if settings['scaling_mode'] != 'none':
-            self._update_status(f"Tryb eksperymentalny: {settings['scaling_mode'].upper()} do {settings['target_format']} (użycie pypdf).")
-            self._apply_scaling_pypdf(settings)
+        dialog = PageCropResizeDialog(self.master)
+        result = dialog.result
+        if not result:
+            self._update_status("Anulowano operację.")
             return
 
-        # 3. STANDARDOWE TRYBY KADROWANIA (0 i 2)
-        
-        self._update_status("Rozpoczynanie standardowego kadrowania (Opcja 0 i 2)...")
+        pdf_bytes_export = io.BytesIO()
+        self.pdf_document.save(pdf_bytes_export)
+        pdf_bytes_export.seek(0)
+        pdf_bytes_val = pdf_bytes_export.read()
+        indices = sorted(list(self.selected_pages))
+
+        crop_mode = result["crop_mode"]
+        resize_mode = result["resize_mode"]
 
         try:
-            self._save_state()
-            
-            # Krok 1: Wczytanie dokumentu za pomocą pypdf
-            pdf_bytes = io.BytesIO()
-            self.pdf_document.save(pdf_bytes) 
-            pdf_bytes.seek(0)
-            
-            reader = pypdf.PdfReader(pdf_bytes)
-            writer = pypdf.PdfWriter()
-            
-            MM_PT = self.MM_TO_POINTS
-            mode = settings['mode']
-            modified_count = 0
-
-            # Przeliczanie marginesów na punkty
-            top_pt = settings['top_mm'] * MM_PT
-            bottom_pt = settings['bottom_mm'] * MM_PT
-            left_pt = settings['left_mm'] * MM_PT
-            right_pt = settings['right_mm'] * MM_PT
-
-            # Krok 2: Iteracja i Modyfikacja
-            for i, page in enumerate(reader.pages):
-                
-                if i not in self.selected_pages:
-                    writer.add_page(page)
-                    continue
-                
-                # --- WŁAŚCIWA LOGIKA TRYBÓW ---
-                
-                # Opcja 0: Nie przycinaj
-                if mode == 'no_op':
-                    writer.add_page(page)
-                    modified_count += 1 
-                    continue
-
-                # ZACHOWUJEMY ORYGINALNY OBIEKT MediaBox, aby go później użyć
-                current_mediabox_ref = page.mediabox
-                # Konwertujemy do listy floatów (współrzędne do obliczeń)
-                x0, y0, x1, y1 = [float(v) for v in current_mediabox_ref] 
-                
-                # Obliczanie nowego prostokąta przycięcia (wartości w punktach)
-                new_x0 = x0 + left_pt
-                new_y0 = y0 + bottom_pt
-                new_x1 = x1 - right_pt
-                new_y1 = y1 - top_pt
-                
-                if new_x0 >= new_x1 or new_y0 >= new_y1:
-                    self._update_status(f"Błąd: Marginesy zbyt duże dla strony {i + 1}. Pomijam.")
-                    writer.add_page(page)
-                    continue
-                
-                # Tworzenie obiektu nowego prostokąta (dla CropBox i/lub MediaBox)
-                new_rect = RectangleObject([new_x0, new_y0, new_x1, new_y1])
-                
-                
-                # -- Opcja 2: Przytnij obraz razem z arkuszem (keep_crop) -- 
-                if mode == 'keep_crop':
-                    # Wymaganie: Przytnij obraz (CropBox) ORAZ ZMIEŃ rozmiar arkusza (MediaBox)
-                    
-                    # 1. Ustawiamy nowy CropBox (widok)
-                    page.cropbox = new_rect
-                    
-                    # 2. Ustawiamy nowy MediaBox (zmieniamy rozmiar arkusza)
-                    page.mediabox = new_rect
-                    
-                # Opcja 1 została delegowana
-                    
-                # Dodanie zmodyfikowanej strony do Writera
-                writer.add_page(page)
-                modified_count += 1
-
-            # Krok 3: Zapis i Odświeżenie
-            output_bytes = io.BytesIO()
-            writer.write(output_bytes)
-            output_bytes.seek(0)
-
-            # Odświeżenie self.pdf_document nowym dokumentem fitz/PyMuPDF
-            self.pdf_document.close() 
-            self.pdf_document = fitz.open("pdf", output_bytes.read()) 
-
-            # 4. Finalizacja
-            if modified_count > 0:
-                self._reconfigure_grid() 
-                self._update_status(f"Zastosowano standardowe kadrowanie ({mode}) na {modified_count} zaznaczonych stronach.")
+            if crop_mode == "crop_only" and resize_mode == "noresize":
+                new_pdf_bytes = self._crop_pages(
+                    pdf_bytes_val, indices,
+                    result["crop_top_mm"], result["crop_bottom_mm"],
+                    result["crop_left_mm"], result["crop_right_mm"],
+                    reposition=True,
+                    pos_mode=result.get("position_mode") or "center",
+                    offset_x_mm=result.get("offset_x_mm") or 0,
+                    offset_y_mm=result.get("offset_y_mm") or 0,
+                )
+                msg = "Zastosowano przycięcie (bez zmiany rozmiaru arkusza)."
+            elif crop_mode == "crop_resize" and resize_mode == "noresize":
+                new_pdf_bytes = self._crop_pages(
+                    pdf_bytes_val, indices,
+                    result["crop_top_mm"], result["crop_bottom_mm"],
+                    result["crop_left_mm"], result["crop_right_mm"],
+                    reposition=False
+                )
+                msg = "Zastosowano przycięcie i zmianę rozmiaru arkusza."
+            elif resize_mode == "resize_scale":
+                new_pdf_bytes = self._resize_scale(
+                    pdf_bytes_val, indices,
+                    result["target_width_mm"], result["target_height_mm"]
+                )
+                msg = "Zmieniono rozmiar i skalowano zawartość."
+            elif resize_mode == "resize_noscale":
+                new_pdf_bytes = self._resize_noscale(
+                    pdf_bytes_val, indices,
+                    result["target_width_mm"], result["target_height_mm"],
+                    pos_mode=result.get("position_mode") or "center",
+                    offset_x_mm=result.get("offset_x_mm") or 0,
+                    offset_y_mm=result.get("offset_y_mm") or 0,
+                )
+                msg = "Zmieniono rozmiar strony (bez skalowania zawartości)."
             else:
-                self._update_status("Nie zastosowano kadrowania na żadnej stronie.")
+                self._update_status("Nie wybrano żadnej operacji do wykonania.")
+                return
+            self._save_state() 
+            self.pdf_document.close()
+            self.pdf_document = fitz.open("pdf", new_pdf_bytes)
+            self._update_status(msg)
+            # Odśwież widok/miniatury:
+            if hasattr(self, "_reconfigure_grid"):
+                self._reconfigure_grid()
+            if hasattr(self, "update_selection_display"):
+                self.update_selection_display()
+            if hasattr(self, "update_focus_display"):
+                self.update_focus_display()
 
         except Exception as e:
-            self._update_status(f"BŁĄD: Nie udało się zastosować kadrowania: {e}")
-            messagebox.showerror("Błąd Kadrowania", str(e))
-            
-    def _apply_scaling_pypdf(self, settings):
-        """
-        Eksperymentalna funkcja zmiany rozmiaru strony przy użyciu pypdf. 
-        Obsługuje tryby: 'scale', 'enlarge', oraz NOWY tryb 'crop_reposition_v1' 
-        dla Opcji 1 (Przytnij i zachowaj oryginalny rozmiar arkusza).
-        """
-        scaling_mode = settings['scaling_mode']
-        MM_PT = self.MM_TO_POINTS
-
-        # Wymiary docelowe dla trybów 'scale' i 'enlarge'
-        target_width = 0.0
-        target_height = 0.0
-        target_name = settings['target_format']
-        target_rect_obj_global = None # Wymiary docelowe dla skalowania
-        
-        if scaling_mode not in ['crop_reposition_v1', 'none']:
-            # 1. Określenie docelowego rozmiaru dla trybów 'scale'/'enlarge'
-            if target_name == 'Niestandardowy':
-                target_width = settings['custom_width_mm'] * MM_PT
-                target_height = settings['custom_height_mm'] * MM_PT
-            else:
-                target_width, target_height = self.PAPER_FORMATS.get(target_name, self.PAPER_FORMATS['A4'])
-            
-            # Współrzędne docelowego MediaBox (zaczynając od 0,0)
-            target_rect_coords = [0, 0, target_width, target_height]
-            target_rect_obj_global = RectangleObject(target_rect_coords)
-
-        try:
-            self._save_state()
-            
-            # Krok 1: Wczytanie dokumentu za pomocą pypdf
-            pdf_bytes = io.BytesIO()
-            self.pdf_document.save(pdf_bytes) 
-            pdf_bytes.seek(0)
-            
-            reader = pypdf.PdfReader(pdf_bytes)
-            writer = pypdf.PdfWriter()
-            
-            modified_count = 0
-
-            # Krok 2: Iteracja i Modyfikacja
-            for i, page in enumerate(reader.pages):
+            self._update_status(f"Błąd podczas przetwarzania PDF: {e}")
+            import traceback; traceback.print_exc()
                 
-                if i not in self.selected_pages:
-                    writer.add_page(page)
-                    continue
-
-                # Wstępne ustawienia
-                current_bbox = page.cropbox if page.cropbox else page.mediabox
-                original_width = float(current_bbox.width)
-                original_height = float(current_bbox.height)
-                
-                scale = 1.0
-                offset_x = 0.0
-                offset_y = 0.0
-                
-                transform_required = True
-                
-                # --- WŁAŚCIWA LOGIKA TRYBÓW TRANSFORMACJI ---
-                
-                if scaling_mode == 'crop_reposition_v1':
-                    
-                    # 1. Określamy MediaBox docelowy (którym jest oryginalny MediaBox strony)
-                    current_mediabox_ref = page.mediabox
-                    x0, y0, x1, y1 = [float(v) for v in current_mediabox_ref] 
-                    original_rect_coords = [x0, y0, x1, y1] 
-                    target_rect_obj = RectangleObject(original_rect_coords) # ORYGINALNY MediaBox
-                    
-                    # 2. Obliczanie CropBox (widok po przycięciu)
-                    top_pt = settings['top_mm'] * MM_PT
-                    bottom_pt = settings['bottom_mm'] * MM_PT
-                    left_pt = settings['left_mm'] * MM_PT
-                    right_pt = settings['right_mm'] * MM_PT
-
-                    new_x0 = x0 + left_pt
-                    new_y0 = y0 + bottom_pt
-                    new_x1 = x1 - right_pt
-                    new_y1 = y1 - top_pt
-                    
-                    if new_x0 >= new_x1 or new_y0 >= new_y1:
-                         self._update_status(f"Błąd: Marginesy zbyt duże dla strony {i + 1}. Pomijam.")
-                         writer.add_page(page)
-                         continue
-                         
-                    new_rect = RectangleObject([new_x0, new_y0, new_x1, new_y1]) # NOWY CropBox
-                    
-                    # 3. Obliczanie offsetu (przesunięcie treści)
-                    # Treść musi się przesunąć, aby jej nowy narożnik (new_x0, new_y0) wylądował w oryginalnym (x0, y0)
-                    offset_x = -(new_x0 - x0) 
-                    offset_y = -(new_y0 - y0) 
-
-                    # 4. Aplikowanie na stronę: MediaBox wraca do oryginału, CropBox jest widokiem.
-                    page.mediabox = target_rect_obj
-                    page.cropbox = new_rect
-                    
-                    # scale pozostaje 1.0 (tylko przesunięcie)
-                    
-                elif scaling_mode in ['scale', 'enlarge']:
-                    
-                    # Tryb 'scale' (Skalowanie zawartości - Fit)
-                    if scaling_mode == 'scale':
-                        scale_x = target_width / original_width
-                        scale_y = target_height / original_height
-                        scale = min(scale_x, scale_y)
-                    # Dla 'enlarge' scale = 1.0
-                    
-                    # Obliczanie przesunięcia
-                    scaled_content_width = original_width * scale
-                    scaled_content_height = original_height * scale
-                    
-                    position_mode = settings['position_mode']
-                    
-                    if position_mode == 'center':
-                        offset_x = (target_width - scaled_content_width) / 2.0
-                        offset_y = (target_height - scaled_content_height) / 2.0
-                    elif position_mode == 'offset':
-                        offset_x = settings['offset_x_mm'] * MM_PT
-                        offset_y = settings['offset_y_mm'] * MM_PT
-                    
-                    # Ustawienie nowego MediaBox/CropBox na rozmiar docelowego arkusza (globalny)
-                    page.mediabox = target_rect_obj_global
-                    page.cropbox = target_rect_obj_global
-                
-                else: # 'none' (powinno być przechwycone przez wywołującego)
-                    transform_required = False
-                    
-                # --- Zastosowanie Transformacji ---
-                if transform_required:
-                    # Macierz: [scale_x, shear_y, shear_x, scale_y, offset_x, offset_y]
-                    transform_matrix = [
-                        FloatObject(scale), FloatObject(0),  # Skalowanie X
-                        FloatObject(0), FloatObject(scale),  # Skalowanie Y
-                        FloatObject(offset_x), FloatObject(offset_y) # Przesunięcie
-                    ]
-                    page.add_transformation(transform_matrix)
-                    
-                writer.add_page(page)
-                modified_count += 1
-
-            # Krok 3: Zapis i Odświeżenie
-            output_bytes = io.BytesIO()
-            writer.write(output_bytes)
-            output_bytes.seek(0)
-
-            # Odświeżenie self.pdf_document nowym dokumentem fitz/PyMuPDF
-            self.pdf_document.close() 
-            self.pdf_document = fitz.open("pdf", output_bytes.read()) 
-
-            # 4. Finalizacja
-            if modified_count > 0:
-                self._reconfigure_grid() 
-                status_msg = ""
-                if scaling_mode == 'crop_reposition_v1':
-                    status_msg = "Przycięto obraz i przywrócono oryginalny rozmiar arkusza (Opcja 1)."
-                else:
-                    status_msg = f"Eksperymentalnie zmieniono {modified_count} stron do formatu {target_name}. Tryb: {scaling_mode.upper()} / {settings['position_mode'].upper()}."
-                self._update_status(status_msg)
-            else:
-                self._update_status("Nie zastosowano transformacji na żadnej stronie.")
-
-        except Exception as e:
-            self._update_status(f"BŁĄD W TRANSFORMACJI (pypdf): {e}")
-            messagebox.showerror("Błąd Transformacji (pypdf)", str(e))
-            
 # Zakładamy, że ta funkcja jest metodą klasy PdfToolApp, 
 # która ma atrybuty self.pdf_document, self.master, self.MM_TO_POINTS, 
 # _save_state, _update_status i _reconfigure_grid.
@@ -2341,7 +2237,7 @@ class SelectablePDFViewer:
     
         # ODRACANIE KOLEJNOŚCI
         menu_obj.add_separator()
-        menu_obj.add_command(label="Przytnij zaznaczone strony...", command=self.apply_crop_to_pages, state=tk.DISABLED, accelerator="F8")
+        menu_obj.add_command(label="Przytnij zaznaczone strony...", command=self.apply_page_crop_resize_dialog, state=tk.DISABLED, accelerator="F8")
         menu_obj.add_command(label="Odwróć kolejność wszystkich stron", command=self._reverse_pages, state=tk.DISABLED)
     
     def _setup_key_bindings(self):
@@ -2359,7 +2255,7 @@ class SelectablePDFViewer:
         self.master.bind('<F5>', lambda e: self.shift_page_content())
         self.master.bind('<F6>', lambda e: self.remove_page_numbers())
         self.master.bind('<F7>', lambda e: self.insert_page_numbers())
-        self.master.bind('<F8>', lambda e: self.apply_crop_to_pages())
+        self.master.bind('<F8>', lambda e: self.apply_page_crop_resize_dialog())
         
         self.master.bind('<Control-F1>', lambda e: self._select_portrait_pages())
         self.master.bind('<Control-F2>', lambda e: self._select_landscape_pages())
