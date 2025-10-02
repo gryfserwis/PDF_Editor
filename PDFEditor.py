@@ -2182,6 +2182,8 @@ class SelectablePDFViewer:
         menu_obj.add_command(label="Wklej przed", command=self.paste_pages_before, accelerator="Ctrl+Shift+V")
         menu_obj.add_command(label="Wklej po", command=self.paste_pages_after, accelerator="Ctrl+V")
         menu_obj.add_separator()
+        menu_obj.add_command(label="Duplikuj stronę", command=self.duplicate_selected_page, accelerator="Ctrl+D")
+        menu_obj.add_separator()
         menu_obj.add_command(label="Wstaw nową stronę przed", command=self.insert_blank_page_before, accelerator="Ctrl+Shift+N")
         menu_obj.add_command(label="Wstaw nową stronę po", command=self.insert_blank_page_after, accelerator="Ctrl+N")
         #menu_obj.add_separator()
@@ -2210,6 +2212,7 @@ class SelectablePDFViewer:
     def _setup_key_bindings(self):
         self.master.bind('<Control-x>', lambda e: self.cut_selected_pages())
         self.master.bind('<Control-c>', lambda e: self.copy_selected_pages())
+        self.master.bind('<Control-d>', lambda e: self.duplicate_selected_page())
         self.master.bind('<Control-z>', lambda e: self.undo())
         self.master.bind('<Control-y>', lambda e: self.redo())
         self.master.bind('<Delete>', lambda e: self.delete_selected_pages())
@@ -2409,6 +2412,7 @@ class SelectablePDFViewer:
             "Usuń zaznaczone": delete_state,
             "Wklej przed": paste_enable_state,
             "Wklej po": paste_enable_state,
+            "Duplikuj stronę": insert_state,
             "Wstaw nową stronę przed": insert_state,
             "Wstaw nową stronę po": insert_state,
             "Obróć w lewo (-90°)": rotate_state,
@@ -2991,6 +2995,39 @@ class SelectablePDFViewer:
             self._update_status(f"Wstawiono nową, pustą stronę. Aktualna liczba stron: {len(self.pdf_document)}.")
         except Exception as e:
             self._update_status(f"BŁĄD: Wystąpił błąd podczas wstawiania: {e}")
+    
+    def duplicate_selected_page(self):
+        """Duplikuje aktualnie zaznaczoną stronę i wstawia ją zaraz po oryginale."""
+        if not self.pdf_document or len(self.selected_pages) != 1:
+            self._update_status("BŁĄD: Zaznacz dokładnie jedną stronę, aby ją zduplikować.")
+            return
+        
+        page_index = list(self.selected_pages)[0]
+        
+        try:
+            self._save_state_to_undo()
+            
+            # Wstawienie kopii strony zaraz po oryginale
+            self.pdf_document.insert_pdf(
+                self.pdf_document,
+                from_page=page_index,
+                to_page=page_index,
+                start_at=page_index + 1
+            )
+            
+            # Odświeżenie GUI
+            self.selected_pages.clear()
+            self.tk_images.clear()
+            for widget in list(self.scrollable_frame.winfo_children()): 
+                widget.destroy()
+            self.thumb_frames.clear()
+            self._reconfigure_grid()
+            self.update_tool_button_states()
+            self.update_focus_display()
+            
+            self._update_status(f"Zduplikowano stronę {page_index + 1}. Aktualna liczba stron: {len(self.pdf_document)}.")
+        except Exception as e:
+            self._update_status(f"BŁĄD: Wystąpił błąd podczas duplikowania strony: {e}")
             
     # --- Metody obsługi widoku/GUI (Bez zmian) ---
     def _on_mousewheel(self, event):
