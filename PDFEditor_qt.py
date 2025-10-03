@@ -88,6 +88,797 @@ def resource_path(relative_path):
 # DIALOG CLASSES
 # ====================================================================
 
+class PageCropResizeDialog(QDialog):
+    """Dialog for cropping and resizing PDF pages with full feature parity"""
+    
+    PAPER_FORMATS = {
+        'A0': (841, 1189),
+        'A1': (594, 841),
+        'A2': (420, 594),
+        'A3': (297, 420),
+        'A4': (210, 297),
+        'A5': (148, 210),
+        'A6': (105, 148),
+        'Niestandardowy': (0, 0)
+    }
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Kadrowanie i zmiana rozmiaru stron")
+        self.result = None
+        
+        # Initialize variables
+        self.crop_mode = "nocrop"
+        self.margin_top = "10"
+        self.margin_bottom = "10"
+        self.margin_left = "10"
+        self.margin_right = "10"
+        
+        self.resize_mode = "noresize"
+        self.target_format = "A4"
+        self.custom_width = ""
+        self.custom_height = ""
+        self.position_mode = "center"
+        self.offset_x = "0"
+        self.offset_y = "0"
+        
+        self.setup_ui()
+        self.update_field_states()
+        
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # === CROP SECTION ===
+        crop_group = QGroupBox("Przycinanie strony")
+        crop_layout = QVBoxLayout()
+        
+        self.crop_none = QRadioButton("Nie przycinaj")
+        self.crop_only = QRadioButton("Przytnij obraz bez zmiany rozmiaru arkusza")
+        self.crop_resize = QRadioButton("Przytnij obraz i dostosuj rozmiar arkusza")
+        self.crop_none.setChecked(True)
+        
+        crop_layout.addWidget(self.crop_none)
+        crop_layout.addWidget(self.crop_only)
+        crop_layout.addWidget(self.crop_resize)
+        
+        # Margin inputs
+        margin_frame = QWidget()
+        margin_grid = QGridLayout(margin_frame)
+        margin_grid.addWidget(QLabel("Góra [mm]:"), 0, 0)
+        self.e_margin_top = QLineEdit(self.margin_top)
+        margin_grid.addWidget(self.e_margin_top, 0, 1)
+        margin_grid.addWidget(QLabel("Dół [mm]:"), 0, 2)
+        self.e_margin_bottom = QLineEdit(self.margin_bottom)
+        margin_grid.addWidget(self.e_margin_bottom, 0, 3)
+        margin_grid.addWidget(QLabel("Lewo [mm]:"), 1, 0)
+        self.e_margin_left = QLineEdit(self.margin_left)
+        margin_grid.addWidget(self.e_margin_left, 1, 1)
+        margin_grid.addWidget(QLabel("Prawo [mm]:"), 1, 2)
+        self.e_margin_right = QLineEdit(self.margin_right)
+        margin_grid.addWidget(self.e_margin_right, 1, 3)
+        
+        crop_layout.addWidget(margin_frame)
+        crop_group.setLayout(crop_layout)
+        layout.addWidget(crop_group)
+        
+        # === RESIZE SECTION ===
+        resize_group = QGroupBox("Zmiana rozmiaru arkusza")
+        resize_layout = QVBoxLayout()
+        
+        self.resize_none = QRadioButton("Nie zmieniaj rozmiaru")
+        self.resize_scale = QRadioButton("Zmień rozmiar i skaluj obraz")
+        self.resize_noscale = QRadioButton("Zmień rozmiar i nie skaluj obrazu")
+        self.resize_none.setChecked(True)
+        
+        resize_layout.addWidget(self.resize_none)
+        resize_layout.addWidget(self.resize_scale)
+        resize_layout.addWidget(self.resize_noscale)
+        
+        # Format selection
+        format_frame = QWidget()
+        format_layout = QHBoxLayout(format_frame)
+        format_layout.addWidget(QLabel("Format:"))
+        self.format_combo = QComboBox()
+        self.format_combo.addItems(list(self.PAPER_FORMATS.keys()))
+        self.format_combo.setCurrentText(self.target_format)
+        format_layout.addWidget(self.format_combo)
+        resize_layout.addWidget(format_frame)
+        
+        # Custom size inputs
+        self.custom_size_frame = QWidget()
+        custom_grid = QGridLayout(self.custom_size_frame)
+        custom_grid.addWidget(QLabel("Szerokość [mm]:"), 0, 0)
+        self.e_custom_width = QLineEdit(self.custom_width)
+        custom_grid.addWidget(self.e_custom_width, 0, 1)
+        custom_grid.addWidget(QLabel("Wysokość [mm]:"), 0, 2)
+        self.e_custom_height = QLineEdit(self.custom_height)
+        custom_grid.addWidget(self.e_custom_height, 0, 3)
+        resize_layout.addWidget(self.custom_size_frame)
+        
+        resize_group.setLayout(resize_layout)
+        layout.addWidget(resize_group)
+        
+        # === POSITION SECTION ===
+        self.position_group = QGroupBox("Położenie obrazu")
+        position_layout = QVBoxLayout()
+        
+        self.pos_center = QRadioButton("Wyśrodkuj")
+        self.pos_custom = QRadioButton("Niestandardowe położenie")
+        self.pos_center.setChecked(True)
+        
+        position_layout.addWidget(self.pos_center)
+        position_layout.addWidget(self.pos_custom)
+        
+        # Offset inputs
+        self.offset_frame = QWidget()
+        offset_grid = QGridLayout(self.offset_frame)
+        offset_grid.addWidget(QLabel("Od lewej [mm]:"), 0, 0)
+        self.e_offset_x = QLineEdit(self.offset_x)
+        offset_grid.addWidget(self.e_offset_x, 0, 1)
+        offset_grid.addWidget(QLabel("Od dołu [mm]:"), 0, 2)
+        self.e_offset_y = QLineEdit(self.offset_y)
+        offset_grid.addWidget(self.e_offset_y, 0, 3)
+        position_layout.addWidget(self.offset_frame)
+        
+        self.position_group.setLayout(position_layout)
+        layout.addWidget(self.position_group)
+        
+        # === BUTTONS ===
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept_dialog)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+        
+        # Connect signals for mutual exclusivity and field enabling
+        self.crop_none.toggled.connect(self.update_field_states)
+        self.crop_only.toggled.connect(self.update_field_states)
+        self.crop_resize.toggled.connect(self.update_field_states)
+        self.resize_none.toggled.connect(self.update_field_states)
+        self.resize_scale.toggled.connect(self.update_field_states)
+        self.resize_noscale.toggled.connect(self.update_field_states)
+        self.format_combo.currentTextChanged.connect(self.update_field_states)
+        self.pos_center.toggled.connect(self.update_field_states)
+        self.pos_custom.toggled.connect(self.update_field_states)
+        
+    def update_field_states(self):
+        """Update enabled/disabled state of fields based on selected modes"""
+        # Determine modes
+        crop_selected = not self.crop_none.isChecked()
+        resize_selected = not self.resize_none.isChecked()
+        
+        # Mutual exclusivity: crop disables resize and vice versa
+        self.resize_none.setEnabled(not crop_selected)
+        self.resize_scale.setEnabled(not crop_selected)
+        self.resize_noscale.setEnabled(not crop_selected)
+        self.crop_none.setEnabled(not resize_selected)
+        self.crop_only.setEnabled(not resize_selected)
+        self.crop_resize.setEnabled(not resize_selected)
+        
+        # Margin fields enabled only for crop modes
+        enable_margins = crop_selected and not resize_selected
+        self.e_margin_top.setEnabled(enable_margins)
+        self.e_margin_bottom.setEnabled(enable_margins)
+        self.e_margin_left.setEnabled(enable_margins)
+        self.e_margin_right.setEnabled(enable_margins)
+        
+        # Format and custom size enabled only for resize modes
+        enable_format = resize_selected and not crop_selected
+        self.format_combo.setEnabled(enable_format)
+        enable_custom = enable_format and self.format_combo.currentText() == "Niestandardowy"
+        self.e_custom_width.setEnabled(enable_custom)
+        self.e_custom_height.setEnabled(enable_custom)
+        
+        # Position section enabled only for resize_noscale
+        enable_position = self.resize_noscale.isChecked() and not crop_selected
+        self.position_group.setEnabled(enable_position)
+        enable_offsets = enable_position and self.pos_custom.isChecked()
+        self.e_offset_x.setEnabled(enable_offsets)
+        self.e_offset_y.setEnabled(enable_offsets)
+        
+    def accept_dialog(self):
+        """Validate and collect results"""
+        try:
+            # Determine crop mode
+            if self.crop_none.isChecked():
+                crop_mode = "nocrop"
+                top = bottom = left = right = 0.0
+            else:
+                crop_mode = "crop_only" if self.crop_only.isChecked() else "crop_resize"
+                top = float(self.e_margin_top.text().replace(",", "."))
+                bottom = float(self.e_margin_bottom.text().replace(",", "."))
+                left = float(self.e_margin_left.text().replace(",", "."))
+                right = float(self.e_margin_right.text().replace(",", "."))
+                if any(v < 0 for v in [top, bottom, left, right]):
+                    raise ValueError("Marginesy muszą być nieujemne.")
+            
+            # Determine resize mode
+            if self.resize_none.isChecked():
+                resize_mode = "noresize"
+                format_name = None
+                target_dims = (None, None)
+            else:
+                resize_mode = "resize_scale" if self.resize_scale.isChecked() else "resize_noscale"
+                format_name = self.format_combo.currentText()
+                if format_name == "Niestandardowy":
+                    w = float(self.e_custom_width.text().replace(",", "."))
+                    h = float(self.e_custom_height.text().replace(",", "."))
+                    if w <= 0 or h <= 0:
+                        raise ValueError("Rozmiar niestandardowy musi być większy od zera.")
+                    target_dims = (w, h)
+                else:
+                    target_dims = self.PAPER_FORMATS[format_name]
+            
+            # Determine position
+            enable_position = self.resize_noscale.isChecked() and not (not self.crop_none.isChecked())
+            if enable_position:
+                position_mode = "custom" if self.pos_custom.isChecked() else "center"
+                if position_mode == "custom":
+                    offset_x = float(self.e_offset_x.text().replace(",", "."))
+                    offset_y = float(self.e_offset_y.text().replace(",", "."))
+                    if offset_x < 0 or offset_y < 0:
+                        raise ValueError("Offset musi być nieujemny.")
+                else:
+                    offset_x = offset_y = 0.0
+            else:
+                position_mode = None
+                offset_x = offset_y = None
+            
+            self.result = {
+                "crop_mode": crop_mode,
+                "crop_top_mm": top,
+                "crop_bottom_mm": bottom,
+                "crop_left_mm": left,
+                "crop_right_mm": right,
+                "resize_mode": resize_mode,
+                "target_format": format_name,
+                "target_width_mm": target_dims[0],
+                "target_height_mm": target_dims[1],
+                "position_mode": position_mode,
+                "offset_x_mm": offset_x,
+                "offset_y_mm": offset_y,
+            }
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, "Błąd", f"Nieprawidłowe dane: {e}")
+
+
+class ImageImportSettingsDialog(QDialog):
+    """Dialog for image import settings with scaling and alignment options"""
+    
+    def __init__(self, parent=None, title="Ustawienia importu obrazu", image_path=""):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.image_path = image_path
+        self.result = None
+        
+        # Get image info
+        self.image_pixel_width, self.image_pixel_height = 0, 0
+        self.image_dpi = 96
+        
+        try:
+            img = Image.open(image_path)
+            self.image_pixel_width, self.image_pixel_height = img.size
+            dpi_info = img.info.get('dpi', (96, 96))
+            self.image_dpi = dpi_info[0] if isinstance(dpi_info, tuple) else 96
+            img.close()
+        except Exception:
+            pass
+        
+        self.setup_ui()
+        self.update_scale_controls()
+        
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # Image info
+        info_group = QGroupBox("Informacje o obrazie źródłowym")
+        info_layout = QVBoxLayout()
+        info_layout.addWidget(QLabel(f"Wymiary: {self.image_pixel_width} x {self.image_pixel_height} px"))
+        info_layout.addWidget(QLabel(f"DPI: {self.image_dpi}"))
+        info_group.setLayout(info_layout)
+        layout.addWidget(info_group)
+        
+        # Page orientation
+        orient_group = QGroupBox("Orientacja strony docelowej (A4)")
+        orient_layout = QVBoxLayout()
+        self.orient_portrait = QRadioButton("Pionowo")
+        self.orient_landscape = QRadioButton("Poziomo")
+        self.orient_portrait.setChecked(True)
+        orient_layout.addWidget(self.orient_portrait)
+        orient_layout.addWidget(self.orient_landscape)
+        orient_group.setLayout(orient_layout)
+        layout.addWidget(orient_group)
+        
+        # Scaling mode
+        scale_group = QGroupBox("Ustawienia skalowania")
+        scale_layout = QVBoxLayout()
+        self.scale_fit = QRadioButton("Dopasuj do strony A4")
+        self.scale_original = QRadioButton("Oryginalny rozmiar (100%)")
+        self.scale_custom = QRadioButton("Skala niestandardowa")
+        self.scale_fit.setChecked(True)
+        scale_layout.addWidget(self.scale_fit)
+        scale_layout.addWidget(self.scale_original)
+        scale_layout.addWidget(self.scale_custom)
+        
+        # Custom scale input
+        scale_input_layout = QHBoxLayout()
+        scale_input_layout.addWidget(QLabel("Skala [%]:"))
+        self.scale_value = QLineEdit("100.0")
+        scale_input_layout.addWidget(self.scale_value)
+        scale_layout.addLayout(scale_input_layout)
+        
+        scale_group.setLayout(scale_layout)
+        layout.addWidget(scale_group)
+        
+        # Alignment
+        align_group = QGroupBox("Wyrównanie na stronie")
+        align_layout = QVBoxLayout()
+        self.align_center = QRadioButton("Środek strony")
+        self.align_top = QRadioButton("Góra")
+        self.align_bottom = QRadioButton("Dół")
+        self.align_center.setChecked(True)
+        align_layout.addWidget(self.align_center)
+        align_layout.addWidget(self.align_top)
+        align_layout.addWidget(self.align_bottom)
+        align_group.setLayout(align_layout)
+        layout.addWidget(align_group)
+        
+        # Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept_dialog)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+        
+        # Connect signals
+        self.scale_fit.toggled.connect(self.update_scale_controls)
+        self.scale_original.toggled.connect(self.update_scale_controls)
+        self.scale_custom.toggled.connect(self.update_scale_controls)
+        
+    def update_scale_controls(self):
+        """Enable/disable scale input based on selected mode"""
+        self.scale_value.setEnabled(self.scale_custom.isChecked())
+        
+    def accept_dialog(self):
+        """Validate and collect results"""
+        try:
+            # Determine scaling mode
+            if self.scale_fit.isChecked():
+                scaling_mode = "DOPASUJ"
+                scale_factor = 1.0
+            elif self.scale_original.isChecked():
+                scaling_mode = "ORYGINALNY"
+                scale_factor = 1.0
+            else:
+                scaling_mode = "SKALA"
+                scale_val = float(self.scale_value.text().replace(',', '.'))
+                if not (0.1 <= scale_val <= 1000):
+                    raise ValueError("Skala musi być wartością liczbową od 0.1 do 1000%.")
+                scale_factor = scale_val / 100.0
+            
+            # Determine alignment
+            if self.align_center.isChecked():
+                alignment = "SRODEK"
+            elif self.align_top.isChecked():
+                alignment = "GORA"
+            else:
+                alignment = "DOL"
+            
+            # Determine orientation
+            orientation = "PIONOWO" if self.orient_portrait.isChecked() else "POZIOMO"
+            
+            self.result = {
+                'scaling_mode': scaling_mode,
+                'scale_factor': scale_factor,
+                'alignment': alignment,
+                'page_orientation': orientation,
+                'image_dpi': self.image_dpi
+            }
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, "Błąd", f"Nieprawidłowe wartości: {e}")
+
+
+class EnhancedPageRangeDialog(QDialog):
+    """Dialog for selecting page range with parsing support"""
+    
+    def __init__(self, parent=None, title="Wybór zakresu stron", imported_doc=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.imported_doc = imported_doc
+        self.result = None
+        
+        try:
+            self.max_pages = len(imported_doc) if imported_doc else 0
+        except:
+            self.max_pages = 0
+            QMessageBox.critical(self, "Błąd", "Dokument PDF został zamknięty przed otwarciem dialogu.")
+            self.reject()
+            return
+        
+        self.setup_ui()
+        
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # Range input group
+        range_group = QGroupBox("Zakres stron do importu")
+        range_layout = QVBoxLayout()
+        
+        range_layout.addWidget(QLabel(f"Podaj strony z zakresu [1 - {self.max_pages}]:"))
+        self.entry = QLineEdit(f"1-{self.max_pages}")
+        range_layout.addWidget(self.entry)
+        
+        helper = QLabel("Format: 1, 3-5, 7")
+        helper.setStyleSheet("color: gray;")
+        range_layout.addWidget(helper)
+        
+        range_group.setLayout(range_layout)
+        layout.addWidget(range_group)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        import_btn = QPushButton("Importuj")
+        import_btn.clicked.connect(self.accept_dialog)
+        cancel_btn = QPushButton("Anuluj")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(import_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+        
+    def accept_dialog(self):
+        """Parse and validate range"""
+        raw_range = self.entry.text().strip()
+        if not raw_range:
+            QMessageBox.critical(self, "Błąd", "Wprowadź zakres stron.")
+            return
+        
+        page_indices = self._parse_range(raw_range)
+        if page_indices is None:
+            QMessageBox.critical(self, "Błąd formatu", "Niepoprawny format zakresu. Użyj np. 1, 3-5, 7.")
+            return
+        
+        self.result = page_indices
+        self.accept()
+        
+    def _parse_range(self, raw_range: str) -> Optional[List[int]]:
+        """Parse page range string into list of page indices"""
+        selected_pages = set()
+        if not re.fullmatch(r'[\d,\-\s]+', raw_range):
+            return None
+        parts = raw_range.split(',')
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+            if '-' in part:
+                try:
+                    start, end = map(int, part.split('-'))
+                    start = max(1, start)
+                    end = min(self.max_pages, end)
+                    if start > end:
+                        continue
+                    for page_num in range(start, end + 1):
+                        selected_pages.add(page_num - 1)
+                except ValueError:
+                    return None
+            else:
+                try:
+                    page_num = int(part)
+                    if 1 <= page_num <= self.max_pages:
+                        selected_pages.add(page_num - 1)
+                except ValueError:
+                    return None
+        return sorted(list(selected_pages))
+
+
+class MergePageGridDialog(QDialog):
+    """Dialog for merging multiple pages into a grid on a single sheet with live preview"""
+    
+    PAPER_FORMATS = {
+        'A0': (841, 1189),
+        'A1': (594, 841),
+        'A2': (420, 594),
+        'A3': (297, 420),
+        'A4': (210, 297),
+        'A5': (148, 210),
+        'A6': (105, 148),
+    }
+    
+    def __init__(self, parent=None, page_count=1):
+        super().__init__(parent)
+        self.setWindowTitle("Scalanie strony na arkuszu")
+        self.result = None
+        self.page_count = page_count
+        
+        # Default values
+        self.sheet_format_val = "A4"
+        self.orientation_val = "Pionowa"
+        self.margin_top_val = "4"
+        self.margin_bottom_val = "4"
+        self.margin_left_val = "5"
+        self.margin_right_val = "5"
+        self.spacing_x_val = "10"
+        self.spacing_y_val = "10"
+        
+        # Calculate default grid
+        if page_count == 1:
+            self.rows_val = 1
+            self.cols_val = 1
+        else:
+            sq = math.ceil(page_count ** 0.5)
+            if (sq - 1) * sq >= page_count:
+                self.rows_val = sq - 1
+                self.cols_val = sq
+            else:
+                self.rows_val = sq
+                self.cols_val = sq
+        
+        self.setup_ui()
+        self.update_preview()
+        
+    def setup_ui(self):
+        main_layout = QHBoxLayout(self)
+        
+        # Left panel - settings
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        
+        # Sheet format and orientation
+        format_group = QGroupBox("Arkusz docelowy")
+        format_layout = QGridLayout()
+        format_layout.addWidget(QLabel("Format:"), 0, 0)
+        self.format_combo = QComboBox()
+        self.format_combo.addItems(list(self.PAPER_FORMATS.keys()))
+        self.format_combo.setCurrentText(self.sheet_format_val)
+        self.format_combo.currentTextChanged.connect(self.update_preview)
+        format_layout.addWidget(self.format_combo, 0, 1)
+        
+        format_layout.addWidget(QLabel("Orientacja:"), 1, 0)
+        orient_widget = QWidget()
+        orient_layout = QHBoxLayout(orient_widget)
+        orient_layout.setContentsMargins(0, 0, 0, 0)
+        self.orient_portrait = QRadioButton("Pionowa")
+        self.orient_landscape = QRadioButton("Pozioma")
+        self.orient_portrait.setChecked(True)
+        self.orient_portrait.toggled.connect(self.update_preview)
+        orient_layout.addWidget(self.orient_portrait)
+        orient_layout.addWidget(self.orient_landscape)
+        format_layout.addWidget(orient_widget, 1, 1)
+        
+        format_group.setLayout(format_layout)
+        left_layout.addWidget(format_group)
+        
+        # Margins
+        margin_group = QGroupBox("Marginesy [mm]")
+        margin_layout = QGridLayout()
+        margin_layout.addWidget(QLabel("Górny:"), 0, 0)
+        self.margin_top = QLineEdit(self.margin_top_val)
+        self.margin_top.textChanged.connect(self.update_preview)
+        margin_layout.addWidget(self.margin_top, 0, 1)
+        margin_layout.addWidget(QLabel("Dolny:"), 0, 2)
+        self.margin_bottom = QLineEdit(self.margin_bottom_val)
+        self.margin_bottom.textChanged.connect(self.update_preview)
+        margin_layout.addWidget(self.margin_bottom, 0, 3)
+        margin_layout.addWidget(QLabel("Lewy:"), 1, 0)
+        self.margin_left = QLineEdit(self.margin_left_val)
+        self.margin_left.textChanged.connect(self.update_preview)
+        margin_layout.addWidget(self.margin_left, 1, 1)
+        margin_layout.addWidget(QLabel("Prawy:"), 1, 2)
+        self.margin_right = QLineEdit(self.margin_right_val)
+        self.margin_right.textChanged.connect(self.update_preview)
+        margin_layout.addWidget(self.margin_right, 1, 3)
+        margin_group.setLayout(margin_layout)
+        left_layout.addWidget(margin_group)
+        
+        # Spacing
+        spacing_group = QGroupBox("Odstępy [mm]")
+        spacing_layout = QGridLayout()
+        spacing_layout.addWidget(QLabel("Między kolumnami:"), 0, 0)
+        self.spacing_x = QLineEdit(self.spacing_x_val)
+        self.spacing_x.textChanged.connect(self.update_preview)
+        spacing_layout.addWidget(self.spacing_x, 0, 1)
+        spacing_layout.addWidget(QLabel("Między wierszami:"), 1, 0)
+        self.spacing_y = QLineEdit(self.spacing_y_val)
+        self.spacing_y.textChanged.connect(self.update_preview)
+        spacing_layout.addWidget(self.spacing_y, 1, 1)
+        spacing_group.setLayout(spacing_layout)
+        left_layout.addWidget(spacing_group)
+        
+        # Grid dimensions
+        grid_group = QGroupBox("Siatka stron")
+        grid_layout = QGridLayout()
+        grid_layout.addWidget(QLabel("Wiersze:"), 0, 0)
+        self.rows_spin = QSpinBox()
+        self.rows_spin.setMinimum(1)
+        self.rows_spin.setMaximum(10)
+        self.rows_spin.setValue(self.rows_val)
+        self.rows_spin.valueChanged.connect(self.update_preview)
+        grid_layout.addWidget(self.rows_spin, 0, 1)
+        grid_layout.addWidget(QLabel("Kolumny:"), 0, 2)
+        self.cols_spin = QSpinBox()
+        self.cols_spin.setMinimum(1)
+        self.cols_spin.setMaximum(10)
+        self.cols_spin.setValue(self.cols_val)
+        self.cols_spin.valueChanged.connect(self.update_preview)
+        grid_layout.addWidget(self.cols_spin, 0, 3)
+        grid_group.setLayout(grid_layout)
+        left_layout.addWidget(grid_group)
+        
+        left_layout.addStretch()
+        main_layout.addWidget(left_widget)
+        
+        # Right panel - preview
+        preview_group = QGroupBox("Podgląd rozkładu stron")
+        preview_layout = QVBoxLayout()
+        
+        self.preview_scene = QGraphicsScene()
+        self.preview_view = QGraphicsView(self.preview_scene)
+        self.preview_view.setMinimumSize(320, 450)
+        self.preview_view.setMaximumSize(320, 450)
+        preview_layout.addWidget(self.preview_view)
+        
+        preview_group.setLayout(preview_layout)
+        main_layout.addWidget(preview_group)
+        
+        # Bottom buttons
+        button_layout = QHBoxLayout()
+        apply_btn = QPushButton("Zastosuj")
+        apply_btn.clicked.connect(self.accept_dialog)
+        cancel_btn = QPushButton("Anuluj")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(apply_btn)
+        button_layout.addWidget(cancel_btn)
+        
+        # Add button layout to main layout
+        outer_layout = QVBoxLayout()
+        outer_layout.addLayout(main_layout)
+        outer_layout.addLayout(button_layout)
+        
+        container = QWidget()
+        container.setLayout(outer_layout)
+        
+        dialog_layout = QVBoxLayout(self)
+        dialog_layout.addWidget(container)
+        
+    def get_sheet_dimensions(self):
+        """Get current sheet dimensions in mm"""
+        sf = self.format_combo.currentText()
+        sheet_w, sheet_h = self.PAPER_FORMATS.get(sf, (210, 297))
+        if self.orient_landscape.isChecked():
+            return sheet_h, sheet_w
+        return sheet_w, sheet_h
+        
+    def update_preview(self):
+        """Update the visual preview of the grid layout"""
+        try:
+            self.preview_scene.clear()
+            
+            # Get all values
+            num_pages = self.page_count
+            margin_top = float(self.margin_top.text().replace(",", "."))
+            margin_bottom = float(self.margin_bottom.text().replace(",", "."))
+            margin_left = float(self.margin_left.text().replace(",", "."))
+            margin_right = float(self.margin_right.text().replace(",", "."))
+            spacing_x = float(self.spacing_x.text().replace(",", "."))
+            spacing_y = float(self.spacing_y.text().replace(",", "."))
+            rows = self.rows_spin.value()
+            cols = self.cols_spin.value()
+            sheet_w, sheet_h = self.get_sheet_dimensions()
+            
+            # Preview dimensions
+            PREVIEW_W = 320
+            PREVIEW_H = 450
+            PREVIEW_PAD = 20
+            
+            preview_area_w = PREVIEW_W - 2 * PREVIEW_PAD
+            preview_area_h = PREVIEW_H - 2 * PREVIEW_PAD
+            scale = min(preview_area_w / sheet_w, preview_area_h / sheet_h)
+            
+            width_px = sheet_w * scale
+            height_px = sheet_h * scale
+            offset_x = (PREVIEW_W - width_px) / 2
+            offset_y = (PREVIEW_H - height_px) / 2
+            
+            # Draw sheet background
+            sheet_rect = QGraphicsRectItem(offset_x, offset_y, width_px, height_px)
+            sheet_rect.setBrush(QBrush(QColor("white")))
+            sheet_rect.setPen(QPen(QColor("#bbb"), 1))
+            self.preview_scene.addItem(sheet_rect)
+            
+            # Calculate cell dimensions
+            if cols == 1:
+                cell_w = sheet_w - margin_left - margin_right
+            else:
+                cell_w = (sheet_w - margin_left - margin_right - (cols - 1) * spacing_x) / cols
+            if rows == 1:
+                cell_h = sheet_h - margin_top - margin_bottom
+            else:
+                cell_h = (sheet_h - margin_top - margin_bottom - (rows - 1) * spacing_y) / rows
+            
+            cell_w_px = cell_w * scale
+            cell_h_px = cell_h * scale
+            margin_left_px = margin_left * scale
+            margin_top_px = margin_top * scale
+            spacing_x_px = spacing_x * scale
+            spacing_y_px = spacing_y * scale
+            
+            # Draw cells
+            for r in range(rows):
+                for c in range(cols):
+                    x0 = offset_x + margin_left_px + c * (cell_w_px + spacing_x_px)
+                    y0 = offset_y + margin_top_px + r * (cell_h_px + spacing_y_px)
+                    
+                    idx = r * cols + c
+                    color = QColor("#d0e6f8") if idx < num_pages else QColor("#f5f5f5")
+                    
+                    cell_rect = QGraphicsRectItem(x0, y0, cell_w_px, cell_h_px)
+                    cell_rect.setBrush(QBrush(color))
+                    cell_rect.setPen(QPen(QColor("#666"), 1))
+                    self.preview_scene.addItem(cell_rect)
+                    
+                    if idx < num_pages:
+                        text_item = QGraphicsTextItem(str(idx + 1))
+                        text_item.setDefaultTextColor(QColor("#345"))
+                        font = QFont("Arial", 11, QFont.Bold)
+                        text_item.setFont(font)
+                        # Center text in cell
+                        text_rect = text_item.boundingRect()
+                        text_x = x0 + (cell_w_px - text_rect.width()) / 2
+                        text_y = y0 + (cell_h_px - text_rect.height()) / 2
+                        text_item.setPos(text_x, text_y)
+                        self.preview_scene.addItem(text_item)
+            
+            self.preview_scene.setSceneRect(0, 0, PREVIEW_W, PREVIEW_H)
+        except:
+            pass  # Ignore errors during preview update
+            
+    def accept_dialog(self):
+        """Validate and collect results"""
+        try:
+            margin_top = float(self.margin_top.text().replace(",", "."))
+            margin_bottom = float(self.margin_bottom.text().replace(",", "."))
+            margin_left = float(self.margin_left.text().replace(",", "."))
+            margin_right = float(self.margin_right.text().replace(",", "."))
+            spacing_x = float(self.spacing_x.text().replace(",", "."))
+            spacing_y = float(self.spacing_y.text().replace(",", "."))
+            
+            if any(m < 0 for m in [margin_top, margin_bottom, margin_left, margin_right]):
+                raise ValueError("Marginesy muszą być nieujemne.")
+            if spacing_x < 0 or spacing_y < 0:
+                raise ValueError("Odstępy muszą być nieujemne.")
+            
+            rows = self.rows_spin.value()
+            cols = self.cols_spin.value()
+            if rows < 1 or cols < 1:
+                raise ValueError("Liczba wierszy i kolumn musi być dodatnia.")
+            
+            format_name = self.format_combo.currentText()
+            sheet_dims = self.PAPER_FORMATS[format_name]
+            orientation = "Pozioma" if self.orient_landscape.isChecked() else "Pionowa"
+            
+            # Swap dimensions if landscape
+            if orientation == "Pozioma":
+                sheet_dims = (sheet_dims[1], sheet_dims[0])
+            
+            self.result = {
+                "format_name": format_name,
+                "sheet_width_mm": sheet_dims[0],
+                "sheet_height_mm": sheet_dims[1],
+                "margin_top_mm": margin_top,
+                "margin_bottom_mm": margin_bottom,
+                "margin_left_mm": margin_left,
+                "margin_right_mm": margin_right,
+                "spacing_x_mm": spacing_x,
+                "spacing_y_mm": spacing_y,
+                "rows": rows,
+                "cols": cols,
+                "orientation": orientation
+            }
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, "Błąd", f"Nieprawidłowe dane: {e}")
+
+
 class PageNumberingDialog(QDialog):
     """Dialog for adding page numbers to PDF"""
     
@@ -330,7 +1121,21 @@ class PageNumberMarginDialog(QDialog):
 
 
 
-#  ====================================================================
+# ====================================================================
+# TOOLTIP HELPER
+# ====================================================================
+
+def set_tooltip(widget, text):
+    """
+    Set a tooltip on a Qt widget. This is a lightweight replacement
+    for the Tkinter Tooltip class - Qt has built-in tooltip support.
+    The tooltip will show after a short delay when hovering.
+    """
+    widget.setToolTip(text)
+    # Qt automatically handles the delay and display
+
+
+# ====================================================================
 # THUMBNAIL WIDGET WITH DRAG & DROP SUPPORT
 # ====================================================================
 
