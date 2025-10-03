@@ -1035,6 +1035,7 @@ class ThumbnailFrame(tk.Frame):
                  for grandchild in child.winfo_children():
                      grandchild.bind(sequence, func)
 
+
     def setup_ui(self, parent_frame):
         img_tk = self.viewer_app._render_and_scale(self.page_index, self.column_width)
         self.viewer_app.tk_images[self.page_index] = img_tk
@@ -1053,6 +1054,7 @@ class ThumbnailFrame(tk.Frame):
         self._bind_all_children("<Button-1>", lambda event, idx=self.page_index: self.viewer_app._handle_lpm_click(idx, event))
 
         self._bind_all_children("<Button-3>", lambda event, idx=self.page_index: self._handle_ppm_click(event, idx))
+        parent_frame.bind("<Enter>", lambda event, idx=self.page_index: self.viewer_app._focus_by_mouse(idx))
 
     def _handle_ppm_click(self, event, page_index):
         self.viewer_app.active_page_index = page_index
@@ -1062,7 +1064,7 @@ class ThumbnailFrame(tk.Frame):
              self.viewer_app.selected_pages.add(page_index)
              self.viewer_app.update_selection_display()
         
-        self.viewer_app.update_focus_display(hide_mouse_focus=True) 
+        self.viewer_app.update_focus_display(hide_mouse_focus=False) 
         self.viewer_app.context_menu.tk_popup(event.x_root, event.y_root)
 
 # ====================================================================
@@ -1362,8 +1364,39 @@ class SelectablePDFViewer:
     import fitz
     from pypdf import PdfReader, PdfWriter, Transformation
     from pypdf.generic import RectangleObject, FloatObject
+    from tkinterdnd2 import DND_FILES, TkinterDnD
 
     MM_TO_POINTS = 72 / 25.4
+
+    def _focus_by_mouse(self, page_index):
+        self.active_page_index = page_index
+        self.update_focus_display(hide_mouse_focus=False)
+
+    def _setup_drag_and_drop_file(self):
+        # Rejestrujemy canvas do odbioru plików DND
+        self.master.drop_target_register(self.DND_FILES)
+        self.master.dnd_bind('<<Drop>>', self._on_drop_file)
+
+    def _on_drop_file(self, event):
+        filepath = event.data.strip()
+        if filepath.startswith('{') and filepath.endswith('}'):  # Windows
+            filepath = filepath[1:-1]
+        paths = [p.strip() for p in filepath.split()]
+        for path in paths:
+            if path.lower().endswith('.pdf'):
+                if self.pdf_document is None:
+                    self.open_pdf(filepath=path)
+                else:
+                    self.import_pdf_after_active_page(filepath=path)
+                return
+            elif path.lower().endswith(('.png', '.jpg', '.jpeg', '.tif', '.tiff')):
+                if self.pdf_document is None:
+                    self._update_status("Najpierw otwórz dokument PDF, aby zaimportować obraz.")
+                else:
+                    self.import_image_to_new_page(filepath=path)
+                return
+        # ZAMIANA messagebox na pasek statusu:
+        self._update_status(f"Można przeciągać tylko pliki PDF lub obrazy! Otrzymano: {filepath}")
 
     def _crop_pages(self, pdf_bytes, selected_indices, top_mm, bottom_mm, left_mm, right_mm, reposition=False, pos_mode="center", offset_x_mm=0, offset_y_mm=0):
         reader = PdfReader(io.BytesIO(pdf_bytes))
@@ -2192,6 +2225,7 @@ class SelectablePDFViewer:
         self._create_menu() 
         self._setup_context_menu() 
         self._setup_key_bindings() 
+        self._setup_drag_and_drop_file()
         
         GRAY_BG = BG_BUTTON_DEFAULT    
         GRAY_FG = FG_TEXT
@@ -2709,7 +2743,7 @@ class SelectablePDFViewer:
         else:
             self._toggle_selection_lpm(page_index)
         self.active_page_index = page_index
-        self.update_focus_display(hide_mouse_focus=True)
+        self.update_focus_display(hide_mouse_focus=False)
 
     def _toggle_selection_lpm(self, page_index):
         if page_index in self.selected_pages:
@@ -2810,10 +2844,7 @@ class SelectablePDFViewer:
                 except tk.TclError:
                     continue
     
-    def _setup_drag_and_drop_file(self):
-        pass
-
-    # --- Metody obsługi plików i edycji (Ze zmianami w import_image_to_new_page) ---
+       # --- Metody obsługi plików i edycji (Ze zmianami w import_image_to_new_page) ---
     def open_pdf(self, event=None, filepath=None):
         if self.pdf_document is not None and len(self.undo_stack) > 0:
             response = messagebox.askyesnocancel(
@@ -2864,43 +2895,58 @@ class SelectablePDFViewer:
             self.file_menu.entryconfig("Zapisz jako...", state=tk.DISABLED)
             self.update_tool_button_states()
 
-    def import_pdf_after_active_page(self, event=None): # Dodano event=None dla skrótu
+    
+    def import_pdf_after_active_page(self, event=None, filepath=None):
         if not self.pdf_document:
             self._update_status("BŁĄD: Otwórz najpierw dokument PDF.")
             return
-        import_path = filedialog.askopenfilename(
-            title="Wybierz plik PDF do zaimportowania",
-            filetypes=[("Pliki PDF", "*.pdf")]
-        )
-        if not import_path:
-            self._update_status("Anulowano importowanie pliku.")
-            return
-            
+
+        # Jeśli filepath jest podany (np. przez drag & drop), nie pokazuj dialogu
+        if filepath:
+            import_path = filepath
+        else:
+            import_path = filedialog.askopenfilename(
+                title="Wybierz plik PDF do zaimportowania",
+                filetypes=[("Pliki PDF", "*.pdf")]
+            )
+            if not import_path:
+                self._update_status("Anulowano importowanie pliku.")
+                return
+                
         imported_doc = None
         selected_indices = None 
         try:
             imported_doc = fitz.open(import_path)
             max_pages = len(imported_doc)
-            self.master.update_idletasks() 
-            dialog = EnhancedPageRangeDialog(self.master, "Ustawienia importu PDF", imported_doc)
-            selected_indices = dialog.result 
-            if selected_indices is None or not selected_indices:
-                self._update_status("Anulowano importowanie lub nie wybrano stron.")
-                return
-            insert_index = len(self.pdf_document)
-            if len(self.selected_pages) == 1:
-                page_index = list(self.selected_pages)[0]
-                insert_index = page_index + 1 
-            elif len(self.selected_pages) > 1:
-                 insert_index = max(self.selected_pages) + 1
+
+            # Jeśli wywołano przez drag&drop, importuj wszystko bez dialogu wyboru zakresu
+            if filepath:
+                selected_indices = list(range(max_pages))
             else:
-                 insert_index = len(self.pdf_document)
-                 
+                self.master.update_idletasks() 
+                dialog = EnhancedPageRangeDialog(self.master, "Ustawienia importu PDF", imported_doc)
+                selected_indices = dialog.result 
+                if selected_indices is None or not selected_indices:
+                    self._update_status("Anulowano importowanie lub nie wybrano stron.")
+                    return
+
+            # Jeśli przeciągnięto plik (filepath != None), wstaw po stronie z aktywnym kursorem
+            if filepath is not None:
+                insert_index = self.active_page_index + 1
+            else:
+                if len(self.selected_pages) == 1:
+                    page_index = list(self.selected_pages)[0]
+                    insert_index = page_index + 1 
+                elif len(self.selected_pages) > 1:
+                    insert_index = max(self.selected_pages) + 1
+                else:
+                    insert_index = len(self.pdf_document)
+                            
             self._save_state_to_undo()
             num_inserted = len(selected_indices)
             temp_doc_for_insert = fitz.open()
             for page_index_to_import in selected_indices:
-                 temp_doc_for_insert.insert_pdf(imported_doc, from_page=page_index_to_import, to_page=page_index_to_import)
+                temp_doc_for_insert.insert_pdf(imported_doc, from_page=page_index_to_import, to_page=page_index_to_import)
             self.pdf_document.insert_pdf(temp_doc_for_insert, start_at=insert_index)
             temp_doc_for_insert.close()
 
@@ -2918,119 +2964,118 @@ class SelectablePDFViewer:
             self._update_status(f"BŁĄD Importowania: Nie udało się wczytać lub wstawić pliku: {e}")
             
         finally:
-             if imported_doc and not imported_doc.is_closed:
-                  imported_doc.close()
-
-    def import_image_to_new_page(self):
+            if imported_doc and not imported_doc.is_closed:
+                imported_doc.close()
+    
+    def import_image_to_new_page(self, filepath=None):
         if not self.pdf_document:
             messagebox.showerror("Błąd", "Najpierw otwórz dokument PDF.")
             return
 
-        image_path = filedialog.askopenfilename(
-            filetypes=[("Image files", "*.png;*.jpg;*.jpeg;*.tif;*.tiff")],
-            title="Wybierz plik obrazu do importu"
-        )
-        
-        if not image_path:
-            return
+        # Jeśli przekazano filepath (np. przez drag&drop), pomiń dialog wyboru pliku
+        if filepath:
+            image_path = filepath
+        else:
+            image_path = filedialog.askopenfilename(
+                filetypes=[("Image files", "*.png;*.jpg;*.jpeg;*.tif;*.tiff")],
+                title="Wybierz plik obrazu do importu"
+            )
+            if not image_path:
+                return
 
-        # 1. Otwarcie dialogu i pobranie ustawień
-        dialog = ImageImportSettingsDialog(self.master, "Ustawienia importu obrazu", image_path)
-        settings = dialog.result
-        
-        if not settings:
-            return
-            
+        # 1. Otwarcie dialogu i pobranie ustawień (tylko jeśli nie drag&drop)
+        if filepath:
+            # Ustawienia domyślne dla drag&drop
+            try:
+                img = Image.open(image_path)
+                image_width_px, image_height_px = img.size
+                image_dpi = img.info.get('dpi', (96, 96))[0] if isinstance(img.info.get('dpi'), tuple) else 96
+                img.close()
+            except Exception:
+                image_dpi = 96
+            # Domyśl: dopasowanie, środek, pionowo, 100%
+            settings = {
+                'scaling_mode': "DOPASUJ",
+                'alignment': "SRODEK",
+                'scale_factor': 1.0,
+                'page_orientation': "PIONOWO",
+                'image_dpi': image_dpi,
+            }
+        else:
+            dialog = ImageImportSettingsDialog(self.master, "Ustawienia importu obrazu", image_path)
+            settings = dialog.result
+            if not settings:
+                return
+
         scaling_mode = settings['scaling_mode']
         alignment = settings['alignment']
         scale_factor = settings['scale_factor']
         page_orientation = settings['page_orientation']
-        
+
         try:
-            # Wczytanie obrazu za pomocą PIL dla wymiarów
             img = Image.open(image_path)
             image_width_px, image_height_px = img.size
             image_dpi = settings.get('image_dpi', 96)
-            
-            # Konwersja wymiarów obrazu z pikseli na punkty PDF
             image_width_points = (image_width_px / image_dpi) * 72
             image_height_points = (image_height_px / image_dpi) * 72
-            
+            img.close()
         except Exception as e:
             messagebox.showerror("Błąd", f"Nie można wczytać obrazu: {e}")
             return
-        
-        # 2. Ustalanie wymiarów nowej strony docelowej (A4) i Tworzenie tymczasowego dokumentu fitz
+
+        # 2. Ustalanie wymiarów nowej strony docelowej (A4)
         if page_orientation == "PIONOWO":
             page_w, page_h = A4_WIDTH_POINTS, A4_HEIGHT_POINTS
         else:
             page_w, page_h = A4_HEIGHT_POINTS, A4_WIDTH_POINTS
-            
-        # Tworzymy NOWY, TYMCZASOWY dokument fitz, w którym umieścimy obraz (wzorzec z Twojego działającego kodu)
+
         imported_doc = fitz.open()
         try:
-            imported_page = imported_doc.new_page(
-                -1, 
-                width=page_w, 
-                height=page_h
-            )
+            imported_page = imported_doc.new_page(-1, width=page_w, height=page_h)
         except Exception as e:
             messagebox.showerror("Błąd inicjalizacji fitz", f"Nie udało się utworzyć tymczasowej strony PDF: {e}")
             return
 
         # 3. Obliczanie Skalowania
         if scaling_mode == "ORYGINALNY":
-            # Używa scale_factor jako końcowego współczynnika (np. 1.0 dla 100%, 0.5 dla 50%)
             scale = scale_factor
-            
         elif scaling_mode == "SKALA":
-            # W tym trybie również używamy scale_factor jako końcowego współczynnika
             scale = scale_factor
-            
         elif scaling_mode == "DOPASUJ":
-            scale_margin_points = MM_TO_POINTS * 50 # 50mm marginesu (25mm z każdej strony)
+            scale_margin_points = MM_TO_POINTS * 50  # 50mm marginesu (25mm z każdej strony)
             scale_w = (page_w - scale_margin_points) / image_width_points
             scale_h = (page_h - scale_margin_points) / image_height_points
             scale = min(scale_w, scale_h)
         else:
-            # Domyślnie 100% oryginalnego rozmiaru (jeśli DPI jest poprawne)
             scale = 1.0
 
-        # ZAWSZE używaj obliczonego współczynnika 'scale' do określenia ostatecznych wymiarów
         final_w = image_width_points * scale
         final_h = image_height_points * scale
+
         # 4. Obliczanie Pozycji (Wyrównanie)
         offset_mm = 25.0
-        offset_points = offset_mm * MM_TO_POINTS # ~70.87 punktów (25 mm)
-        
+        offset_points = offset_mm * MM_TO_POINTS
+
         if alignment == "SRODEK":
             x_start = (page_w - final_w) / 2
             y_start = (page_h - final_h) / 2
-            
         elif alignment == "GORA":
-            # !!! ZAMIANA: Wstawiamy przy dolnej krawędzi (bo Twoja aplikacja interpretuje to odwrotnie)
             x_start = (page_w - final_w) / 2
-            y_start = offset_points  # Wstawia obraz 25 mm od dolnej krawędzi
-            
+            y_start = offset_points
         elif alignment == "DOL":
-            # !!! ZAMIANA: Wstawiamy przy górnej krawędzi (bo Twoja aplikacja interpretuje to odwrotnie)
             x_start = (page_w - final_w) / 2
-            y_start = page_h - final_h - offset_points  # Wstawia obraz 25 mm od górnej krawędzi
-            
-        else: # Domyślnie Lewy Górny (lub jakakolwiek inna domyślna logika)
-            x_start = offset_points 
-            y_start = page_h - final_h - offset_points 
-        
-        # Określenie prostokąta docelowego dla fitz: Rect(x0, y0, x1, y1)
+            y_start = page_h - final_h - offset_points
+        else:
+            x_start = offset_points
+            y_start = page_h - final_h - offset_points
+
         rect = fitz.Rect(x_start, y_start, x_start + final_w, y_start + final_h)
 
         # 5. Wklejenie obrazu do tymczasowej strony fitz
         try:
             imported_page.insert_image(rect, filename=image_path)
-            
+
             # 6. Określenie pozycji wstawienia w głównym dokumencie
-            
-            # Wzorzec przejęty z Twojego import_pdf_after_active_page:
             insert_index = len(self.pdf_document)
             if len(self.selected_pages) == 1:
                 page_index = list(self.selected_pages)[0]
@@ -3039,42 +3084,30 @@ class SelectablePDFViewer:
                 insert_index = max(self.selected_pages) + 1
             else:
                 insert_index = len(self.pdf_document)
-            
-            # Zapis stanu przed modyfikacją głównego dokumentu
+
             self._save_state_to_undo()
-            
-            # *** KLUCZOWA ZMIANA: Wstawienie tymczasowego dokumentu do głównego ***
-            # Wykorzystujemy fitz.Document.insert_pdf() w taki sam sposób jak w Twojej działającej funkcji:
-            self.pdf_document.insert_pdf(
-                imported_doc, 
-                from_page=0, 
-                to_page=0,  # Wstawiamy tylko pierwszą stronę (z indeksem 0) z naszego tymczasowego dokumentu
-                start_at=insert_index # Wstawiamy na docelową pozycję w głównym dokumencie
-            )
-            # --------------------------------------------------------------------
-            
-            # Aktualizacja aktywnej strony po wstawieniu
+            self.pdf_document.insert_pdf(imported_doc, from_page=0, to_page=0, start_at=insert_index)
             self.active_page_index = insert_index
-            
-            # 7. Odświeżenie widoku i statusu
+
             self.selected_pages.clear()
             self.tk_images.clear()
-            for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
+            for widget in list(self.scrollable_frame.winfo_children()):
+                widget.destroy()
             self.thumb_frames.clear()
-            
+
             self._reconfigure_grid()
             self.update_tool_button_states()
             self.update_focus_display()
-            
+
             self.status_bar.config(text=f"Zaimportowano obraz jako stronę na pozycji {insert_index + 1}. Aktualna liczba stron: {len(self.pdf_document)}.")
-            
+
         except Exception as e:
             messagebox.showerror("Błąd Wklejania", f"Nie udało się wkleić obrazu: {e}")
-            
         finally:
-            # Zamknięcie tymczasowego dokumentu (ważne dla uniknięcia wycieków pamięci)
             if imported_doc and not imported_doc.is_closed:
                 imported_doc.close()
+
+   
             
     def _update_status(self, message):
         self.status_bar.config(text=message, fg="black")
@@ -3544,13 +3577,15 @@ class SelectablePDFViewer:
             
     # --- Metody obsługi widoku/GUI (Bez zmian) ---
     def _on_mousewheel(self, event):
-        current_y = self.canvas.yview()[0]
-        if event.num == 4 or event.delta > 0:  
-            if current_y <= 0.001:  
-                return  
-            self.canvas.yview_scroll(-1, "units")
-        elif event.num == 5 or event.delta < 0:  
-            self.canvas.yview_scroll(1, "units")
+        # Oblicz różnicę w pozycji yview w zależności od scrolla
+        step = 0.05  # Im mniejsza liczba, tym łagodniejsze przewijanie (np. 0.02)
+        current_top, _ = self.canvas.yview()
+        if event.num == 4 or event.delta > 0:
+            new_pos = max(0, current_top - step)
+            self.canvas.yview_moveto(new_pos)
+        elif event.num == 5 or event.delta < 0:
+            new_pos = min(1, current_top + step)
+            self.canvas.yview_moveto(new_pos)
             
     def zoom_in(self):
         if self.pdf_document:
@@ -3725,7 +3760,8 @@ class SelectablePDFViewer:
 
 if __name__ == '__main__':
     try:
-        root = tk.Tk()
+        from tkinterdnd2 import TkinterDnD
+        root = TkinterDnD.Tk()
         from PIL import Image, ImageTk
         icon_path = resource_path(os.path.join('icons', 'gryf.ico'))  # lub .ico jeśli masz na Windows
         icon_img = Image.open(icon_path).resize((32, 32), Image.LANCZOS)
