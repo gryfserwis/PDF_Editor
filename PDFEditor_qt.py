@@ -566,10 +566,9 @@ class EnhancedPageRangeDialog(QDialog):
                     return None
         return sorted(list(selected_pages))
 
-
 class MergePageGridDialog(QDialog):
     """Dialog for merging multiple pages into a grid on a single sheet with live preview"""
-    
+
     PAPER_FORMATS = {
         'A0': (841, 1189),
         'A1': (594, 841),
@@ -579,13 +578,14 @@ class MergePageGridDialog(QDialog):
         'A5': (148, 210),
         'A6': (105, 148),
     }
-    
+
     def __init__(self, parent=None, page_count=1):
         super().__init__(parent)
         self.setWindowTitle("Scalanie strony na arkuszu")
+        self.setMinimumSize(700, 520)
         self.result = None
         self.page_count = page_count
-        
+
         self.sheet_format_val = "A4"
         self.orientation_val = "Pionowa"
         self.margin_top_val = "4"
@@ -594,7 +594,7 @@ class MergePageGridDialog(QDialog):
         self.margin_right_val = "5"
         self.spacing_x_val = "10"
         self.spacing_y_val = "10"
-        
+
         if page_count == 1:
             self.rows_val = 1
             self.cols_val = 1
@@ -606,14 +606,16 @@ class MergePageGridDialog(QDialog):
             else:
                 self.rows_val = sq
                 self.cols_val = sq
-        
+
         self.setup_ui()
         self.update_preview()
-        
+
     def setup_ui(self):
-        main_layout = QHBoxLayout(self)
+        main_layout = QHBoxLayout()
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
+
+        # Arkusz docelowy
         format_group = QGroupBox("Arkusz docelowy")
         format_layout = QGridLayout()
         format_layout.addWidget(QLabel("Format:"), 0, 0)
@@ -635,6 +637,8 @@ class MergePageGridDialog(QDialog):
         format_layout.addWidget(orient_widget, 1, 1)
         format_group.setLayout(format_layout)
         left_layout.addWidget(format_group)
+
+        # Marginesy
         margin_group = QGroupBox("Marginesy [mm]")
         margin_layout = QGridLayout()
         margin_layout.addWidget(QLabel("Górny:"), 0, 0)
@@ -655,6 +659,8 @@ class MergePageGridDialog(QDialog):
         margin_layout.addWidget(self.margin_right, 1, 3)
         margin_group.setLayout(margin_layout)
         left_layout.addWidget(margin_group)
+
+        # Odstępy
         spacing_group = QGroupBox("Odstępy [mm]")
         spacing_layout = QGridLayout()
         spacing_layout.addWidget(QLabel("Między kolumnami:"), 0, 0)
@@ -667,6 +673,8 @@ class MergePageGridDialog(QDialog):
         spacing_layout.addWidget(self.spacing_y, 1, 1)
         spacing_group.setLayout(spacing_layout)
         left_layout.addWidget(spacing_group)
+
+        # Siatka stron
         grid_group = QGroupBox("Siatka stron")
         grid_layout = QGridLayout()
         grid_layout.addWidget(QLabel("Wiersze:"), 0, 0)
@@ -685,8 +693,11 @@ class MergePageGridDialog(QDialog):
         grid_layout.addWidget(self.cols_spin, 0, 3)
         grid_group.setLayout(grid_layout)
         left_layout.addWidget(grid_group)
+
         left_layout.addStretch()
         main_layout.addWidget(left_widget)
+
+        # Podgląd
         preview_group = QGroupBox("Podgląd rozkładu stron")
         preview_layout = QVBoxLayout()
         self.preview_scene = QGraphicsScene()
@@ -696,28 +707,24 @@ class MergePageGridDialog(QDialog):
         preview_layout.addWidget(self.preview_view)
         preview_group.setLayout(preview_layout)
         main_layout.addWidget(preview_group)
-        button_layout = QHBoxLayout()
-        apply_btn = QPushButton("Zastosuj")
-        apply_btn.clicked.connect(self.accept_dialog)
-        cancel_btn = QPushButton("Anuluj")
-        cancel_btn.clicked.connect(self.reject)
-        button_layout.addWidget(apply_btn)
-        button_layout.addWidget(cancel_btn)
-        outer_layout = QVBoxLayout()
-        outer_layout.addLayout(main_layout)
-        outer_layout.addLayout(button_layout)
-        container = QWidget()
-        container.setLayout(outer_layout)
+
+        # Główny layout dialogu
         dialog_layout = QVBoxLayout(self)
-        dialog_layout.addWidget(container)
-        
+        dialog_layout.addLayout(main_layout)
+
+        # Przyciski OK/Anuluj
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept_dialog)
+        button_box.rejected.connect(self.reject)
+        dialog_layout.addWidget(button_box)
+
     def get_sheet_dimensions(self):
         sf = self.format_combo.currentText()
         sheet_w, sheet_h = self.PAPER_FORMATS.get(sf, (210, 297))
         if self.orient_landscape.isChecked():
             return sheet_h, sheet_w
         return sheet_w, sheet_h
-        
+
     def update_preview(self):
         try:
             self.preview_scene.clear()
@@ -782,7 +789,7 @@ class MergePageGridDialog(QDialog):
             self.preview_scene.setSceneRect(0, 0, PREVIEW_W, PREVIEW_H)
         except:
             pass
-            
+
     def accept_dialog(self):
         try:
             margin_top = float(self.margin_top.text().replace(",", "."))
@@ -821,121 +828,6 @@ class MergePageGridDialog(QDialog):
             self.accept()
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nieprawidłowe dane: {e}")
-
-
-class PageNumberingDialog(QDialog):
-    """Dialog for adding page numbers to PDF"""
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Dodawanie numeracji stron")
-        self.result = None
-        self.setup_ui()
-        
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        margin_group = QGroupBox("Marginesy poziome (mm)")
-        margin_layout = QHBoxLayout()
-        self.margin_left = QLineEdit("35")
-        self.margin_right = QLineEdit("25")
-        margin_layout.addWidget(QLabel("Lewy:"))
-        margin_layout.addWidget(self.margin_left)
-        margin_layout.addWidget(QLabel("Prawy:"))
-        margin_layout.addWidget(self.margin_right)
-        self.mirror_margins = QCheckBox("Plik ma marginesy lustrzane")
-        margin_group_vbox = QVBoxLayout()
-        margin_group_vbox.addLayout(margin_layout)
-        margin_group_vbox.addWidget(self.mirror_margins)
-        margin_group.setLayout(margin_group_vbox)
-        layout.addWidget(margin_group)
-        pos_group = QGroupBox("Położenie numeru strony")
-        pos_layout = QGridLayout()
-        pos_layout.addWidget(QLabel("Od krawędzi (mm):"), 0, 0)
-        self.margin_vertical = QLineEdit("15")
-        pos_layout.addWidget(self.margin_vertical, 0, 1)
-        pos_layout.addWidget(QLabel("Pion:"), 1, 0)
-        self.pos_top = QRadioButton("Nagłówek")
-        self.pos_bottom = QRadioButton("Stopka")
-        self.pos_bottom.setChecked(True)
-        pos_h1 = QHBoxLayout()
-        pos_h1.addWidget(self.pos_top)
-        pos_h1.addWidget(self.pos_bottom)
-        pos_layout.addLayout(pos_h1, 1, 1)
-        pos_layout.addWidget(QLabel("Poziom:"), 2, 0)
-        self.align_left = QRadioButton("Lewo")
-        self.align_center = QRadioButton("Środek")
-        self.align_right = QRadioButton("Prawo")
-        self.align_right.setChecked(True)
-        pos_h2 = QHBoxLayout()
-        pos_h2.addWidget(self.align_left)
-        pos_h2.addWidget(self.align_center)
-        pos_h2.addWidget(self.align_right)
-        pos_layout.addLayout(pos_h2, 2, 1)
-        pos_layout.addWidget(QLabel("Tryb:"), 3, 0)
-        self.mode_normal = QRadioButton("Normalna")
-        self.mode_mirror = QRadioButton("Lustrzana")
-        self.mode_normal.setChecked(True)
-        pos_h3 = QHBoxLayout()
-        pos_h3.addWidget(self.mode_normal)
-        pos_h3.addWidget(self.mode_mirror)
-        pos_layout.addLayout(pos_h3, 3, 1)
-        pos_group.setLayout(pos_layout)
-        layout.addWidget(pos_group)
-        counter_group = QGroupBox("Wartość numeracji")
-        counter_layout = QHBoxLayout()
-        counter_layout.addWidget(QLabel("Licznik zacznij od:"))
-        self.start_number = QSpinBox()
-        self.start_number.setMinimum(1)
-        self.start_number.setValue(1)
-        counter_layout.addWidget(self.start_number)
-        counter_group.setLayout(counter_layout)
-        layout.addWidget(counter_group)
-        font_group = QGroupBox("Czcionka i format numeracji")
-        font_layout = QGridLayout()
-        font_layout.addWidget(QLabel("Czcionka:"), 0, 0)
-        self.font_name = QComboBox()
-        self.font_name.addItems(["Helvetica", "Times-Roman", "Courier", "Arial"])
-        self.font_name.setCurrentText("Times-Roman")
-        font_layout.addWidget(self.font_name, 0, 1)
-        font_layout.addWidget(QLabel("Rozmiar [pt]:"), 0, 2)
-        self.font_size = QComboBox()
-        self.font_size.addItems(["6", "8", "10", "11", "12", "13", "14"])
-        self.font_size.setCurrentText("12")
-        font_layout.addWidget(self.font_size, 0, 3)
-        font_layout.addWidget(QLabel("Format:"), 1, 0)
-        self.format_simple = QRadioButton("Standardowy (1, 2...)")
-        self.format_full = QRadioButton("Strona 1 z 99")
-        self.format_simple.setChecked(True)
-        format_h = QHBoxLayout()
-        format_h.addWidget(self.format_simple)
-        format_h.addWidget(self.format_full)
-        font_layout.addLayout(format_h, 1, 1, 1, 3)
-        font_group.setLayout(font_layout)
-        layout.addWidget(font_group)
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept_dialog)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-        
-    def accept_dialog(self):
-        try:
-            self.result = {
-                'margin_left_mm': float(self.margin_left.text().replace(',', '.')),
-                'margin_right_mm': float(self.margin_right.text().replace(',', '.')),
-                'margin_vertical_mm': float(self.margin_vertical.text().replace(',', '.')),
-                'vertical_pos': 'gora' if self.pos_top.isChecked() else 'dol',
-                'alignment': 'lewa' if self.align_left.isChecked() else ('srodek' if self.align_center.isChecked() else 'prawa'),
-                'mode': 'lustrzana' if self.mode_mirror.isChecked() else 'normalna',
-                'start_num': self.start_number.value(),
-                'start_page_idx': 0,
-                'font_name': self.font_name.currentText(),
-                'font_size': float(self.font_size.currentText()),
-                'mirror_margins': self.mirror_margins.isChecked(),
-                'format_type': 'full' if self.format_full.isChecked() else 'simple'
-            }
-            self.accept()
-        except ValueError as e:
-            QMessageBox.warning(self, "Błąd", f"Nieprawidłowe wartości: {e}")
 
 
 class ShiftContentDialog(QDialog):
@@ -2660,63 +2552,113 @@ Ctrl+- - Zoom out<br>
     # ================================================================
     
     def merge_pages_to_grid(self):
-        """Merge selected pages into a grid on a single new sheet (append, not replace)."""
-        if not self.pdf_document or not self.selected_pages:
-            self.update_status("Musisz zaznaczyć strony do scalenia.")
+        """
+        Scala zaznaczone strony w siatkę na nowym arkuszu.
+        Każda strona jest renderowana do bitmapy i wstawiana jako obraz w PDF.
+        Marginesy i odstępy są liczone od górnej/lewej krawędzi arkusza.
+        """
+        import io
+
+        if not self.pdf_document:
+            self.update_status("BŁĄD: Otwórz najpierw dokument PDF.")
             return
-        dialog = MergePageGridDialog(self, len(self.selected_pages))
+        if len(self.selected_pages) == 0:
+            self.update_status("BŁĄD: Zaznacz przynajmniej jedną stronę do scalenia.")
+            return
+
+        selected_indices = sorted(list(self.selected_pages))
+        num_pages = len(selected_indices)
+
+        dialog = MergePageGridDialog(self, page_count=num_pages)
         dialog.exec_()
-        result = dialog.result
-        if not result:
-            self.update_status("Anulowano scalanie.")
+        params = dialog.result
+        if params is None:
+            self.update_status("Anulowano scalanie stron.")
             return
+
         try:
-            self._save_state_to_undo()
-            sheet_w_mm = result["sheet_width_mm"]
-            sheet_h_mm = result["sheet_height_mm"]
-            margin_t = result["margin_top_mm"]
-            margin_b = result["margin_bottom_mm"]
-            margin_l = result["margin_left_mm"]
-            margin_r = result["margin_right_mm"]
-            spacing_x = result["spacing_x_mm"]
-            spacing_y = result["spacing_y_mm"]
-            rows = result["rows"]
-            cols = result["cols"]
-            sheet_w_pt = mm2pt(sheet_w_mm)
-            sheet_h_pt = mm2pt(sheet_h_mm)
-            margin_t_pt = mm2pt(margin_t)
-            margin_b_pt = mm2pt(margin_b)
-            margin_l_pt = mm2pt(margin_l)
-            margin_r_pt = mm2pt(margin_r)
-            spacing_x_pt = mm2pt(spacing_x)
-            spacing_y_pt = mm2pt(spacing_y)
+            sheet_width_pt = params["sheet_width_mm"] * self.MM_TO_POINTS
+            sheet_height_pt = params["sheet_height_mm"] * self.MM_TO_POINTS
+            margin_top_pt = params["margin_top_mm"] * self.MM_TO_POINTS
+            margin_bottom_pt = params["margin_bottom_mm"] * self.MM_TO_POINTS
+            margin_left_pt = params["margin_left_mm"] * self.MM_TO_POINTS
+            margin_right_pt = params["margin_right_mm"] * self.MM_TO_POINTS
+            spacing_x_pt = params["spacing_x_mm"] * self.MM_TO_POINTS
+            spacing_y_pt = params["spacing_y_mm"] * self.MM_TO_POINTS
+            rows = params["rows"]
+            cols = params["cols"]
+
+            TARGET_DPI = 600  # Wysoka jakość bitmapy
+            PT_TO_INCH = 1 / 72
+
+            total_cells = rows * cols
+            source_pages = []
+            for i in range(total_cells):
+                if i < num_pages:
+                    source_pages.append(selected_indices[i])
+                else:
+                    source_pages.append(selected_indices[-1])
+
+            # Oblicz rozmiar komórki
             if cols == 1:
-                cell_w = sheet_w_pt - margin_l_pt - margin_r_pt
+                cell_width = sheet_width_pt - margin_left_pt - margin_right_pt
             else:
-                cell_w = (sheet_w_pt - margin_l_pt - margin_r_pt - (cols - 1) * spacing_x_pt) / cols
+                cell_width = (sheet_width_pt - margin_left_pt - margin_right_pt - (cols - 1) * spacing_x_pt) / cols
             if rows == 1:
-                cell_h = sheet_h_pt - margin_t_pt - margin_b_pt
+                cell_height = sheet_height_pt - margin_top_pt - margin_bottom_pt
             else:
-                cell_h = (sheet_h_pt - margin_t_pt - margin_b_pt - (rows - 1) * spacing_y_pt) / rows
-            new_page = self.pdf_document.new_page(width=sheet_w_pt, height=sheet_h_pt)
-            sorted_indices = sorted(list(self.selected_pages))
-            for idx, page_idx in enumerate(sorted_indices):
-                if idx >= rows * cols:
-                    break
+                cell_height = (sheet_height_pt - margin_top_pt - margin_bottom_pt - (rows - 1) * spacing_y_pt) / rows
+
+            self._save_state_to_undo()
+            new_page = self.pdf_document.new_page(width=sheet_width_pt, height=sheet_height_pt)
+
+            for idx, src_idx in enumerate(source_pages):
                 row = idx // cols
                 col = idx % cols
-                x = margin_l_pt + col * (cell_w + spacing_x_pt)
-                # y coordinate (top origin in PDF is lower): we place from top margin downward
-                y_top_area = sheet_h_pt - margin_t_pt
-                y = y_top_area - (row + 1) * cell_h - row * spacing_y_pt
-                rect = fitz.Rect(x, y, x + cell_w, y + cell_h)
-                new_page.show_pdf_page(rect, self.pdf_document, page_idx)
+                if row >= rows:
+                    break
+
+                x = margin_left_pt + col * (cell_width + spacing_x_pt)
+                y = margin_top_pt + row * (cell_height + spacing_y_pt)
+
+                src_page = self.pdf_document[src_idx]
+                page_rect = src_page.rect
+                page_w = page_rect.width
+                page_h = page_rect.height
+
+                # Automatyczny obrót jeśli orientacja strony nie pasuje do komórki
+                page_landscape = page_w > page_h
+                cell_landscape = cell_width > cell_height
+                rotate = 0
+                if page_landscape != cell_landscape:
+                    rotate = 90
+
+                # Oblicz skalę renderowania
+                bitmap_w = int(round(cell_width * TARGET_DPI * PT_TO_INCH))
+                bitmap_h = int(round(cell_height * TARGET_DPI * PT_TO_INCH))
+
+                if rotate == 90:
+                    scale_x = bitmap_w / page_h
+                    scale_y = bitmap_h / page_w
+                else:
+                    scale_x = bitmap_w / page_w
+                    scale_y = bitmap_h / page_h
+
+                pix = src_page.get_pixmap(matrix=fitz.Matrix(scale_x, scale_y).prerotate(rotate), alpha=False)
+                img_bytes = pix.tobytes("png")
+                rect = fitz.Rect(x, y, x + cell_width, y + cell_height)
+                new_page.insert_image(rect, stream=img_bytes)
+
             self.selected_pages.clear()
             self.refresh_thumbnails()
-            self.update_status(f"Scalono {len(sorted_indices)} stron w siatkę {rows}x{cols} (dodano nową stronę).")
+            self.update_status(
+                f"Scalono {num_pages} stron w siatkę {rows}x{cols} na nowym arkuszu {params['format_name']} (bitmapy 600dpi)."
+            )
         except Exception as e:
-            self.update_status(f"Błąd podczas scalania: {e}")
-    
+            self.update_status(f"BŁĄD: Nie udało się scalić stron: {e}")
+            import traceback
+            traceback.print_exc()
+
     # ================================================================
     # INSERT BLANK PAGES (FIXED active_page_index)
     # ================================================================
