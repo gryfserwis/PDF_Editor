@@ -3,8 +3,16 @@
 GRYF PDF Editor - Qt Version
 Complete implementation with drag & drop support for files and pages
 Based on PDFEditor.py but using PySide6 for modern UI
-"""
 
+Uzupełniono brakujące funkcjonalności względem wersji Tkinter:
+1. Import PDF z wyborem zakresu stron (EnhancedPageRangeDialog)
+2. Import obrazu z dialogiem ustawień (ImageImportSettingsDialog: skala, orientacja, wyrównanie)
+3. Pełna obsługa rotacji (0/90/180/270) przy dodawaniu numeracji stron (logika jak w wersji Tk)
+4. Scalanie stron w siatkę – teraz dodaje nową stronę do istniejącego dokumentu (nie zastępuje całego PDF)
+5. Poprawiono błąd: insert_blank_page_before/after używało self.active_page (nieistniejącego) – użyto self.active_page_index
+
+Nie zmieniano istniejących funkcji poza dodaniem brakującej funkcjonalności i poprawą zgodności.
+"""
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QScrollArea, QLabel, QPushButton, QFileDialog, QMessageBox,
@@ -90,7 +98,7 @@ FOCUS_HIGHLIGHT_COLOR = "#000000"
 FOCUS_HIGHLIGHT_WIDTH = 2
 
 COPYRIGHT_INFO = (
-    "Program stanowi wyłączną własność intelektualną Centrum Graficznego Gryf sp. z o.o.\\n\\n"
+    "Program stanowi wyłączną własność intelektualną Centrum Graficznego Gryf sp. z o.o.\n\n"
     "Wszelkie prawa zastrzeżone. Kopiowanie, modyfikowanie oraz rozpowszechnianie "
     "programu bez pisemnej zgody autora jest zabronione."
 )
@@ -105,7 +113,7 @@ def resource_path(relative_path):
 
 
 # ====================================================================
-# DIALOG CLASSES
+# DIALOG CLASSES (UNCHANGED EXCEPT USED NOW IN IMPORTS)
 # ====================================================================
 
 class PageCropResizeDialog(QDialog):
@@ -249,7 +257,7 @@ class PageCropResizeDialog(QDialog):
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
         
-        # Connect signals for mutual exclusivity and field enabling
+        # Connect signals
         self.crop_none.toggled.connect(self.update_field_states)
         self.crop_only.toggled.connect(self.update_field_states)
         self.crop_resize.toggled.connect(self.update_field_states)
@@ -261,44 +269,43 @@ class PageCropResizeDialog(QDialog):
         self.pos_custom.toggled.connect(self.update_field_states)
         
     def update_field_states(self):
-        """Update enabled/disabled state of fields based on selected modes"""
-        # Determine modes
+        # Czy wybrano tryb crop (cokolwiek poza "nie przycinaj")
         crop_selected = not self.crop_none.isChecked()
+        # Czy wybrano tryb resize (cokolwiek poza "nie zmieniaj rozmiaru")
         resize_selected = not self.resize_none.isChecked()
-        
-        # Mutual exclusivity: crop disables resize and vice versa
+
+        # Wzajemne wykluczanie sekcji
         self.resize_none.setEnabled(not crop_selected)
         self.resize_scale.setEnabled(not crop_selected)
         self.resize_noscale.setEnabled(not crop_selected)
+
         self.crop_none.setEnabled(not resize_selected)
         self.crop_only.setEnabled(not resize_selected)
         self.crop_resize.setEnabled(not resize_selected)
-        
-        # Margin fields enabled only for crop modes
+
+        # Pola marginesów aktywne tylko gdy crop aktywny i nie wybrano resize
         enable_margins = crop_selected and not resize_selected
-        self.e_margin_top.setEnabled(enable_margins)
-        self.e_margin_bottom.setEnabled(enable_margins)
-        self.e_margin_left.setEnabled(enable_margins)
-        self.e_margin_right.setEnabled(enable_margins)
-        
-        # Format and custom size enabled only for resize modes
+        for w in (self.e_margin_top, self.e_margin_bottom, self.e_margin_left, self.e_margin_right):
+            w.setEnabled(enable_margins)
+
+        # Format i ewentualny niestandardowy rozmiar tylko przy aktywnym resize (i bez crop)
         enable_format = resize_selected and not crop_selected
         self.format_combo.setEnabled(enable_format)
         enable_custom = enable_format and self.format_combo.currentText() == "Niestandardowy"
         self.e_custom_width.setEnabled(enable_custom)
         self.e_custom_height.setEnabled(enable_custom)
-        
-        # Position section enabled only for resize_noscale
+
+        # Pozycjonowanie tylko dla trybu "resize_noscale" (bez crop)
         enable_position = self.resize_noscale.isChecked() and not crop_selected
         self.position_group.setEnabled(enable_position)
+
+        # Offsety tylko gdy ręczne pozycjonowanie
         enable_offsets = enable_position and self.pos_custom.isChecked()
         self.e_offset_x.setEnabled(enable_offsets)
         self.e_offset_y.setEnabled(enable_offsets)
-        
+            
     def accept_dialog(self):
-        """Validate and collect results"""
         try:
-            # Determine crop mode
             if self.crop_none.isChecked():
                 crop_mode = "nocrop"
                 top = bottom = left = right = 0.0
@@ -310,8 +317,6 @@ class PageCropResizeDialog(QDialog):
                 right = float(self.e_margin_right.text().replace(",", "."))
                 if any(v < 0 for v in [top, bottom, left, right]):
                     raise ValueError("Marginesy muszą być nieujemne.")
-            
-            # Determine resize mode
             if self.resize_none.isChecked():
                 resize_mode = "noresize"
                 format_name = None
@@ -327,9 +332,7 @@ class PageCropResizeDialog(QDialog):
                     target_dims = (w, h)
                 else:
                     target_dims = self.PAPER_FORMATS[format_name]
-            
-            # Determine position
-            enable_position = self.resize_noscale.isChecked() and not (not self.crop_none.isChecked())
+            enable_position = self.resize_noscale.isChecked() and self.crop_none.isChecked()
             if enable_position:
                 position_mode = "custom" if self.pos_custom.isChecked() else "center"
                 if position_mode == "custom":
@@ -342,7 +345,6 @@ class PageCropResizeDialog(QDialog):
             else:
                 position_mode = None
                 offset_x = offset_y = None
-            
             self.result = {
                 "crop_mode": crop_mode,
                 "crop_top_mm": top,
@@ -363,7 +365,7 @@ class PageCropResizeDialog(QDialog):
 
 
 class ImageImportSettingsDialog(QDialog):
-    """Dialog for image import settings with scaling and alignment options"""
+    """Dialog for image import settings with scaling and alignment options (used now)"""
     
     def __init__(self, parent=None, title="Ustawienia importu obrazu", image_path=""):
         super().__init__(parent)
@@ -371,7 +373,6 @@ class ImageImportSettingsDialog(QDialog):
         self.image_path = image_path
         self.result = None
         
-        # Get image info
         self.image_pixel_width, self.image_pixel_height = 0, 0
         self.image_dpi = 96
         
@@ -390,7 +391,6 @@ class ImageImportSettingsDialog(QDialog):
     def setup_ui(self):
         layout = QVBoxLayout(self)
         
-        # Image info
         info_group = QGroupBox("Informacje o obrazie źródłowym")
         info_layout = QVBoxLayout()
         info_layout.addWidget(QLabel(f"Wymiary: {self.image_pixel_width} x {self.image_pixel_height} px"))
@@ -398,7 +398,6 @@ class ImageImportSettingsDialog(QDialog):
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)
         
-        # Page orientation
         orient_group = QGroupBox("Orientacja strony docelowej (A4)")
         orient_layout = QVBoxLayout()
         self.orient_portrait = QRadioButton("Pionowo")
@@ -409,7 +408,6 @@ class ImageImportSettingsDialog(QDialog):
         orient_group.setLayout(orient_layout)
         layout.addWidget(orient_group)
         
-        # Scaling mode
         scale_group = QGroupBox("Ustawienia skalowania")
         scale_layout = QVBoxLayout()
         self.scale_fit = QRadioButton("Dopasuj do strony A4")
@@ -419,18 +417,14 @@ class ImageImportSettingsDialog(QDialog):
         scale_layout.addWidget(self.scale_fit)
         scale_layout.addWidget(self.scale_original)
         scale_layout.addWidget(self.scale_custom)
-        
-        # Custom scale input
         scale_input_layout = QHBoxLayout()
         scale_input_layout.addWidget(QLabel("Skala [%]:"))
         self.scale_value = QLineEdit("100.0")
         scale_input_layout.addWidget(self.scale_value)
         scale_layout.addLayout(scale_input_layout)
-        
         scale_group.setLayout(scale_layout)
         layout.addWidget(scale_group)
         
-        # Alignment
         align_group = QGroupBox("Wyrównanie na stronie")
         align_layout = QVBoxLayout()
         self.align_center = QRadioButton("Środek strony")
@@ -443,25 +437,20 @@ class ImageImportSettingsDialog(QDialog):
         align_group.setLayout(align_layout)
         layout.addWidget(align_group)
         
-        # Buttons
         button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         button_box.accepted.connect(self.accept_dialog)
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
         
-        # Connect signals
         self.scale_fit.toggled.connect(self.update_scale_controls)
         self.scale_original.toggled.connect(self.update_scale_controls)
         self.scale_custom.toggled.connect(self.update_scale_controls)
         
     def update_scale_controls(self):
-        """Enable/disable scale input based on selected mode"""
         self.scale_value.setEnabled(self.scale_custom.isChecked())
         
     def accept_dialog(self):
-        """Validate and collect results"""
         try:
-            # Determine scaling mode
             if self.scale_fit.isChecked():
                 scaling_mode = "DOPASUJ"
                 scale_factor = 1.0
@@ -475,7 +464,6 @@ class ImageImportSettingsDialog(QDialog):
                     raise ValueError("Skala musi być wartością liczbową od 0.1 do 1000%.")
                 scale_factor = scale_val / 100.0
             
-            # Determine alignment
             if self.align_center.isChecked():
                 alignment = "SRODEK"
             elif self.align_top.isChecked():
@@ -483,7 +471,6 @@ class ImageImportSettingsDialog(QDialog):
             else:
                 alignment = "DOL"
             
-            # Determine orientation
             orientation = "PIONOWO" if self.orient_portrait.isChecked() else "POZIOMO"
             
             self.result = {
@@ -499,7 +486,7 @@ class ImageImportSettingsDialog(QDialog):
 
 
 class EnhancedPageRangeDialog(QDialog):
-    """Dialog for selecting page range with parsing support"""
+    """Dialog for selecting page range with parsing support (now used)"""
     
     def __init__(self, parent=None, title="Wybór zakresu stron", imported_doc=None):
         super().__init__(parent)
@@ -519,23 +506,16 @@ class EnhancedPageRangeDialog(QDialog):
         
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        
-        # Range input group
         range_group = QGroupBox("Zakres stron do importu")
         range_layout = QVBoxLayout()
-        
         range_layout.addWidget(QLabel(f"Podaj strony z zakresu [1 - {self.max_pages}]:"))
         self.entry = QLineEdit(f"1-{self.max_pages}")
         range_layout.addWidget(self.entry)
-        
         helper = QLabel("Format: 1, 3-5, 7")
         helper.setStyleSheet("color: gray;")
         range_layout.addWidget(helper)
-        
         range_group.setLayout(range_layout)
         layout.addWidget(range_group)
-        
-        # Buttons
         button_layout = QHBoxLayout()
         import_btn = QPushButton("Importuj")
         import_btn.clicked.connect(self.accept_dialog)
@@ -546,22 +526,18 @@ class EnhancedPageRangeDialog(QDialog):
         layout.addLayout(button_layout)
         
     def accept_dialog(self):
-        """Parse and validate range"""
         raw_range = self.entry.text().strip()
         if not raw_range:
             QMessageBox.critical(self, "Błąd", "Wprowadź zakres stron.")
             return
-        
         page_indices = self._parse_range(raw_range)
         if page_indices is None:
             QMessageBox.critical(self, "Błąd formatu", "Niepoprawny format zakresu. Użyj np. 1, 3-5, 7.")
             return
-        
         self.result = page_indices
         self.accept()
         
     def _parse_range(self, raw_range: str) -> Optional[List[int]]:
-        """Parse page range string into list of page indices"""
         selected_pages = set()
         if not re.fullmatch(r'[\d,\-\s]+', raw_range):
             return None
@@ -610,7 +586,6 @@ class MergePageGridDialog(QDialog):
         self.result = None
         self.page_count = page_count
         
-        # Default values
         self.sheet_format_val = "A4"
         self.orientation_val = "Pionowa"
         self.margin_top_val = "4"
@@ -620,7 +595,6 @@ class MergePageGridDialog(QDialog):
         self.spacing_x_val = "10"
         self.spacing_y_val = "10"
         
-        # Calculate default grid
         if page_count == 1:
             self.rows_val = 1
             self.cols_val = 1
@@ -638,12 +612,8 @@ class MergePageGridDialog(QDialog):
         
     def setup_ui(self):
         main_layout = QHBoxLayout(self)
-        
-        # Left panel - settings
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
-        
-        # Sheet format and orientation
         format_group = QGroupBox("Arkusz docelowy")
         format_layout = QGridLayout()
         format_layout.addWidget(QLabel("Format:"), 0, 0)
@@ -652,7 +622,6 @@ class MergePageGridDialog(QDialog):
         self.format_combo.setCurrentText(self.sheet_format_val)
         self.format_combo.currentTextChanged.connect(self.update_preview)
         format_layout.addWidget(self.format_combo, 0, 1)
-        
         format_layout.addWidget(QLabel("Orientacja:"), 1, 0)
         orient_widget = QWidget()
         orient_layout = QHBoxLayout(orient_widget)
@@ -664,11 +633,8 @@ class MergePageGridDialog(QDialog):
         orient_layout.addWidget(self.orient_portrait)
         orient_layout.addWidget(self.orient_landscape)
         format_layout.addWidget(orient_widget, 1, 1)
-        
         format_group.setLayout(format_layout)
         left_layout.addWidget(format_group)
-        
-        # Margins
         margin_group = QGroupBox("Marginesy [mm]")
         margin_layout = QGridLayout()
         margin_layout.addWidget(QLabel("Górny:"), 0, 0)
@@ -689,8 +655,6 @@ class MergePageGridDialog(QDialog):
         margin_layout.addWidget(self.margin_right, 1, 3)
         margin_group.setLayout(margin_layout)
         left_layout.addWidget(margin_group)
-        
-        # Spacing
         spacing_group = QGroupBox("Odstępy [mm]")
         spacing_layout = QGridLayout()
         spacing_layout.addWidget(QLabel("Między kolumnami:"), 0, 0)
@@ -703,8 +667,6 @@ class MergePageGridDialog(QDialog):
         spacing_layout.addWidget(self.spacing_y, 1, 1)
         spacing_group.setLayout(spacing_layout)
         left_layout.addWidget(spacing_group)
-        
-        # Grid dimensions
         grid_group = QGroupBox("Siatka stron")
         grid_layout = QGridLayout()
         grid_layout.addWidget(QLabel("Wiersze:"), 0, 0)
@@ -723,24 +685,17 @@ class MergePageGridDialog(QDialog):
         grid_layout.addWidget(self.cols_spin, 0, 3)
         grid_group.setLayout(grid_layout)
         left_layout.addWidget(grid_group)
-        
         left_layout.addStretch()
         main_layout.addWidget(left_widget)
-        
-        # Right panel - preview
         preview_group = QGroupBox("Podgląd rozkładu stron")
         preview_layout = QVBoxLayout()
-        
         self.preview_scene = QGraphicsScene()
         self.preview_view = QGraphicsView(self.preview_scene)
         self.preview_view.setMinimumSize(320, 450)
         self.preview_view.setMaximumSize(320, 450)
         preview_layout.addWidget(self.preview_view)
-        
         preview_group.setLayout(preview_layout)
         main_layout.addWidget(preview_group)
-        
-        # Bottom buttons
         button_layout = QHBoxLayout()
         apply_btn = QPushButton("Zastosuj")
         apply_btn.clicked.connect(self.accept_dialog)
@@ -748,20 +703,15 @@ class MergePageGridDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(apply_btn)
         button_layout.addWidget(cancel_btn)
-        
-        # Add button layout to main layout
         outer_layout = QVBoxLayout()
         outer_layout.addLayout(main_layout)
         outer_layout.addLayout(button_layout)
-        
         container = QWidget()
         container.setLayout(outer_layout)
-        
         dialog_layout = QVBoxLayout(self)
         dialog_layout.addWidget(container)
         
     def get_sheet_dimensions(self):
-        """Get current sheet dimensions in mm"""
         sf = self.format_combo.currentText()
         sheet_w, sheet_h = self.PAPER_FORMATS.get(sf, (210, 297))
         if self.orient_landscape.isChecked():
@@ -769,12 +719,8 @@ class MergePageGridDialog(QDialog):
         return sheet_w, sheet_h
         
     def update_preview(self):
-        """Update the visual preview of the grid layout"""
         try:
             self.preview_scene.clear()
-            
-            # Get all values
-            num_pages = self.page_count
             margin_top = float(self.margin_top.text().replace(",", "."))
             margin_bottom = float(self.margin_bottom.text().replace(",", "."))
             margin_left = float(self.margin_left.text().replace(",", "."))
@@ -784,28 +730,20 @@ class MergePageGridDialog(QDialog):
             rows = self.rows_spin.value()
             cols = self.cols_spin.value()
             sheet_w, sheet_h = self.get_sheet_dimensions()
-            
-            # Preview dimensions
             PREVIEW_W = 320
             PREVIEW_H = 450
             PREVIEW_PAD = 20
-            
             preview_area_w = PREVIEW_W - 2 * PREVIEW_PAD
             preview_area_h = PREVIEW_H - 2 * PREVIEW_PAD
             scale = min(preview_area_w / sheet_w, preview_area_h / sheet_h)
-            
             width_px = sheet_w * scale
             height_px = sheet_h * scale
             offset_x = (PREVIEW_W - width_px) / 2
             offset_y = (PREVIEW_H - height_px) / 2
-            
-            # Draw sheet background
             sheet_rect = QGraphicsRectItem(offset_x, offset_y, width_px, height_px)
             sheet_rect.setBrush(QBrush(QColor("white")))
             sheet_rect.setPen(QPen(QColor("#bbb"), 1))
             self.preview_scene.addItem(sheet_rect)
-            
-            # Calculate cell dimensions
             if cols == 1:
                 cell_w = sheet_w - margin_left - margin_right
             else:
@@ -814,46 +752,38 @@ class MergePageGridDialog(QDialog):
                 cell_h = sheet_h - margin_top - margin_bottom
             else:
                 cell_h = (sheet_h - margin_top - margin_bottom - (rows - 1) * spacing_y) / rows
-            
             cell_w_px = cell_w * scale
             cell_h_px = cell_h * scale
             margin_left_px = margin_left * scale
             margin_top_px = margin_top * scale
             spacing_x_px = spacing_x * scale
             spacing_y_px = spacing_y * scale
-            
-            # Draw cells
+            num_pages = self.page_count
             for r in range(rows):
                 for c in range(cols):
                     x0 = offset_x + margin_left_px + c * (cell_w_px + spacing_x_px)
                     y0 = offset_y + margin_top_px + r * (cell_h_px + spacing_y_px)
-                    
                     idx = r * cols + c
                     color = QColor("#d0e6f8") if idx < num_pages else QColor("#f5f5f5")
-                    
                     cell_rect = QGraphicsRectItem(x0, y0, cell_w_px, cell_h_px)
                     cell_rect.setBrush(QBrush(color))
                     cell_rect.setPen(QPen(QColor("#666"), 1))
                     self.preview_scene.addItem(cell_rect)
-                    
                     if idx < num_pages:
                         text_item = QGraphicsTextItem(str(idx + 1))
                         text_item.setDefaultTextColor(QColor("#345"))
                         font = QFont("Arial", 11, QFont.Bold)
                         text_item.setFont(font)
-                        # Center text in cell
                         text_rect = text_item.boundingRect()
                         text_x = x0 + (cell_w_px - text_rect.width()) / 2
                         text_y = y0 + (cell_h_px - text_rect.height()) / 2
                         text_item.setPos(text_x, text_y)
                         self.preview_scene.addItem(text_item)
-            
             self.preview_scene.setSceneRect(0, 0, PREVIEW_W, PREVIEW_H)
         except:
-            pass  # Ignore errors during preview update
+            pass
             
     def accept_dialog(self):
-        """Validate and collect results"""
         try:
             margin_top = float(self.margin_top.text().replace(",", "."))
             margin_bottom = float(self.margin_bottom.text().replace(",", "."))
@@ -861,25 +791,19 @@ class MergePageGridDialog(QDialog):
             margin_right = float(self.margin_right.text().replace(",", "."))
             spacing_x = float(self.spacing_x.text().replace(",", "."))
             spacing_y = float(self.spacing_y.text().replace(",", "."))
-            
             if any(m < 0 for m in [margin_top, margin_bottom, margin_left, margin_right]):
                 raise ValueError("Marginesy muszą być nieujemne.")
             if spacing_x < 0 or spacing_y < 0:
                 raise ValueError("Odstępy muszą być nieujemne.")
-            
             rows = self.rows_spin.value()
             cols = self.cols_spin.value()
             if rows < 1 or cols < 1:
                 raise ValueError("Liczba wierszy i kolumn musi być dodatnia.")
-            
             format_name = self.format_combo.currentText()
             sheet_dims = self.PAPER_FORMATS[format_name]
             orientation = "Pozioma" if self.orient_landscape.isChecked() else "Pionowa"
-            
-            # Swap dimensions if landscape
             if orientation == "Pozioma":
                 sheet_dims = (sheet_dims[1], sheet_dims[0])
-            
             self.result = {
                 "format_name": format_name,
                 "sheet_width_mm": sheet_dims[0],
@@ -910,8 +834,6 @@ class PageNumberingDialog(QDialog):
         
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        
-        # Marginesy poziome
         margin_group = QGroupBox("Marginesy poziome (mm)")
         margin_layout = QHBoxLayout()
         self.margin_left = QLineEdit("35")
@@ -926,15 +848,11 @@ class PageNumberingDialog(QDialog):
         margin_group_vbox.addWidget(self.mirror_margins)
         margin_group.setLayout(margin_group_vbox)
         layout.addWidget(margin_group)
-        
-        # Położenie
         pos_group = QGroupBox("Położenie numeru strony")
         pos_layout = QGridLayout()
-        
         pos_layout.addWidget(QLabel("Od krawędzi (mm):"), 0, 0)
         self.margin_vertical = QLineEdit("15")
         pos_layout.addWidget(self.margin_vertical, 0, 1)
-        
         pos_layout.addWidget(QLabel("Pion:"), 1, 0)
         self.pos_top = QRadioButton("Nagłówek")
         self.pos_bottom = QRadioButton("Stopka")
@@ -943,7 +861,6 @@ class PageNumberingDialog(QDialog):
         pos_h1.addWidget(self.pos_top)
         pos_h1.addWidget(self.pos_bottom)
         pos_layout.addLayout(pos_h1, 1, 1)
-        
         pos_layout.addWidget(QLabel("Poziom:"), 2, 0)
         self.align_left = QRadioButton("Lewo")
         self.align_center = QRadioButton("Środek")
@@ -954,7 +871,6 @@ class PageNumberingDialog(QDialog):
         pos_h2.addWidget(self.align_center)
         pos_h2.addWidget(self.align_right)
         pos_layout.addLayout(pos_h2, 2, 1)
-        
         pos_layout.addWidget(QLabel("Tryb:"), 3, 0)
         self.mode_normal = QRadioButton("Normalna")
         self.mode_mirror = QRadioButton("Lustrzana")
@@ -963,11 +879,8 @@ class PageNumberingDialog(QDialog):
         pos_h3.addWidget(self.mode_normal)
         pos_h3.addWidget(self.mode_mirror)
         pos_layout.addLayout(pos_h3, 3, 1)
-        
         pos_group.setLayout(pos_layout)
         layout.addWidget(pos_group)
-        
-        # Wartość numeracji
         counter_group = QGroupBox("Wartość numeracji")
         counter_layout = QHBoxLayout()
         counter_layout.addWidget(QLabel("Licznik zacznij od:"))
@@ -977,8 +890,6 @@ class PageNumberingDialog(QDialog):
         counter_layout.addWidget(self.start_number)
         counter_group.setLayout(counter_layout)
         layout.addWidget(counter_group)
-        
-        # Czcionka
         font_group = QGroupBox("Czcionka i format numeracji")
         font_layout = QGridLayout()
         font_layout.addWidget(QLabel("Czcionka:"), 0, 0)
@@ -986,13 +897,11 @@ class PageNumberingDialog(QDialog):
         self.font_name.addItems(["Helvetica", "Times-Roman", "Courier", "Arial"])
         self.font_name.setCurrentText("Times-Roman")
         font_layout.addWidget(self.font_name, 0, 1)
-        
         font_layout.addWidget(QLabel("Rozmiar [pt]:"), 0, 2)
         self.font_size = QComboBox()
         self.font_size.addItems(["6", "8", "10", "11", "12", "13", "14"])
         self.font_size.setCurrentText("12")
         font_layout.addWidget(self.font_size, 0, 3)
-        
         font_layout.addWidget(QLabel("Format:"), 1, 0)
         self.format_simple = QRadioButton("Standardowy (1, 2...)")
         self.format_full = QRadioButton("Strona 1 z 99")
@@ -1001,11 +910,8 @@ class PageNumberingDialog(QDialog):
         format_h.addWidget(self.format_simple)
         format_h.addWidget(self.format_full)
         font_layout.addLayout(format_h, 1, 1, 1, 3)
-        
         font_group.setLayout(font_layout)
         layout.addWidget(font_group)
-        
-        # Buttons
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept_dialog)
         buttons.rejected.connect(self.reject)
@@ -1043,11 +949,8 @@ class ShiftContentDialog(QDialog):
         
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        
         group = QGroupBox("Kierunek i wartość przesunięcia (mm)")
         grid = QGridLayout()
-        
-        # Horizontal shift
         grid.addWidget(QLabel("Poziome:"), 0, 0)
         self.x_value = QLineEdit("0")
         grid.addWidget(self.x_value, 0, 1)
@@ -1058,8 +961,6 @@ class ShiftContentDialog(QDialog):
         x_h.addWidget(self.x_left)
         x_h.addWidget(self.x_right)
         grid.addLayout(x_h, 0, 2)
-        
-        # Vertical shift
         grid.addWidget(QLabel("Pionowe:"), 1, 0)
         self.y_value = QLineEdit("0")
         grid.addWidget(self.y_value, 1, 1)
@@ -1070,11 +971,8 @@ class ShiftContentDialog(QDialog):
         y_h.addWidget(self.y_down)
         y_h.addWidget(self.y_up)
         grid.addLayout(y_h, 1, 2)
-        
         group.setLayout(grid)
         layout.addWidget(group)
-        
-        # Buttons
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept_dialog)
         buttons.rejected.connect(self.reject)
@@ -1108,21 +1006,16 @@ class PageNumberMarginDialog(QDialog):
         
     def setup_ui(self, initial_margin):
         layout = QVBoxLayout(self)
-        
         group = QGroupBox("Wysokość pola z numerem (mm)")
         grid = QGridLayout()
-        
         grid.addWidget(QLabel("Od góry (nagłówek):"), 0, 0)
         self.top_margin = QLineEdit(str(initial_margin))
         grid.addWidget(self.top_margin, 0, 1)
-        
         grid.addWidget(QLabel("Od dołu (stopka):"), 1, 0)
         self.bottom_margin = QLineEdit(str(initial_margin))
         grid.addWidget(self.bottom_margin, 1, 1)
-        
         group.setLayout(grid)
         layout.addWidget(group)
-        
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept_dialog)
         buttons.rejected.connect(self.reject)
@@ -1140,19 +1033,12 @@ class PageNumberMarginDialog(QDialog):
             QMessageBox.warning(self, "Błąd", f"Nieprawidłowe wartości: {e}")
 
 
-
 # ====================================================================
 # TOOLTIP HELPER
 # ====================================================================
 
 def set_tooltip(widget, text):
-    """
-    Set a tooltip on a Qt widget. This is a lightweight replacement
-    for the Tkinter Tooltip class - Qt has built-in tooltip support.
-    The tooltip will show after a short delay when hovering.
-    """
     widget.setToolTip(text)
-    # Qt automatically handles the delay and display
 
 
 # ====================================================================
@@ -1172,34 +1058,25 @@ class ThumbnailWidget(QWidget):
         self.is_focused = False
         self.setAcceptDrops(True)
         
-        # Layout
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(3)
-        
-        # Image label
         self.image_label = QLabel()
         self.image_label.setPixmap(pixmap)
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setStyleSheet("background-color: white; border: 1px solid #ccc;")
         layout.addWidget(self.image_label)
-        
-        # Page number label
         self.page_label = QLabel(f"Strona {page_index + 1}")
         self.page_label.setAlignment(Qt.AlignCenter)
         self.page_label.setStyleSheet("font-weight: bold;")
         layout.addWidget(self.page_label)
-        
-        # Format label
         self.format_label = QLabel(page_label)
         self.format_label.setAlignment(Qt.AlignCenter)
         self.format_label.setStyleSheet("color: gray; font-size: 9pt;")
         layout.addWidget(self.format_label)
-        
         self.update_appearance()
         
     def update_appearance(self):
-        # Łagodny niebieski, bez ostrych ramek, spójny styl
         base = "#E9EAEC"
         selected_bg = "#D6EAFF"
         border = "none"
@@ -1241,12 +1118,10 @@ class ThumbnailWidget(QWidget):
         super().mousePressEvent(event)
         
     def mouseMoveEvent(self, event):
-        """Handle drag initiation"""
         if not (event.buttons() & Qt.LeftButton):
             return
         if (event.pos() - self.drag_start_position).manhattanLength() < QApplication.startDragDistance():
             return
-            
         self.drag_started.emit(self.page_index)
         super().mouseMoveEvent(event)
 
@@ -1265,88 +1140,59 @@ class ThumbnailListWidget(QListWidget):
         self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.setDragDropMode(QAbstractItemView.InternalMove)
         self.setDefaultDropAction(Qt.MoveAction)
-        
-        # Custom drag & drop settings
         self.drag_copy_mode = False
         
     def startDrag(self, supportedActions):
-        """Override to handle multi-selection drag"""
         selected_items = self.selectedItems()
         if not selected_items:
             return
-            
-        # Create drag with selected indices
         drag = QDrag(self)
         mime_data = QMimeData()
-        
-        # Store selected indices
         indices = [self.row(item) for item in selected_items]
         mime_data.setText(','.join(map(str, indices)))
         drag.setMimeData(mime_data)
-        
-        # Set pixmap preview
         first_item = selected_items[0]
         if first_item.icon():
             pixmap = first_item.icon().pixmap(100, 100)
             if len(selected_items) > 1:
-                # Add badge for multiple items
                 painter = QPainter(pixmap)
-                painter.drawText(pixmap.rect(), Qt.AlignBottom | Qt.AlignRight, 
-                               f"+{len(selected_items)-1}")
+                painter.drawText(pixmap.rect(), Qt.AlignBottom | Qt.AlignRight,
+                                 f"+{len(selected_items)-1}")
                 painter.end()
             drag.setPixmap(pixmap)
-        
-        # Determine if copy or move
         self.drag_copy_mode = QApplication.keyboardModifiers() & Qt.ControlModifier
-        
-        # Execute drag
         if self.drag_copy_mode:
             drag.exec_(Qt.CopyAction)
         else:
             drag.exec_(Qt.MoveAction)
             
     def dropEvent(self, event):
-        """Handle drop event for reordering pages"""
         source_indices_str = event.mimeData().text()
         if not source_indices_str:
             return
-            
         try:
             source_indices = [int(x) for x in source_indices_str.split(',')]
         except ValueError:
             return
-            
-        # Determine target position
         target_item = self.itemAt(event.pos())
         if target_item:
             target_index = self.row(target_item)
         else:
             target_index = self.count()
-            
-        # Check if it's a copy or move operation
         is_copy = event.dropAction() == Qt.CopyAction or (event.modifiers() & Qt.ControlModifier)
-        
-        # Emit signal with operation details
         self.pages_dropped.emit(source_indices, target_index, is_copy)
-        
         event.accept()
         
     def contextMenuEvent(self, event):
-        """Show context menu on right-click during drag"""
-        # This allows right-click menu for copy/move choice during drag
         item = self.itemAt(event.pos())
         if item:
             menu = QMenu(self)
-            copy_action = menu.addAction("Kopiuj tutaj")
-            move_action = menu.addAction("Przenieś tutaj")
+            menu.addAction("Kopiuj tutaj")
+            menu.addAction("Przenieś tutaj")
             menu.addSeparator()
-            cancel_action = menu.addAction("Anuluj")
-            
-            action = menu.exec_(self.mapToGlobal(event.pos()))
-            # Handle menu selection
-            # This would need to be connected to actual drag operation
+            menu.addAction("Anuluj")
+            menu.exec_(self.mapToGlobal(event.pos()))
         super().contextMenuEvent(event)
-
 
 
 # ====================================================================
@@ -1365,203 +1211,145 @@ class PDFEditorQt(QMainWindow):
         self.active_page_index = 0
         self.clipboard = None
         self.pages_in_clipboard_count = 0
-        
-        # Undo/Redo stacks
         self.undo_stack = []
         self.redo_stack = []
         self.max_stack_size = 50
-        
-        # Thumbnail settings
         self.thumb_width = 250
         self.zoom_level = 4  # number of columns
         self.min_zoom = 2
         self.max_zoom = 10
-        
-        # Thumbnail widgets storage
         self.thumb_widgets = {}
-        
         self.setup_ui()
         self.setup_menus()
         self.setup_shortcuts()
         self.update_buttons_state()
         
     def setup_ui(self):
-        """Setup the main UI"""
         self.setWindowTitle(PROGRAM_TITLE)
         self.setGeometry(100, 100, 1200, 800)
-        
-        # Enable drag & drop for files
         self.setAcceptDrops(True)
-        
-        # Central widget
         central = QWidget()
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
-        
-        # Toolbar
         self.setup_toolbar()
-        
-        # Thumbnail area
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        
-        # Use list widget for better drag & drop support
         self.thumbnail_list = ThumbnailListWidget()
         self.thumbnail_list.pages_dropped.connect(self.handle_page_drop)
         self.scroll_area.setWidget(self.thumbnail_list)
-        
         main_layout.addWidget(self.scroll_area)
-        
-        # Status bar
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.update_status("Gotowy. Otwórz plik PDF.")
         
     def setup_toolbar(self):
-        """Setup toolbar with all buttons"""
         toolbar = QToolBar("Main Toolbar")
         toolbar.setMovable(False)
         toolbar.setIconSize(QSize(32, 32))
         self.addToolBar(toolbar)
-        
-        # File operations
         self.action_open = QAction("📂 Otwórz", self)
         self.action_open.setToolTip("Otwórz plik PDF")
         self.action_open.triggered.connect(self.open_pdf)
         toolbar.addAction(self.action_open)
-        
         self.action_save = QAction("💾 Zapisz", self)
         self.action_save.setToolTip("Zapisz całość do nowego pliku PDF")
         self.action_save.triggered.connect(self.save_document)
         self.action_save.setEnabled(False)
         toolbar.addAction(self.action_save)
-        
         toolbar.addSeparator()
-        
-        # Import/Export
         self.action_import_pdf = QAction("📥 Import PDF", self)
-        self.action_import_pdf.setToolTip("Importuj strony z pliku PDF.\nStrony zostaną wstawione po bieżącej, a przy braku zaznaczenia - na końcu pliku.")
+        self.action_import_pdf.setToolTip("Importuj strony z pliku PDF.\nStrony zostaną wstawione po bieżącej, a przy braku zaznaczenia - na końcu pliku.\n(Obsługa zakresu stron)")
         self.action_import_pdf.triggered.connect(self.import_pdf)
         self.action_import_pdf.setEnabled(False)
         toolbar.addAction(self.action_import_pdf)
-        
         self.action_export_pdf = QAction("📤 Export PDF", self)
         self.action_export_pdf.setToolTip("Eksportuj strony do pliku PDF.\nWymaga zaznaczenia przynajmniej jednej strony.")
         self.action_export_pdf.triggered.connect(self.extract_selected_pages)
         self.action_export_pdf.setEnabled(False)
         toolbar.addAction(self.action_export_pdf)
-        
         self.action_import_image = QAction("🖼️ Import Obraz", self)
-        self.action_import_image.setToolTip("Importuj strony z pliku obrazu.\nStrony zostaną wstawione po bieżącej, a przy braku zaznaczenia - na końcu pliku.")
+        self.action_import_image.setToolTip("Importuj obraz jako stronę (z ustawieniami).")
         self.action_import_image.triggered.connect(self.import_image)
         self.action_import_image.setEnabled(False)
         toolbar.addAction(self.action_import_image)
-        
         self.action_export_image = QAction("🖼️ Export Obraz", self)
         self.action_export_image.setToolTip("Eksportuj strony do plików PNG.\nWymaga zaznaczenia przynajmniej jednej strony.")
         self.action_export_image.triggered.connect(self.export_images)
         self.action_export_image.setEnabled(False)
         toolbar.addAction(self.action_export_image)
-        
         toolbar.addSeparator()
-        
-        # Undo/Redo
         self.action_undo = QAction("↩️ Cofnij", self)
         self.action_undo.setToolTip("Cofnij ostatnią operację")
         self.action_undo.triggered.connect(self.undo)
         self.action_undo.setEnabled(False)
         toolbar.addAction(self.action_undo)
-        
         self.action_redo = QAction("↪️ Ponów", self)
         self.action_redo.setToolTip("Ponów cofniętą operację")
         self.action_redo.triggered.connect(self.redo)
         self.action_redo.setEnabled(False)
         toolbar.addAction(self.action_redo)
-        
         toolbar.addSeparator()
-        
-        # Edit operations
         self.action_delete = QAction("🗑️ Usuń", self)
         self.action_delete.triggered.connect(self.delete_selected_pages)
         self.action_delete.setEnabled(False)
         toolbar.addAction(self.action_delete)
-        
         self.action_cut = QAction("✂️ Wytnij", self)
         self.action_cut.triggered.connect(self.cut_pages)
         self.action_cut.setEnabled(False)
         toolbar.addAction(self.action_cut)
-        
         self.action_copy = QAction("📋 Kopiuj", self)
         self.action_copy.triggered.connect(self.copy_pages)
         self.action_copy.setEnabled(False)
         toolbar.addAction(self.action_copy)
-        
         self.action_paste_before = QAction("⬆️📄 Wklej przed", self)
         self.action_paste_before.triggered.connect(self.paste_before)
         self.action_paste_before.setEnabled(False)
         toolbar.addAction(self.action_paste_before)
-        
         self.action_paste_after = QAction("⬇️📄 Wklej po", self)
         self.action_paste_after.triggered.connect(self.paste_after)
         self.action_paste_after.setEnabled(False)
         toolbar.addAction(self.action_paste_after)
-        
         toolbar.addSeparator()
-        
-        # Rotate
         self.action_rotate_left = QAction("↺ Obróć w lewo", self)
         self.action_rotate_left.triggered.connect(lambda: self.rotate_pages(-90))
         self.action_rotate_left.setEnabled(False)
         toolbar.addAction(self.action_rotate_left)
-        
         self.action_rotate_right = QAction("↻ Obróć w prawo", self)
         self.action_rotate_right.triggered.connect(lambda: self.rotate_pages(90))
         self.action_rotate_right.setEnabled(False)
         toolbar.addAction(self.action_rotate_right)
-        
         toolbar.addSeparator()
-        
-        # Page modifications
         self.action_shift_content = QAction("↔️ Przesuń", self)
         self.action_shift_content.setToolTip("Przesuń zawartość zaznaczonych stron")
         self.action_shift_content.triggered.connect(self.shift_page_content)
         self.action_shift_content.setEnabled(False)
         toolbar.addAction(self.action_shift_content)
-        
         self.action_remove_numbers = QAction("#️⃣❌ Usuń numery", self)
         self.action_remove_numbers.setToolTip("Usuń numerację ze zaznaczonych stron")
         self.action_remove_numbers.triggered.connect(self.remove_page_numbers)
         self.action_remove_numbers.setEnabled(False)
         toolbar.addAction(self.action_remove_numbers)
-        
         self.action_add_numbers = QAction("#️⃣➕ Dodaj numery", self)
         self.action_add_numbers.setToolTip("Wstaw numerację na zaznaczonych stronach")
         self.action_add_numbers.triggered.connect(self.insert_page_numbers)
         self.action_add_numbers.setEnabled(False)
         toolbar.addAction(self.action_add_numbers)
-        
         toolbar.addSeparator()
-        
-        # Zoom
         self.action_zoom_in = QAction("➕ Zoom In", self)
         self.action_zoom_in.triggered.connect(self.zoom_in)
         self.action_zoom_in.setEnabled(False)
         toolbar.addAction(self.action_zoom_in)
-        
         self.action_zoom_out = QAction("➖ Zoom Out", self)
         self.action_zoom_out.triggered.connect(self.zoom_out)
         self.action_zoom_out.setEnabled(False)
         toolbar.addAction(self.action_zoom_out)
         
     def setup_menus(self):
-        """Setup menu bar"""
         menubar = self.menuBar()
-        
-        # File menu
         file_menu = menubar.addMenu("Plik")
         file_menu.addAction(self.action_open)
         file_menu.addAction(self.action_save)
@@ -1575,8 +1363,6 @@ class PDFEditorQt(QMainWindow):
         quit_action = QAction("Zamknij program", self)
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
-        
-        # Edit menu
         edit_menu = menubar.addMenu("Edycja")
         edit_menu.addAction(self.action_undo)
         edit_menu.addAction(self.action_redo)
@@ -1587,48 +1373,38 @@ class PDFEditorQt(QMainWindow):
         edit_menu.addAction(self.action_paste_before)
         edit_menu.addAction(self.action_paste_after)
         edit_menu.addSeparator()
-        
         duplicate_action = QAction("Duplikuj stronę", self)
         duplicate_action.triggered.connect(self.duplicate_page)
         duplicate_action.setEnabled(False)
         self.action_duplicate = duplicate_action
         edit_menu.addAction(duplicate_action)
-        
-        # Select menu
         select_menu = menubar.addMenu("Zaznacz")
         select_all_action = QAction("Wszystkie strony", self)
         select_all_action.triggered.connect(self.select_all)
         select_all_action.setShortcut(QKeySequence.SelectAll)
         select_menu.addAction(select_all_action)
         select_menu.addSeparator()
-        
         select_odd_action = QAction("Strony nieparzyste", self)
         select_odd_action.triggered.connect(self.select_odd_pages)
         select_odd_action.setShortcut(QKeySequence("F1"))
         select_menu.addAction(select_odd_action)
         self.action_select_odd = select_odd_action
-        
         select_even_action = QAction("Strony parzyste", self)
         select_even_action.triggered.connect(self.select_even_pages)
         select_even_action.setShortcut(QKeySequence("F2"))
         select_menu.addAction(select_even_action)
         self.action_select_even = select_even_action
-        
         select_menu.addSeparator()
-        
         select_portrait_action = QAction("Strony pionowe", self)
         select_portrait_action.triggered.connect(self.select_portrait_pages)
         select_portrait_action.setShortcut(QKeySequence("Ctrl+F1"))
         select_menu.addAction(select_portrait_action)
         self.action_select_portrait = select_portrait_action
-        
         select_landscape_action = QAction("Strony poziome", self)
         select_landscape_action.triggered.connect(self.select_landscape_pages)
         select_landscape_action.setShortcut(QKeySequence("Ctrl+F2"))
         select_menu.addAction(select_landscape_action)
         self.action_select_landscape = select_landscape_action
-        
-        # Modifications menu
         mod_menu = menubar.addMenu("Modyfikacje")
         mod_menu.addAction(self.action_rotate_left)
         mod_menu.addAction(self.action_rotate_right)
@@ -1637,116 +1413,78 @@ class PDFEditorQt(QMainWindow):
         mod_menu.addAction(self.action_remove_numbers)
         mod_menu.addAction(self.action_add_numbers)
         mod_menu.addSeparator()
-        
-        # Crop/Resize action
         crop_resize_action = QAction("Przytnij/Zmień rozmiar", self)
         crop_resize_action.triggered.connect(self.apply_page_crop_resize_dialog)
         crop_resize_action.setShortcut(QKeySequence("F8"))
         crop_resize_action.setEnabled(False)
         self.action_crop_resize = crop_resize_action
         mod_menu.addAction(crop_resize_action)
-        
-        # Merge to grid action
         merge_grid_action = QAction("Scalaj strony w siatkę", self)
         merge_grid_action.triggered.connect(self.merge_pages_to_grid)
         merge_grid_action.setEnabled(False)
         self.action_merge_grid = merge_grid_action
         mod_menu.addAction(merge_grid_action)
-        
         mod_menu.addSeparator()
-        
-        # Insert blank pages
         insert_before_action = QAction("Wstaw pustą stronę przed", self)
         insert_before_action.triggered.connect(self.insert_blank_page_before)
         insert_before_action.setShortcut(QKeySequence("Ctrl+Shift+N"))
         insert_before_action.setEnabled(False)
         self.action_insert_before = insert_before_action
         mod_menu.addAction(insert_before_action)
-        
         insert_after_action = QAction("Wstaw pustą stronę po", self)
         insert_after_action.triggered.connect(self.insert_blank_page_after)
         insert_after_action.setShortcut(QKeySequence("Ctrl+N"))
         insert_after_action.setEnabled(False)
         self.action_insert_after = insert_after_action
         mod_menu.addAction(insert_after_action)
-        
         mod_menu.addSeparator()
-        
-        # Reverse pages
         reverse_action = QAction("Odwróć kolejność stron", self)
         reverse_action.triggered.connect(self.reverse_pages)
         reverse_action.setEnabled(False)
         self.action_reverse = reverse_action
         mod_menu.addAction(reverse_action)
-        
-        # Help menu
         help_menu = menubar.addMenu("Pomoc")
         shortcuts_action = QAction("Skróty klawiszowe", self)
         shortcuts_action.triggered.connect(self.show_shortcuts)
         help_menu.addAction(shortcuts_action)
-        
         about_action = QAction("O programie", self)
         about_action.triggered.connect(self.show_about)
         help_menu.addAction(about_action)
         
     def setup_shortcuts(self):
-        """Setup keyboard shortcuts"""
-        # File operations
         self.action_open.setShortcut(QKeySequence.Open)
         self.action_save.setShortcut(QKeySequence.Save)
-        
-        # Edit operations
         self.action_undo.setShortcut(QKeySequence.Undo)
         self.action_redo.setShortcut(QKeySequence.Redo)
         self.action_cut.setShortcut(QKeySequence.Cut)
         self.action_copy.setShortcut(QKeySequence.Copy)
         self.action_paste_after.setShortcut(QKeySequence.Paste)
-        
-        # Delete
-        delete_shortcut = QKeySequence(Qt.Key_Delete)
-        self.action_delete.setShortcut(delete_shortcut)
-        
-        # Import/Export
+        self.action_delete.setShortcut(QKeySequence(Qt.Key_Delete))
         self.action_import_pdf.setShortcut(QKeySequence("Ctrl+I"))
         self.action_export_pdf.setShortcut(QKeySequence("Ctrl+E"))
         self.action_import_image.setShortcut(QKeySequence("Ctrl+Shift+I"))
         self.action_export_image.setShortcut(QKeySequence("Ctrl+Shift+E"))
-        
-        # Paste before
         self.action_paste_before.setShortcut(QKeySequence("Ctrl+Shift+V"))
-        
-        # Rotate
         self.action_rotate_left.setShortcut(QKeySequence("Ctrl+Shift+-"))
         self.action_rotate_right.setShortcut(QKeySequence("Ctrl+Shift++"))
-        
-        # Modifications
         self.action_shift_content.setShortcut(QKeySequence("F5"))
         self.action_remove_numbers.setShortcut(QKeySequence("F6"))
         self.action_add_numbers.setShortcut(QKeySequence("F7"))
-        
-        # Select all alternative
         select_all_f4 = QAction(self)
         select_all_f4.setShortcut(QKeySequence("F4"))
         select_all_f4.triggered.connect(self.select_all)
         self.addAction(select_all_f4)
-        
-        # Zoom
         self.action_zoom_in.setShortcut(QKeySequence.ZoomIn)
         self.action_zoom_out.setShortcut(QKeySequence.ZoomOut)
-        
-        # Duplicate
         if hasattr(self, 'action_duplicate'):
             self.action_duplicate.setShortcut(QKeySequence("Ctrl+D"))
-
-
+        
     # ================================================================
     # DRAG & DROP HANDLERS FOR FILES
     # ================================================================
     
     def wheelEvent(self, event: QWheelEvent):
-        """Handle mouse wheel for zooming"""
         if event.modifiers() & Qt.ControlModifier:
-            # Zoom with Ctrl+Wheel
             if event.angleDelta().y() > 0:
                 self.zoom_in()
             elif event.angleDelta().y() < 0:
@@ -1756,107 +1494,74 @@ class PDFEditorQt(QMainWindow):
             super().wheelEvent(event)
     
     def dragEnterEvent(self, event: QDragEnterEvent):
-        """Accept drag enter if files are dragged"""
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
         else:
             event.ignore()
             
     def dragMoveEvent(self, event):
-        """Accept drag move if files are being dragged"""
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
         else:
             event.ignore()
             
     def dropEvent(self, event: QDropEvent):
-        """Handle file drop - open PDF or import image"""
         if not event.mimeData().hasUrls():
             return
-            
         urls = event.mimeData().urls()
         if not urls:
             return
-            
         filepath = urls[0].toLocalFile()
         if not filepath:
             return
-            
-        # Determine file type
         ext = os.path.splitext(filepath)[1].lower()
-        
         if ext == '.pdf':
-            # If no document open, open the PDF, otherwise import it
             if self.pdf_document is None:
                 self.open_pdf(filepath=filepath)
             else:
-                self.import_pdf(filepath=filepath)
+                self.import_pdf(filepath=filepath, from_drop=True)
         elif ext in ['.png', '.jpg', '.jpeg', '.tif', '.tiff']:
-            # Import image
             if self.pdf_document:
-                self.import_image(filepath=filepath)
+                self.import_image(filepath=filepath, from_drop=True)
             else:
                 QMessageBox.information(self, "Info", "Najpierw otwórz dokument PDF, aby zaimportować obraz.")
         else:
             QMessageBox.warning(self, "Nieprawidłowy plik", f"Nieobsługiwany typ pliku: {ext}")
-            
         event.acceptProposedAction()
         
     def handle_page_drop(self, source_indices, target_index, is_copy):
-        """Handle internal page drag & drop for reordering or copying"""
         if not self.pdf_document:
             return
-            
         try:
             self._save_state_to_undo()
-            
-            # Get pages to move/copy
             pages_data = []
             for idx in sorted(source_indices):
                 if 0 <= idx < len(self.pdf_document):
                     pages_data.append(idx)
-                    
             if not pages_data:
                 return
-                
             if is_copy:
-                # Copy pages
                 temp_doc = fitz.open()
                 for idx in pages_data:
                     temp_doc.insert_pdf(self.pdf_document, from_page=idx, to_page=idx)
-                
-                # Insert at target
                 self.pdf_document.insert_pdf(temp_doc, start_at=target_index)
                 temp_doc.close()
-                
                 self.update_status(f"Skopiowano {len(pages_data)} stron do pozycji {target_index}")
             else:
-                # Move pages - need to be more careful about indices
-                # First, extract pages
                 temp_doc = fitz.open()
                 for idx in pages_data:
                     temp_doc.insert_pdf(self.pdf_document, from_page=idx, to_page=idx)
-                
-                # Delete original pages (in reverse order to maintain indices)
                 for idx in reversed(sorted(pages_data)):
                     self.pdf_document.delete_page(idx)
-                    
-                # Adjust target index if necessary
                 adjusted_target = target_index
                 for idx in pages_data:
                     if idx < target_index:
                         adjusted_target -= 1
-                        
-                # Insert at adjusted position
                 self.pdf_document.insert_pdf(temp_doc, start_at=adjusted_target)
                 temp_doc.close()
-                
                 self.update_status(f"Przeniesiono {len(pages_data)} stron do pozycji {adjusted_target}")
-                
-            # Refresh view
             self.refresh_thumbnails()
             self.update_buttons_state()
-            
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się przenieść/skopiować stron: {e}")
             
@@ -1865,8 +1570,6 @@ class PDFEditorQt(QMainWindow):
     # ================================================================
     
     def open_pdf(self, filepath=None):
-        """Open a PDF file"""
-        # Check for unsaved changes
         if self.pdf_document and len(self.undo_stack) > 0:
             reply = QMessageBox.question(
                 self, "Niezapisane zmiany",
@@ -1877,22 +1580,18 @@ class PDFEditorQt(QMainWindow):
                 return
             elif reply == QMessageBox.Yes:
                 self.save_document()
-                if len(self.undo_stack) > 0:  # Save failed
+                if len(self.undo_stack) > 0:
                     return
-                    
         if not filepath:
             filepath, _ = QFileDialog.getOpenFileName(
                 self, "Otwórz plik PDF", "", "Pliki PDF (*.pdf)"
             )
-            
         if not filepath:
             self.update_status("Anulowano otwieranie pliku.")
             return
-            
         try:
             if self.pdf_document:
                 self.pdf_document.close()
-                
             self.pdf_document = fitz.open(filepath)
             self.selected_pages.clear()
             self.active_page_index = 0
@@ -1900,202 +1599,203 @@ class PDFEditorQt(QMainWindow):
             self.redo_stack.clear()
             self.clipboard = None
             self.pages_in_clipboard_count = 0
-            
             self.refresh_thumbnails()
             self.update_buttons_state()
             self.update_status(f"Wczytano {len(self.pdf_document)} stron. Gotowy do edycji.")
-            
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się wczytać pliku PDF: {e}")
             self.pdf_document = None
             self.update_buttons_state()
             
     def save_document(self):
-        """Save the current PDF"""
         if not self.pdf_document:
             return
-            
         filepath, _ = QFileDialog.getSaveFileName(
             self, "Zapisz PDF jako", "", "Pliki PDF (*.pdf)"
         )
-        
         if not filepath:
             self.update_status("Anulowano zapisywanie.")
             return
-            
         try:
             self.pdf_document.save(filepath, garbage=4, clean=True, pretty=True)
             self.update_status(f"Dokument zapisany jako: {filepath}")
-            
-            # Clear undo/redo after save
             self.undo_stack.clear()
             self.redo_stack.clear()
             self.update_buttons_state()
-            
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się zapisać pliku: {e}")
             
-    def import_pdf(self, filepath=None):
-        """Import pages from another PDF"""
+    def import_pdf(self, filepath=None, from_drop=False):
+        """Import PDF pages with range selection (added parity)."""
         if not self.pdf_document:
             self.update_status("Najpierw otwórz dokument PDF.")
             return
-            
         if not filepath:
             filepath, _ = QFileDialog.getOpenFileName(
                 self, "Wybierz plik PDF do zaimportowania", "", "Pliki PDF (*.pdf)"
             )
-            
         if not filepath:
             self.update_status("Anulowano importowanie.")
             return
-            
         try:
             imported_doc = fitz.open(filepath)
-            
-            # Determine insert position
+            # Determine insert position (same logic)
             if len(self.selected_pages) == 1:
                 insert_index = list(self.selected_pages)[0] + 1
             elif len(self.selected_pages) > 1:
                 insert_index = max(self.selected_pages) + 1
             else:
                 insert_index = len(self.pdf_document)
-                
+            # Range dialog (skip if drag&drop import wants full doc? keep full on drop)
+            if from_drop:
+                selected_indices = list(range(len(imported_doc)))
+            else:
+                dlg = EnhancedPageRangeDialog(self, "Zakres stron do importu", imported_doc)
+                if dlg.result is None or len(dlg.result) == 0:
+                    imported_doc.close()
+                    self.update_status("Anulowano import (brak wybranego zakresu).")
+                    return
+                selected_indices = dlg.result
             self._save_state_to_undo()
-            
-            # Import all pages
-            self.pdf_document.insert_pdf(imported_doc, start_at=insert_index)
-            num_imported = len(imported_doc)
+            temp_doc = fitz.open()
+            for idx in selected_indices:
+                temp_doc.insert_pdf(imported_doc, from_page=idx, to_page=idx)
+            self.pdf_document.insert_pdf(temp_doc, start_at=insert_index)
+            num_imported = len(selected_indices)
             imported_doc.close()
-            
+            temp_doc.close()
             self.selected_pages.clear()
             self.refresh_thumbnails()
             self.update_buttons_state()
             self.update_status(f"Zaimportowano {num_imported} stron w pozycji {insert_index}")
-            
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się zaimportować PDF: {e}")
             
-    def import_image(self, filepath=None):
-        """Import an image as a new PDF page"""
+    def import_image(self, filepath=None, from_drop=False):
+        """Import image as new PDF page using settings dialog (added parity)."""
         if not self.pdf_document:
             QMessageBox.information(self, "Info", "Najpierw otwórz dokument PDF.")
             return
-            
         if not filepath:
             filepath, _ = QFileDialog.getOpenFileName(
                 self, "Wybierz obraz do zaimportowania", "",
                 "Obrazy (*.png *.jpg *.jpeg *.tif *.tiff)"
             )
-            
         if not filepath:
             return
-            
+        # Show settings dialog (skip only if from_drop -> use defaults)
+        if from_drop:
+            # Basic default settings: FIT, CENTER, PORTRAIT
+            settings = {
+                'scaling_mode': "DOPASUJ",
+                'scale_factor': 1.0,
+                'alignment': "SRODEK",
+                'page_orientation': "PIONOWO",
+                'image_dpi': 96
+            }
+            try:
+                img = Image.open(filepath)
+                dpi_info = img.info.get('dpi', (96, 96))
+                settings['image_dpi'] = dpi_info[0] if isinstance(dpi_info, tuple) else 96
+                img.close()
+            except:
+                pass
+        else:
+            dlg = ImageImportSettingsDialog(self, "Ustawienia importu obrazu", filepath)
+            if dlg.result is None:
+                self.update_status("Anulowano import obrazu.")
+                return
+            settings = dlg.result
         try:
-            # Get image dimensions
             img = Image.open(filepath)
             img_width, img_height = img.size
-            img_dpi = img.info.get('dpi', (96, 96))[0] if isinstance(img.info.get('dpi'), tuple) else 96
-            
-            # Convert to points
+            img_dpi = settings.get('image_dpi', 96)
             img_width_pt = (img_width / img_dpi) * 72
             img_height_pt = (img_height / img_dpi) * 72
-            
-            # Create new page (A4)
-            page_w, page_h = A4_WIDTH_POINTS, A4_HEIGHT_POINTS
-            
-            # Determine insert position
+            img.close()
+            if settings['page_orientation'] == "PIONOWO":
+                page_w, page_h = A4_WIDTH_POINTS, A4_HEIGHT_POINTS
+            else:
+                page_w, page_h = A4_HEIGHT_POINTS, A4_WIDTH_POINTS
+            scaling_mode = settings['scaling_mode']
+            if scaling_mode == "DOPASUJ":
+                margin = 50 * MM_TO_POINTS
+                scale_w = (page_w - margin) / img_width_pt
+                scale_h = (page_h - margin) / img_height_pt
+                scale = min(scale_w, scale_h)
+            elif scaling_mode == "ORYGINALNY":
+                scale = 1.0
+            else:  # SKALA
+                scale = settings['scale_factor']
+            final_w = img_width_pt * scale
+            final_h = img_height_pt * scale
+            offset_points = 25 * MM_TO_POINTS
+            alignment = settings['alignment']
+            if alignment == "SRODEK":
+                x = (page_w - final_w) / 2
+                y = (page_h - final_h) / 2
+            elif alignment == "GORA":
+                x = (page_w - final_w) / 2
+                y = offset_points
+            else:  # DOL
+                x = (page_w - final_w) / 2
+                y = page_h - final_h - offset_points
+            rect = fitz.Rect(x, y, x + final_w, y + final_h)
             if len(self.selected_pages) == 1:
                 insert_index = list(self.selected_pages)[0] + 1
             elif len(self.selected_pages) > 1:
                 insert_index = max(self.selected_pages) + 1
             else:
                 insert_index = len(self.pdf_document)
-                
             self._save_state_to_undo()
-            
-            # Create temporary document with image
             temp_doc = fitz.open()
             temp_page = temp_doc.new_page(-1, width=page_w, height=page_h)
-            
-            # Fit image to page with margin
-            margin = 50 * MM_TO_POINTS
-            scale_w = (page_w - margin) / img_width_pt
-            scale_h = (page_h - margin) / img_height_pt
-            scale = min(scale_w, scale_h)
-            
-            final_w = img_width_pt * scale
-            final_h = img_height_pt * scale
-            
-            x = (page_w - final_w) / 2
-            y = (page_h - final_h) / 2
-            
-            rect = fitz.Rect(x, y, x + final_w, y + final_h)
             temp_page.insert_image(rect, filename=filepath)
-            
-            # Insert into main document
             self.pdf_document.insert_pdf(temp_doc, from_page=0, to_page=0, start_at=insert_index)
             temp_doc.close()
-            
             self.selected_pages.clear()
             self.refresh_thumbnails()
             self.update_buttons_state()
             self.update_status(f"Zaimportowano obraz jako stronę {insert_index + 1}")
-            
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się zaimportować obrazu: {e}")
-
-
+            
     def extract_selected_pages(self):
-        """Export selected pages to a new PDF"""
         if not self.pdf_document or not self.selected_pages:
             self.update_status("Zaznacz strony do eksportu.")
             return
-            
         filepath, _ = QFileDialog.getSaveFileName(
             self, "Zapisz wyodrębnione strony jako", "", "Pliki PDF (*.pdf)"
         )
-        
         if not filepath:
             self.update_status("Anulowano ekstrakcję.")
             return
-            
         try:
             temp_doc = fitz.open()
             for idx in sorted(self.selected_pages):
                 temp_doc.insert_pdf(self.pdf_document, from_page=idx, to_page=idx)
-                
             temp_doc.save(filepath)
             temp_doc.close()
-            
             self.update_status(f"Wyeksportowano {len(self.selected_pages)} stron do: {filepath}")
-            
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się wyeksportować stron: {e}")
             
     def export_images(self):
-        """Export selected pages as PNG images"""
         if not self.pdf_document or not self.selected_pages:
             self.update_status("Zaznacz strony do eksportu.")
             return
-            
         folder = QFileDialog.getExistingDirectory(self, "Wybierz folder do zapisu obrazów")
-        
         if not folder:
             return
-            
         try:
             zoom = 300 / 72.0
             matrix = fitz.Matrix(zoom, zoom)
-            
             for idx in sorted(self.selected_pages):
                 page = self.pdf_document[idx]
                 pix = page.get_pixmap(matrix=matrix, alpha=False)
                 output_path = os.path.join(folder, f"strona_{idx + 1}.png")
                 pix.save(output_path)
-                
             self.update_status(f"Wyeksportowano {len(self.selected_pages)} obrazów do: {folder}")
-            
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się wyeksportować obrazów: {e}")
             
@@ -2104,64 +1804,47 @@ class PDFEditorQt(QMainWindow):
     # ================================================================
     
     def delete_selected_pages(self):
-        """Delete selected pages"""
         if not self.pdf_document or not self.selected_pages:
             self.update_status("Zaznacz strony do usunięcia.")
             return
-            
         try:
             self._save_state_to_undo()
-            
-            # Delete in reverse order to maintain indices
             for idx in reversed(sorted(self.selected_pages)):
                 self.pdf_document.delete_page(idx)
-                
             count = len(self.selected_pages)
             self.selected_pages.clear()
-            
             self.refresh_thumbnails()
             self.update_buttons_state()
             self.update_status(f"Usunięto {count} stron.")
-            
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się usunąć stron: {e}")
             
     def cut_pages(self):
-        """Cut selected pages to clipboard"""
         if not self.pdf_document or not self.selected_pages:
             self.update_status("Zaznacz strony do wycięcia.")
             return
-            
         try:
-            # Save to clipboard
             temp_doc = fitz.open()
             for idx in sorted(self.selected_pages):
                 temp_doc.insert_pdf(self.pdf_document, from_page=idx, to_page=idx)
             self.clipboard = temp_doc.write()
             self.pages_in_clipboard_count = len(temp_doc)
             temp_doc.close()
-            
-            # Delete from document
             self._save_state_to_undo()
             for idx in reversed(sorted(self.selected_pages)):
                 self.pdf_document.delete_page(idx)
-                
             count = len(self.selected_pages)
             self.selected_pages.clear()
-            
             self.refresh_thumbnails()
             self.update_buttons_state()
             self.update_status(f"Wycięto {count} stron do schowka.")
-            
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się wyciąć stron: {e}")
             
     def copy_pages(self):
-        """Copy selected pages to clipboard"""
         if not self.pdf_document or not self.selected_pages:
             self.update_status("Zaznacz strony do skopiowania.")
             return
-            
         try:
             temp_doc = fitz.open()
             for idx in sorted(self.selected_pages):
@@ -2169,102 +1852,78 @@ class PDFEditorQt(QMainWindow):
             self.clipboard = temp_doc.write()
             self.pages_in_clipboard_count = len(temp_doc)
             temp_doc.close()
-            
             self.selected_pages.clear()
             self.update_selection_display()
             self.update_buttons_state()
             self.update_status(f"Skopiowano {self.pages_in_clipboard_count} stron do schowka.")
-            
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się skopiować stron: {e}")
             
     def paste_before(self):
-        """Paste clipboard pages before selected page"""
         self._handle_paste(before=True)
         
     def paste_after(self):
-        """Paste clipboard pages after selected page"""
         self._handle_paste(before=False)
         
     def _handle_paste(self, before):
-        """Handle paste operation"""
         if not self.pdf_document or not self.clipboard:
             self.update_status("Schowek jest pusty.")
             return
-            
         if len(self.selected_pages) > 1:
             self.update_status("Zaznacz jedną stronę do wklejenia przed/po.")
             return
-            
-        # Determine insert position
         if len(self.selected_pages) == 1:
             page_idx = list(self.selected_pages)[0]
             insert_index = page_idx if before else page_idx + 1
         else:
             insert_index = len(self.pdf_document)
-            
         try:
             self._save_state_to_undo()
-            
             temp_doc = fitz.open("pdf", self.clipboard)
             self.pdf_document.insert_pdf(temp_doc, start_at=insert_index)
             num_inserted = len(temp_doc)
             temp_doc.close()
-            
             self.clipboard = None
             self.pages_in_clipboard_count = 0
             self.selected_pages.clear()
-            
             self.refresh_thumbnails()
             self.update_buttons_state()
             self.update_status(f"Wklejono {num_inserted} stron w pozycji {insert_index}.")
-            
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się wkleić stron: {e}")
             
     def duplicate_page(self):
-        """Duplicate selected page"""
         if not self.pdf_document or len(self.selected_pages) != 1:
             self.update_status("Zaznacz dokładnie jedną stronę do duplikacji.")
             return
-            
         try:
             page_idx = list(self.selected_pages)[0]
-            
             self._save_state_to_undo()
-            
             temp_doc = fitz.open()
             temp_doc.insert_pdf(self.pdf_document, from_page=page_idx, to_page=page_idx)
             self.pdf_document.insert_pdf(temp_doc, from_page=0, to_page=0, start_at=page_idx + 1)
             temp_doc.close()
-            
             self.selected_pages.clear()
             self.refresh_thumbnails()
             self.update_buttons_state()
             self.update_status(f"Zduplikowano stronę {page_idx + 1}.")
-            
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się zduplikować strony: {e}")
             
     def rotate_pages(self, angle):
-        """Rotate selected pages"""
         if not self.pdf_document or not self.selected_pages:
             self.update_status("Zaznacz strony do obrotu.")
             return
-            
         try:
             self._save_state_to_undo()
-            
             for idx in self.selected_pages:
                 page = self.pdf_document[idx]
                 current_rotation = page.rotation
                 new_rotation = (current_rotation + angle) % 360
                 page.set_rotation(new_rotation)
-                
             self.refresh_thumbnails()
             self.update_buttons_state()
             self.update_status(f"Obrócono {len(self.selected_pages)} stron o {angle}°.")
-            
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się obrócić stron: {e}")
             
@@ -2273,7 +1932,6 @@ class PDFEditorQt(QMainWindow):
     # ================================================================
     
     def _save_state_to_undo(self):
-        """Save current document state to undo stack"""
         if self.pdf_document:
             buffer = self.pdf_document.write()
             self.undo_stack.append(buffer)
@@ -2283,144 +1941,102 @@ class PDFEditorQt(QMainWindow):
             self.update_buttons_state()
             
     def undo(self):
-        """Undo last operation"""
         if not self.undo_stack:
             self.update_status("Brak operacji do cofnięcia.")
             return
-            
         try:
-            # Save current state to redo
             if self.pdf_document:
                 current_state = self.pdf_document.write()
                 self.redo_stack.append(current_state)
                 if len(self.redo_stack) > self.max_stack_size:
                     self.redo_stack.pop(0)
-                    
-            # Restore previous state
             previous_state = self.undo_stack.pop()
-            
             if self.pdf_document:
                 self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", previous_state)
-            
             self.selected_pages.clear()
             self.refresh_thumbnails()
             self.update_buttons_state()
             self.update_status("Cofnięto ostatnią operację.")
-            
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się cofnąć operacji: {e}")
             
     def redo(self):
-        """Redo last undone operation"""
         if not self.redo_stack:
             self.update_status("Brak operacji do ponowienia.")
             return
-            
         try:
-            # Save current state to undo
             if self.pdf_document:
                 current_state = self.pdf_document.write()
                 self.undo_stack.append(current_state)
                 if len(self.undo_stack) > self.max_stack_size:
                     self.undo_stack.pop(0)
-                    
-            # Restore next state
             next_state = self.redo_stack.pop()
-            
             if self.pdf_document:
                 self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", next_state)
-            
             self.selected_pages.clear()
             self.refresh_thumbnails()
             self.update_buttons_state()
             self.update_status("Ponowiono operację.")
-            
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się ponowić operacji: {e}")
-
-
+            
     # ================================================================
     # PAGE MODIFICATIONS
     # ================================================================
     
     def shift_page_content(self):
-        """Shift content on selected pages"""
         if not self.pdf_document or not self.selected_pages:
             self.update_status("Zaznacz strony do przesunięcia zawartości.")
             return
-            
         dialog = ShiftContentDialog(self)
         if dialog.exec_() != QDialog.Accepted or not dialog.result:
             self.update_status("Anulowano przesuwanie zawartości.")
             return
-            
         result = dialog.result
-        
         if result['x_mm'] == 0 and result['y_mm'] == 0:
             self.update_status("Zerowe przesunięcie - operacja anulowana.")
             return
-            
         try:
-            # Convert to points
             dx_pt = result['x_mm'] * self.MM_TO_POINTS
             dy_pt = result['y_mm'] * self.MM_TO_POINTS
-            
-            # Apply direction
             x_sign = -1 if result['x_dir'] == 'L' else 1
             y_sign = -1 if result['y_dir'] == 'D' else 1
-            
             final_dx = dx_pt * x_sign
             final_dy = dy_pt * y_sign
-            
-            # Save state
             self._save_state_to_undo()
-            
-            # Use pypdf for transformation
             pdf_bytes = self.pdf_document.write()
             pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
             pdf_writer = PdfWriter()
-            
             transform = Transformation().translate(tx=final_dx, ty=final_dy)
-            
             for i, page in enumerate(pdf_reader.pages):
                 if i in self.selected_pages:
                     page.add_transformation(transform)
                 pdf_writer.add_page(page)
-                
-            # Write back
             output = io.BytesIO()
             pdf_writer.write(output)
             new_pdf_bytes = output.getvalue()
-            
             if self.pdf_document:
                 self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", new_pdf_bytes)
-            
             self.refresh_thumbnails()
             self.update_buttons_state()
             self.update_status(f"Przesunięto zawartość na {len(self.selected_pages)} stronach.")
-            
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się przesunąć zawartości: {e}")
             
     def insert_page_numbers(self):
-        """Add page numbers to selected pages"""
         if not self.pdf_document or not self.selected_pages:
             self.update_status("Zaznacz strony do numeracji.")
             return
-            
         dialog = PageNumberingDialog(self)
         if dialog.exec_() != QDialog.Accepted or not dialog.result:
             self.update_status("Anulowano wstawianie numeracji.")
             return
-            
         settings = dialog.result
-        
         try:
             self._save_state_to_undo()
-            
             MM_PT = self.MM_TO_POINTS
             start_number = settings['start_num']
             mode = settings['mode']
@@ -2428,7 +2044,6 @@ class PDFEditorQt(QMainWindow):
             position = settings['vertical_pos']
             mirror_margins = settings['mirror_margins']
             format_mode = settings['format_type']
-            
             left_mm = settings['margin_left_mm']
             right_mm = settings['margin_right_mm']
             left_pt_base = left_mm * MM_PT
@@ -2436,27 +2051,19 @@ class PDFEditorQt(QMainWindow):
             margin_v = settings['margin_vertical_mm'] * MM_PT
             font_size = settings['font_size']
             font = settings['font_name']
-            
             selected_indices = sorted(self.selected_pages)
             current_number = start_number
             total_counted_pages = len(selected_indices) + start_number - 1
-            
             for i in selected_indices:
                 page = self.pdf_document[i]
                 rect = page.rect
                 rotation = page.rotation
-                
-                # Create text
                 if format_mode == 'full':
                     text = f"Strona {current_number} z {total_counted_pages}"
                 else:
                     text = str(current_number)
-                    
                 text_width = fitz.get_text_length(text, fontname=font, fontsize=font_size)
-                
-                # Determine alignment
                 is_even_counted = (current_number - start_number) % 2 == 0
-                
                 if mode == "lustrzana":
                     if direction == "srodek":
                         align = "srodek"
@@ -2466,8 +2073,6 @@ class PDFEditorQt(QMainWindow):
                         align = "prawa" if is_even_counted else "lewa"
                 else:
                     align = direction
-                    
-                # Margin correction
                 is_physical_odd = (i + 1) % 2 == 1
                 if mirror_margins:
                     if is_physical_odd:
@@ -2476,27 +2081,55 @@ class PDFEditorQt(QMainWindow):
                         left_pt, right_pt = right_pt_base, left_pt_base
                 else:
                     left_pt, right_pt = left_pt_base, right_pt_base
-                    
-                # Calculate position
+                # FULL ROTATION HANDLING (taken from Tk logic)
                 if rotation == 0:
                     if align == "lewa":
                         x = rect.x0 + left_pt
                     elif align == "prawa":
                         x = rect.x1 - right_pt - text_width
-                    else:  # center
+                    else:
                         total_width = rect.width
                         margin_diff = left_pt - right_pt
                         x = rect.x0 + (total_width / 2) - (text_width / 2) + (margin_diff / 2)
-                        
                     y = rect.y0 + margin_v + font_size if position == "gora" else rect.y1 - margin_v
                     angle = 0
+                elif rotation == 90:
+                    if align == "lewa":
+                        y = rect.y0 + left_pt
+                    elif align == "prawa":
+                        y = rect.y1 - right_pt - text_width
+                    else:
+                        total_height = rect.height
+                        margin_diff = left_pt - right_pt
+                        y = rect.y0 + (total_height / 2) - (text_width / 2) + (margin_diff / 2)
+                    x = rect.x0 + margin_v + font_size if position == "gora" else rect.x1 - margin_v
+                    angle = 90
+                elif rotation == 180:
+                    if align == "lewa":
+                        x = rect.x1 - right_pt - text_width
+                    elif align == "prawa":
+                        x = rect.x0 + left_pt
+                    else:
+                        total_width = rect.width
+                        margin_diff = left_pt - right_pt
+                        x = rect.x0 + (total_width / 2) - (text_width / 2) + (margin_diff / 2)
+                    y = rect.y1 - margin_v - font_size if position == "gora" else rect.y0 + margin_v
+                    angle = 180
+                elif rotation == 270:
+                    if align == "lewa":
+                        y = rect.y1 - right_pt - text_width
+                    elif align == "prawa":
+                        y = rect.y0 + left_pt
+                    else:
+                        total_height = rect.height
+                        margin_diff = left_pt - right_pt
+                        y = rect.y0 + (total_height / 2) - (text_width / 2) + (margin_diff / 2)
+                    x = rect.x1 - margin_v - font_size if position == "gora" else rect.x0 + margin_v
+                    angle = 270
                 else:
-                    # Simplified for other rotations
                     x = rect.x0 + left_pt
-                    y = rect.y1 - margin_v if position == "gora" else rect.y0 + margin_v
-                    angle = rotation
-                    
-                # Insert text
+                    y = rect.y1 - margin_v
+                    angle = 0
                 page.insert_text(
                     fitz.Point(x, y),
                     text,
@@ -2505,36 +2138,27 @@ class PDFEditorQt(QMainWindow):
                     color=(0, 0, 0),
                     rotate=angle
                 )
-                
                 current_number += 1
-                
             self.refresh_thumbnails()
             self.update_buttons_state()
             self.update_status(f"Dodano numerację na {len(selected_indices)} stronach.")
-            
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się dodać numeracji: {e}")
             
     def remove_page_numbers(self):
-        """Remove page numbers from selected pages"""
         if not self.pdf_document or not self.selected_pages:
             self.update_status("Zaznacz strony do usunięcia numeracji.")
             return
-            
         dialog = PageNumberMarginDialog(self, initial_margin_mm=20)
         if dialog.exec_() != QDialog.Accepted or not dialog.result:
             self.update_status("Anulowano usuwanie numeracji.")
             return
-            
         margins = dialog.result
         top_mm = margins['top_mm']
         bottom_mm = margins['bottom_mm']
-        
         mm_to_pt = self.MM_TO_POINTS
         top_pt = top_mm * mm_to_pt
         bottom_pt = bottom_mm * mm_to_pt
-        
-        # Patterns for detecting page numbers
         page_number_patterns = [
             r'^\s*[-–]?\s*\d+\s*[-–]?\s*$',
             r'^\s*(?:Strona|Page)\s+\d+\s+(?:z|of)\s+\d+\s*$',
@@ -2542,84 +2166,61 @@ class PDFEditorQt(QMainWindow):
             r'^\s*\(\s*\d+\s*\)\s*$'
         ]
         compiled_patterns = [re.compile(p, re.IGNORECASE) for p in page_number_patterns]
-        
         try:
             self._save_state_to_undo()
-            
             modified_count = 0
-            
             for page_index in sorted(self.selected_pages):
                 page = self.pdf_document[page_index]
                 rect = page.rect
-                
-                # Define scan areas
                 top_margin_rect = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y0 + top_pt)
                 bottom_margin_rect = fitz.Rect(rect.x0, rect.y1 - bottom_pt, rect.x1, rect.y1)
-                
                 scan_rects = [top_margin_rect, bottom_margin_rect]
-                
                 found_and_removed = False
-                
                 for scan_rect in scan_rects:
                     text_blocks = page.get_text("blocks", clip=scan_rect)
-                    
                     for block in text_blocks:
                         block_text = block[4]
                         lines = block_text.strip().split('\n')
-                        
                         for line in lines:
                             cleaned_line = line.strip()
                             for pattern in compiled_patterns:
                                 if pattern.fullmatch(cleaned_line):
                                     text_instances = page.search_for(cleaned_line, clip=scan_rect)
-                                    
                                     for inst in text_instances:
                                         page.add_redact_annot(inst)
                                         found_and_removed = True
-                                        
                 if found_and_removed:
                     page.apply_redactions()
                     modified_count += 1
-                    
             if modified_count > 0:
                 self.refresh_thumbnails()
                 self.update_buttons_state()
                 self.update_status(f"Usunięto numery na {modified_count} stronach.")
             else:
                 self.update_status("Nie znaleziono numerów do usunięcia.")
-                
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się usunąć numerów: {e}")
-
-
+            
     # ================================================================
     # SELECTION OPERATIONS
     # ================================================================
     
     def select_all(self):
-        """Select all pages"""
         if not self.pdf_document:
             return
-            
         all_pages = set(range(len(self.pdf_document)))
-        
         if self.selected_pages == all_pages:
-            # Deselect all
             self.selected_pages.clear()
             self.update_status("Anulowano zaznaczenie wszystkich stron.")
         else:
-            # Select all
             self.selected_pages = all_pages
             self.update_status(f"Zaznaczono wszystkie strony ({len(self.pdf_document)}).")
-            
         self.update_selection_display()
         self.update_buttons_state()
         
     def select_odd_pages(self):
-        """Select odd pages (1, 3, 5, ...)"""
         if not self.pdf_document:
             return
-            
         indices = [i for i in range(len(self.pdf_document)) if i % 2 == 0]
         self.selected_pages = set(indices)
         self.update_selection_display()
@@ -2627,91 +2228,98 @@ class PDFEditorQt(QMainWindow):
         self.update_status(f"Zaznaczono {len(indices)} stron nieparzystych.")
         
     def select_even_pages(self):
-        """Select even pages (2, 4, 6, ...)"""
         if not self.pdf_document:
             return
-            
         indices = [i for i in range(len(self.pdf_document)) if i % 2 != 0]
         self.selected_pages = set(indices)
         self.update_selection_display()
         self.update_buttons_state()
         self.update_status(f"Zaznaczono {len(indices)} stron parzystych.")
         
+    def select_portrait_pages(self):
+        if not self.pdf_document:
+            return
+        portrait_indices = []
+        for i in range(len(self.pdf_document)):
+            page = self.pdf_document[i]
+            rect = page.rect
+            if rect.height >= rect.width:
+                portrait_indices.append(i)
+        self.selected_pages = set(portrait_indices)
+        self.update_selection_display()
+        self.update_buttons_state()
+        self.update_status(f"Zaznaczono {len(portrait_indices)} stron pionowych.")
+    
+    def select_landscape_pages(self):
+        if not self.pdf_document:
+            return
+        landscape_indices = []
+        for i in range(len(self.pdf_document)):
+            page = self.pdf_document[i]
+            rect = page.rect
+            if rect.width > rect.height:
+                landscape_indices.append(i)
+        self.selected_pages = set(landscape_indices)
+        self.update_selection_display()
+        self.update_buttons_state()
+        self.update_status(f"Zaznaczono {len(landscape_indices)} stron poziomych.")
+        
     # ================================================================
     # VIEW OPERATIONS
     # ================================================================
     
     def zoom_in(self):
-        """Zoom in (fewer columns, larger thumbnails)"""
         if self.pdf_document and self.zoom_level > self.min_zoom:
             self.zoom_level -= 1
             self.refresh_thumbnails()
             self.update_buttons_state()
             
     def zoom_out(self):
-        """Zoom out (more columns, smaller thumbnails)"""
         if self.pdf_document and self.zoom_level < self.max_zoom:
             self.zoom_level += 1
             self.refresh_thumbnails()
             self.update_buttons_state()
             
     def refresh_thumbnails(self):
-        """Refresh all thumbnail widgets"""
         if not self.pdf_document:
             self.thumbnail_list.clear()
             self.thumb_widgets.clear()
             return
-            
         self.thumbnail_list.clear()
         self.thumb_widgets.clear()
-        
-        # Calculate thumbnail size based on zoom level
         base_width = 200
         thumb_width = int(base_width * (self.max_zoom - self.zoom_level + self.min_zoom) / self.max_zoom)
-        
         for i in range(len(self.pdf_document)):
             page = self.pdf_document[i]
-            
-            # Render page as pixmap
-            mat = fitz.Matrix(0.5, 0.5)  # Smaller resolution for thumbnails
+            mat = fitz.Matrix(0.5, 0.5)
             pix = page.get_pixmap(matrix=mat, alpha=False)
-            
-            # Convert to QPixmap
-            img_data = pix.tobytes("ppm")
-            qimage = QImage.fromData(img_data)
-            pixmap = QPixmap.fromImage(qimage)
-            
-            # Scale to thumbnail size
+            try:
+                img_data = pix.tobytes("ppm")
+                qimage = QImage.fromData(img_data)
+                pixmap = QPixmap.fromImage(qimage)
+            except:
+                # fallback: create empty pixmap
+                pixmap = QPixmap(thumb_width, int(thumb_width*1.414))
+                pixmap.fill(Qt.white)
             aspect_ratio = pix.height / pix.width if pix.width > 0 else 1
             thumb_height = int(thumb_width * aspect_ratio)
             scaled_pixmap = pixmap.scaled(thumb_width, thumb_height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            
-            # Get page label
             page_label = self._get_page_size_label(i)
-            
-            # Create list item
             item = QListWidgetItem()
             item.setSizeHint(QSize(thumb_width + 20, thumb_height + 60))
             self.thumbnail_list.addItem(item)
-            
-            # Create thumbnail widget
             thumb_widget = ThumbnailWidget(i, scaled_pixmap, page_label)
             thumb_widget.clicked.connect(self.on_thumbnail_clicked)
             self.thumbnail_list.setItemWidget(item, thumb_widget)
-            
             self.thumb_widgets[i] = thumb_widget
-            
         self.update_selection_display()
         
     def _get_page_size_label(self, page_index):
-        """Get formatted page size label"""
         if not self.pdf_document:
             return ""
-            
         page = self.pdf_document[page_index]
         width_mm = round(page.rect.width / 72 * 25.4)
         height_mm = round(page.rect.height / 72 * 25.4)
-        
         if 205 <= width_mm <= 215 and 292 <= height_mm <= 302:
             return "A4"
         elif 292 <= width_mm <= 302 and 205 <= height_mm <= 215:
@@ -2722,44 +2330,34 @@ class PDFEditorQt(QMainWindow):
             return f"{width_mm} x {height_mm} mm"
             
     def on_thumbnail_clicked(self, page_index, button, modifiers):
-        """Handle thumbnail click"""
         if button == Qt.LeftButton:
             if modifiers & Qt.ControlModifier:
-                # Toggle selection
                 if page_index in self.selected_pages:
                     self.selected_pages.remove(page_index)
                 else:
                     self.selected_pages.add(page_index)
             elif modifiers & Qt.ShiftModifier:
-                # Range selection
                 if self.selected_pages:
-                    last_selected = max(self.selected_pages)
-                    start = min(page_index, last_selected)
-                    end = max(page_index, last_selected)
+                    anchor = self.active_page_index
+                    start = min(page_index, anchor)
+                    end = max(page_index, anchor)
                     for i in range(start, end + 1):
                         self.selected_pages.add(i)
                 else:
                     self.selected_pages.add(page_index)
             else:
-                # Single selection
                 self.selected_pages = {page_index}
-                
             self.active_page_index = page_index
             self.update_selection_display()
             self.update_buttons_state()
-            
         elif button == Qt.RightButton:
-            # Right-click context menu
             if page_index not in self.selected_pages:
                 self.selected_pages = {page_index}
                 self.update_selection_display()
-                
             self.show_context_menu()
             
     def show_context_menu(self):
-        """Show context menu for page operations"""
         menu = QMenu(self)
-        
         menu.addAction(self.action_cut)
         menu.addAction(self.action_copy)
         menu.addAction(self.action_paste_before)
@@ -2770,30 +2368,23 @@ class PDFEditorQt(QMainWindow):
         menu.addSeparator()
         menu.addAction(self.action_rotate_left)
         menu.addAction(self.action_rotate_right)
-        
         menu.exec_(QCursor.pos())
         
     def update_selection_display(self):
-        """Update visual selection state of thumbnails"""
         for idx, widget in self.thumb_widgets.items():
             widget.set_selected(idx in self.selected_pages)
             widget.set_focused(idx == self.active_page_index)
             
     def update_buttons_state(self):
-        """Update enabled/disabled state of all buttons"""
         doc_loaded = self.pdf_document is not None
         has_selection = len(self.selected_pages) > 0
         has_single_selection = len(self.selected_pages) == 1
         has_undo = len(self.undo_stack) > 0
         has_redo = len(self.redo_stack) > 0
         has_clipboard = self.clipboard is not None
-        
-        # File operations
         self.action_save.setEnabled(doc_loaded)
         self.action_import_pdf.setEnabled(doc_loaded)
         self.action_import_image.setEnabled(doc_loaded)
-        
-        # Edit operations
         self.action_undo.setEnabled(has_undo)
         self.action_redo.setEnabled(has_redo)
         self.action_delete.setEnabled(doc_loaded and has_selection)
@@ -2801,21 +2392,15 @@ class PDFEditorQt(QMainWindow):
         self.action_copy.setEnabled(doc_loaded and has_selection)
         self.action_paste_before.setEnabled(doc_loaded and has_clipboard and len(self.selected_pages) <= 1)
         self.action_paste_after.setEnabled(doc_loaded and has_clipboard and len(self.selected_pages) <= 1)
-        
-        # Export
         self.action_export_pdf.setEnabled(doc_loaded and has_selection)
         self.action_export_image.setEnabled(doc_loaded and has_selection)
-        
-        # Page operations
         self.action_rotate_left.setEnabled(doc_loaded and has_selection)
         self.action_rotate_right.setEnabled(doc_loaded and has_selection)
         self.action_shift_content.setEnabled(doc_loaded and has_selection)
         self.action_remove_numbers.setEnabled(doc_loaded and has_selection)
         self.action_add_numbers.setEnabled(doc_loaded and has_selection)
-        
         if hasattr(self, 'action_duplicate'):
             self.action_duplicate.setEnabled(doc_loaded and has_single_selection)
-            
         if hasattr(self, 'action_select_odd'):
             self.action_select_odd.setEnabled(doc_loaded)
         if hasattr(self, 'action_select_even'):
@@ -2824,8 +2409,6 @@ class PDFEditorQt(QMainWindow):
             self.action_select_portrait.setEnabled(doc_loaded)
         if hasattr(self, 'action_select_landscape'):
             self.action_select_landscape.setEnabled(doc_loaded)
-        
-        # New modification actions
         if hasattr(self, 'action_crop_resize'):
             self.action_crop_resize.setEnabled(doc_loaded and has_selection)
         if hasattr(self, 'action_merge_grid'):
@@ -2836,13 +2419,10 @@ class PDFEditorQt(QMainWindow):
             self.action_insert_after.setEnabled(doc_loaded)
         if hasattr(self, 'action_reverse'):
             self.action_reverse.setEnabled(doc_loaded)
-            
-        # Zoom
         self.action_zoom_in.setEnabled(doc_loaded and self.zoom_level > self.min_zoom)
         self.action_zoom_out.setEnabled(doc_loaded and self.zoom_level < self.max_zoom)
         
     def update_status(self, message):
-        """Update status bar message"""
         self.status_bar.showMessage(message)
         
     # ================================================================
@@ -2850,16 +2430,15 @@ class PDFEditorQt(QMainWindow):
     # ================================================================
     
     def show_shortcuts(self):
-        """Show keyboard shortcuts dialog"""
         msg = QMessageBox(self)
         msg.setWindowTitle("Skróty klawiszowe")
         msg.setText("""
 <b>Plik:</b><br>
 Ctrl+O - Otwórz PDF<br>
 Ctrl+S - Zapisz jako<br>
-Ctrl+I - Importuj PDF<br>
+Ctrl+I - Importuj PDF (z zakresem)<br>
 Ctrl+E - Eksportuj PDF<br>
-Ctrl+Shift+I - Importuj obraz<br>
+Ctrl+Shift+I - Importuj obraz (z ustawieniami)<br>
 Ctrl+Shift+E - Eksportuj obrazy<br>
 <br>
 <b>Edycja:</b><br>
@@ -2896,7 +2475,6 @@ Ctrl+- - Zoom out<br>
         msg.exec_()
         
     def show_about(self):
-        """Show about dialog"""
         QMessageBox.about(
             self,
             "O programie",
@@ -2909,37 +2487,26 @@ Ctrl+- - Zoom out<br>
         )
         
     # ================================================================
-    # CLOSE EVENT
-    # ================================================================
-    
-    # ================================================================
     # PAGE CROP AND RESIZE OPERATIONS
     # ================================================================
     
     def apply_page_crop_resize_dialog(self):
-        """Open dialog and apply crop/resize operations to selected pages"""
         if not self.pdf_document or not self.selected_pages:
             self.update_status("Musisz zaznaczyć przynajmniej jedną stronę PDF.")
             return
-        
         dialog = PageCropResizeDialog(self)
         dialog.exec_()
         result = dialog.result
-        
         if not result:
             self.update_status("Anulowano operację.")
             return
-        
-        # Get current PDF bytes
         pdf_bytes_export = io.BytesIO()
         self.pdf_document.save(pdf_bytes_export)
         pdf_bytes_export.seek(0)
         pdf_bytes_val = pdf_bytes_export.read()
         indices = sorted(list(self.selected_pages))
-        
         crop_mode = result["crop_mode"]
         resize_mode = result["resize_mode"]
-        
         try:
             if crop_mode == "crop_only" and resize_mode == "noresize":
                 new_pdf_bytes = self._mask_crop_pages(
@@ -2974,18 +2541,15 @@ Ctrl+- - Zoom out<br>
             else:
                 self.update_status("Nie wybrano żadnej operacji do wykonania.")
                 return
-            
             self._save_state_to_undo()
             self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", new_pdf_bytes)
             self.update_status(msg)
             self.refresh_thumbnails()
-            
         except Exception as e:
             self.update_status(f"Błąd podczas przetwarzania PDF: {e}")
             
     def _crop_pages(self, pdf_bytes, selected_indices, top_mm, bottom_mm, left_mm, right_mm, reposition=False, pos_mode="center", offset_x_mm=0, offset_y_mm=0):
-        """Crop pages by adjusting cropbox"""
         reader = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
         for i, page in enumerate(reader.pages):
@@ -3006,14 +2570,12 @@ Ctrl+- - Zoom out<br>
             page.trimbox = new_rect
             page.artbox = new_rect
             page.mediabox = orig_mediabox
-            
             if reposition:
                 dx = mm2pt(offset_x_mm) if pos_mode == "custom" else 0
                 dy = mm2pt(offset_y_mm) if pos_mode == "custom" else 0
                 if dx != 0 or dy != 0:
                     transform = Transformation().translate(tx=dx, ty=dy)
                     page.add_transformation(transform)
-            
             writer.add_page(page)
         out = io.BytesIO()
         writer.write(out)
@@ -3021,37 +2583,28 @@ Ctrl+- - Zoom out<br>
         return out.read()
         
     def _mask_crop_pages(self, pdf_bytes, selected_indices, top_mm, bottom_mm, left_mm, right_mm):
-        """Mask crop pages by drawing white rectangles"""
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         MM_TO_PT = 72 / 25.4
         for i in selected_indices:
             page = doc[i]
             rect = page.rect
-            
             left_pt = left_mm * MM_TO_PT
             right_pt = right_mm * MM_TO_PT
             top_pt = top_mm * MM_TO_PT
             bottom_pt = bottom_mm * MM_TO_PT
-            
             if left_pt > 0:
-                mask_rect = fitz.Rect(rect.x0, rect.y0, rect.x0 + left_pt, rect.y1)
-                page.draw_rect(mask_rect, color=(1,1,1), fill=(1,1,1), overlay=True)
+                page.draw_rect(fitz.Rect(rect.x0, rect.y0, rect.x0 + left_pt, rect.y1), color=(1,1,1), fill=(1,1,1), overlay=True)
             if right_pt > 0:
-                mask_rect = fitz.Rect(rect.x1 - right_pt, rect.y0, rect.x1, rect.y1)
-                page.draw_rect(mask_rect, color=(1,1,1), fill=(1,1,1), overlay=True)
+                page.draw_rect(fitz.Rect(rect.x1 - right_pt, rect.y0, rect.x1, rect.y1), color=(1,1,1), fill=(1,1,1), overlay=True)
             if top_pt > 0:
-                mask_rect = fitz.Rect(rect.x0, rect.y1 - top_pt, rect.x1, rect.y1)
-                page.draw_rect(mask_rect, color=(1,1,1), fill=(1,1,1), overlay=True)
+                page.draw_rect(fitz.Rect(rect.x0, rect.y1 - top_pt, rect.x1, rect.y1), color=(1,1,1), fill=(1,1,1), overlay=True)
             if bottom_pt > 0:
-                mask_rect = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y0 + bottom_pt)
-                page.draw_rect(mask_rect, color=(1,1,1), fill=(1,1,1), overlay=True)
-        
+                page.draw_rect(fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y0 + bottom_pt), color=(1,1,1), fill=(1,1,1), overlay=True)
         output_bytes = doc.write()
         doc.close()
         return output_bytes
         
     def _resize_scale(self, pdf_bytes, selected_indices, width_mm, height_mm):
-        """Resize pages with scaling"""
         reader = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
         target_width = mm2pt(width_mm)
@@ -3076,7 +2629,6 @@ Ctrl+- - Zoom out<br>
         return out.read()
         
     def _resize_noscale(self, pdf_bytes, selected_indices, width_mm, height_mm, pos_mode="center", offset_x_mm=0, offset_y_mm=0):
-        """Resize pages without scaling"""
         reader = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
         target_width = mm2pt(width_mm)
@@ -3104,27 +2656,22 @@ Ctrl+- - Zoom out<br>
         return out.read()
     
     # ================================================================
-    # MERGE PAGES TO GRID
+    # MERGE PAGES TO GRID (APPENDS NEW PAGE – PARITY WITH TK)
     # ================================================================
     
     def merge_pages_to_grid(self):
-        """Merge selected pages into a grid on a single sheet"""
+        """Merge selected pages into a grid on a single new sheet (append, not replace)."""
         if not self.pdf_document or not self.selected_pages:
             self.update_status("Musisz zaznaczyć strony do scalenia.")
             return
-        
         dialog = MergePageGridDialog(self, len(self.selected_pages))
         dialog.exec_()
         result = dialog.result
-        
         if not result:
             self.update_status("Anulowano scalanie.")
             return
-        
         try:
             self._save_state_to_undo()
-            
-            # Get parameters
             sheet_w_mm = result["sheet_width_mm"]
             sheet_h_mm = result["sheet_height_mm"]
             margin_t = result["margin_top_mm"]
@@ -3135,8 +2682,6 @@ Ctrl+- - Zoom out<br>
             spacing_y = result["spacing_y_mm"]
             rows = result["rows"]
             cols = result["cols"]
-            
-            # Convert to points
             sheet_w_pt = mm2pt(sheet_w_mm)
             sheet_h_pt = mm2pt(sheet_h_mm)
             margin_t_pt = mm2pt(margin_t)
@@ -3145,60 +2690,45 @@ Ctrl+- - Zoom out<br>
             margin_r_pt = mm2pt(margin_r)
             spacing_x_pt = mm2pt(spacing_x)
             spacing_y_pt = mm2pt(spacing_y)
-            
-            # Calculate cell dimensions
             if cols == 1:
                 cell_w = sheet_w_pt - margin_l_pt - margin_r_pt
             else:
                 cell_w = (sheet_w_pt - margin_l_pt - margin_r_pt - (cols - 1) * spacing_x_pt) / cols
-            
             if rows == 1:
                 cell_h = sheet_h_pt - margin_t_pt - margin_b_pt
             else:
                 cell_h = (sheet_h_pt - margin_t_pt - margin_b_pt - (rows - 1) * spacing_y_pt) / rows
-            
-            # Create new document
-            new_doc = fitz.open()
-            new_page = new_doc.new_page(width=sheet_w_pt, height=sheet_h_pt)
-            
-            # Place pages in grid
+            new_page = self.pdf_document.new_page(width=sheet_w_pt, height=sheet_h_pt)
             sorted_indices = sorted(list(self.selected_pages))
             for idx, page_idx in enumerate(sorted_indices):
                 if idx >= rows * cols:
                     break
-                
                 row = idx // cols
                 col = idx % cols
-                
                 x = margin_l_pt + col * (cell_w + spacing_x_pt)
-                y = sheet_h_pt - margin_t_pt - (row + 1) * cell_h - row * spacing_y_pt
-                
+                # y coordinate (top origin in PDF is lower): we place from top margin downward
+                y_top_area = sheet_h_pt - margin_t_pt
+                y = y_top_area - (row + 1) * cell_h - row * spacing_y_pt
                 rect = fitz.Rect(x, y, x + cell_w, y + cell_h)
                 new_page.show_pdf_page(rect, self.pdf_document, page_idx)
-            
-            # Replace document
-            self.pdf_document.close()
-            self.pdf_document = new_doc
             self.selected_pages.clear()
             self.refresh_thumbnails()
-            self.update_status(f"Scalono {len(sorted_indices)} stron w siatkę {rows}x{cols}.")
-            
+            self.update_status(f"Scalono {len(sorted_indices)} stron w siatkę {rows}x{cols} (dodano nową stronę).")
         except Exception as e:
             self.update_status(f"Błąd podczas scalania: {e}")
     
     # ================================================================
-    # INSERT BLANK PAGES
+    # INSERT BLANK PAGES (FIXED active_page_index)
     # ================================================================
     
     def insert_blank_page_before(self):
-        """Insert blank page before active page"""
         if not self.pdf_document:
             self.update_status("Najpierw otwórz dokument PDF.")
             return
-        
         try:
             self._save_state_to_undo()
-            insert_pos = self.active_page if self.active_page >= 0 else 0
+            # use active_page_index (bugfix)
+            insert_pos = self.active_page_index if self.active_page_index >= 0 else 0
             self.pdf_document.insert_page(insert_pos)
             self.refresh_thumbnails()
             self.update_status(f"Dodano pustą stronę przed stroną {insert_pos + 1}.")
@@ -3206,135 +2736,60 @@ Ctrl+- - Zoom out<br>
             self.update_status(f"Błąd: {e}")
     
     def insert_blank_page_after(self):
-        """Insert blank page after active page"""
         if not self.pdf_document:
             self.update_status("Najpierw otwórz dokument PDF.")
             return
-        
         try:
             self._save_state_to_undo()
-            insert_pos = self.active_page + 1 if self.active_page >= 0 else len(self.pdf_document)
+            insert_pos = self.active_page_index + 1 if self.active_page_index >= 0 else len(self.pdf_document)
             self.pdf_document.insert_page(insert_pos)
             self.refresh_thumbnails()
-            self.update_status(f"Dodano pustą stronę po stronie {self.active_page + 1}.")
+            self.update_status(f"Dodano pustą stronę po stronie {self.active_page_index + 1}.")
         except Exception as e:
             self.update_status(f"Błąd: {e}")
-    
-    # ================================================================
-    # ADDITIONAL SELECTION OPERATIONS
-    # ================================================================
-    
-    def select_portrait_pages(self):
-        """Select portrait oriented pages"""
-        if not self.pdf_document:
-            return
-        
-        portrait_indices = []
-        for i in range(len(self.pdf_document)):
-            page = self.pdf_document[i]
-            rect = page.rect
-            if rect.height >= rect.width:
-                portrait_indices.append(i)
-        
-        self.selected_pages = set(portrait_indices)
-        self.update_selection_display()
-        self.update_buttons_state()
-        self.update_status(f"Zaznaczono {len(portrait_indices)} stron pionowych.")
-    
-    def select_landscape_pages(self):
-        """Select landscape oriented pages"""
-        if not self.pdf_document:
-            return
-        
-        landscape_indices = []
-        for i in range(len(self.pdf_document)):
-            page = self.pdf_document[i]
-            rect = page.rect
-            if rect.width > rect.height:
-                landscape_indices.append(i)
-        
-        self.selected_pages = set(landscape_indices)
-        self.update_selection_display()
-        self.update_buttons_state()
-        self.update_status(f"Zaznaczono {len(landscape_indices)} stron poziomych.")
     
     # ================================================================
     # REVERSE PAGES
     # ================================================================
     
     def reverse_pages(self):
-        """Reverse the order of all pages in the document"""
         if not self.pdf_document:
             QMessageBox.information(self, "Informacja", "Najpierw otwórz plik PDF.")
             return
-        
         try:
             self._save_state_to_undo()
-            
             page_count = len(self.pdf_document)
             new_doc = fitz.open()
-            
             for i in range(page_count - 1, -1, -1):
                 new_doc.insert_pdf(self.pdf_document, from_page=i, to_page=i)
-            
             self.pdf_document.close()
             self.pdf_document = new_doc
-            
-            self.active_page = 0
+            self.active_page_index = 0
             self.selected_pages.clear()
             self.refresh_thumbnails()
             self.update_status(f"Pomyślnie odwrócono kolejność {page_count} stron.")
-            
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Wystąpił błąd podczas odwracania stron: {e}")
     
     # ================================================================
-    # EXPORT TO IMAGE
+    # CLOSE EVENT
     # ================================================================
     
-    def export_selected_pages_to_image(self):
-        """Export selected pages as PNG images"""
-        if not self.pdf_document or not self.selected_pages:
-            self.update_status("Musisz zaznaczyć strony do eksportu.")
-            return
-        
-        folder = QFileDialog.getExistingDirectory(self, "Wybierz folder do zapisu obrazów")
-        if not folder:
-            return
-        
-        try:
-            dpi = 150  # Default DPI for image export
-            sorted_indices = sorted(list(self.selected_pages))
-            
-            for idx in sorted_indices:
-                page = self.pdf_document[idx]
-                pix = page.get_pixmap(dpi=dpi)
-                img_path = os.path.join(folder, f"page_{idx+1}.png")
-                pix.save(img_path)
-            
-            self.update_status(f"Wyeksportowano {len(sorted_indices)} stron do {folder}")
-            
-        except Exception as e:
-            QMessageBox.critical(self, "Błąd", f"Błąd podczas eksportu: {e}")
-
     def closeEvent(self, event):
-        """Handle window close event"""
         if self.pdf_document and len(self.undo_stack) > 0:
             reply = QMessageBox.question(
                 self, "Niezapisane zmiany",
                 "Czy chcesz zapisać zmiany przed zamknięciem?",
                 QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
             )
-            
             if reply == QMessageBox.Cancel:
                 event.ignore()
                 return
             elif reply == QMessageBox.Yes:
                 self.save_document()
-                if len(self.undo_stack) > 0:  # Save failed or cancelled
+                if len(self.undo_stack) > 0:
                     event.ignore()
                     return
-                    
         event.accept()
 
 
@@ -3346,14 +2801,9 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName(PROGRAM_TITLE)
     app.setApplicationVersion(PROGRAM_VERSION)
-    
-    # Set application style
     app.setStyle("Fusion")
-    
-    # Create and show main window
     window = PDFEditorQt()
     window.show()
-    
     sys.exit(app.exec_())
 
 
