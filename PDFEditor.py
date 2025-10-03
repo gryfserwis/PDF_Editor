@@ -3330,11 +3330,11 @@ class SelectablePDFViewer:
             try:
                 temp_doc = fitz.open("pdf", self.clipboard)
                 # Insert after each selected page (in reverse order to maintain indices)
-                for i, page_idx in enumerate(reversed(sorted_pages)):
+                for page_idx in reversed(sorted_pages):
                     if before:
-                        insert_pos = page_idx + i
+                        insert_pos = page_idx
                     else:
-                        insert_pos = page_idx + 1 + i
+                        insert_pos = page_idx + 1
                     self.pdf_document.insert_pdf(temp_doc, start_at=insert_pos)
                 temp_doc.close()
                 
@@ -3575,7 +3575,7 @@ class SelectablePDFViewer:
             try:
                 self._save_state_to_undo()
                 # Insert after each selected page (in reverse order to maintain indices)
-                for i, page_idx in enumerate(reversed(sorted_pages)):
+                for page_idx in reversed(sorted_pages):
                     try:
                         rect = self.pdf_document[page_idx].rect
                         width = rect.width
@@ -3584,9 +3584,9 @@ class SelectablePDFViewer:
                         width, height = (595.276, 841.89)
                     
                     if before:
-                        insert_pos = page_idx + i
+                        insert_pos = page_idx
                     else:
-                        insert_pos = page_idx + 1 + i
+                        insert_pos = page_idx + 1
                     
                     self.pdf_document.insert_page(
                         pno=insert_pos,  

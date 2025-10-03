@@ -1779,11 +1779,11 @@ class PDFEditorQt(QMainWindow):
                 self._save_state_to_undo()
                 temp_doc = fitz.open("pdf", self.clipboard)
                 # Insert after each selected page (in reverse order to maintain indices)
-                for i, page_idx in enumerate(reversed(sorted_pages)):
+                for page_idx in reversed(sorted_pages):
                     if before:
-                        insert_pos = page_idx + i
+                        insert_pos = page_idx
                     else:
-                        insert_pos = page_idx + 1 + i
+                        insert_pos = page_idx + 1
                     self.pdf_document.insert_pdf(temp_doc, start_at=insert_pos)
                 temp_doc.close()
                 
@@ -2720,8 +2720,8 @@ Ctrl+- - Zoom out<br>
             try:
                 self._save_state_to_undo()
                 # Insert before each selected page (in reverse order to maintain indices)
-                for i, page_idx in enumerate(reversed(sorted_pages)):
-                    insert_pos = page_idx + i
+                for page_idx in reversed(sorted_pages):
+                    insert_pos = page_idx
                     try:
                         rect = self.pdf_document[page_idx].rect
                         width = rect.width
@@ -2770,8 +2770,8 @@ Ctrl+- - Zoom out<br>
             try:
                 self._save_state_to_undo()
                 # Insert after each selected page (in reverse order to maintain indices)
-                for i, page_idx in enumerate(reversed(sorted_pages)):
-                    insert_pos = page_idx + 1 + i
+                for page_idx in reversed(sorted_pages):
+                    insert_pos = page_idx + 1
                     try:
                         rect = self.pdf_document[page_idx].rect
                         width = rect.width
