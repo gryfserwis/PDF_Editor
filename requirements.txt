@@ -1,0 +1,14 @@
+# GRYF PDF Editor (Qt Version) - Requirements
+# Python 3.8+
+
+# Qt 6 Python bindings
+PySide6>=6.0.0
+
+# PDF rendering and manipulation
+PyMuPDF>=1.18.0
+
+# Image processing
+Pillow>=8.0.0
+
+# PDF transformations (crop, shift, resize)
+pypdf>=3.0.0
