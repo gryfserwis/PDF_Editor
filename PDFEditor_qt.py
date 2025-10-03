@@ -937,78 +937,75 @@ def set_tooltip(widget, text):
 # THUMBNAIL WIDGET WITH DRAG & DROP SUPPORT
 # ====================================================================
 
-class ThumbnailWidget(QWidget):
+class ThumbnailWidget(QFrame):
     """Widget representing a single PDF page thumbnail with drag & drop support"""
-    
     clicked = Signal(int, Qt.MouseButton, Qt.KeyboardModifiers)
     drag_started = Signal(int)
-    
-    def __init__(self, page_index, pixmap, page_label, parent=None):
+
+    def __init__(self, page_index, pixmap, page_label, thumb_width=320, thumb_height=410, parent=None):
         super().__init__(parent)
         self.page_index = page_index
         self.is_selected = False
         self.is_focused = False
+        self.thumb_width = thumb_width
+        self.thumb_height = thumb_height
         self.setAcceptDrops(True)
-        
+        self.setFrameShape(QFrame.NoFrame)
+        self.setLineWidth(0)
+        self.setFixedSize(self.thumb_width, self.thumb_height)
+
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(3)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
         self.image_label = QLabel()
-        self.image_label.setPixmap(pixmap)
+        self.set_thumb(pixmap)
         self.image_label.setAlignment(Qt.AlignCenter)
-        self.image_label.setStyleSheet("background-color: white; border: 1px solid #ccc;")
-        layout.addWidget(self.image_label)
+        self.image_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.image_label.setStyleSheet("background: transparent; border: none;")
+        layout.addWidget(self.image_label, stretch=1)
+
         self.page_label = QLabel(f"Strona {page_index + 1}")
         self.page_label.setAlignment(Qt.AlignCenter)
-        self.page_label.setStyleSheet("font-weight: bold;")
+        self.page_label.setStyleSheet("font-size: 11px; color: #434343; background: transparent; border: none;")
         layout.addWidget(self.page_label)
+
         self.format_label = QLabel(page_label)
         self.format_label.setAlignment(Qt.AlignCenter)
-        self.format_label.setStyleSheet("color: gray; font-size: 9pt;")
+        self.format_label.setStyleSheet("font-size: 10px; color: #888888; background: transparent; border: none;")
         layout.addWidget(self.format_label)
-        self.update_appearance()
-        
-    def update_appearance(self):
-        base = "#E9EAEC"
-        selected_bg = "#D6EAFF"
-        border = "none"
-        label_bg = "transparent"
-        label_fg = "#444"
-        if self.is_selected:
-            border = "2px solid #338bff"
-            label_bg = "#D6EAFF"
-        self.setStyleSheet(f"""
-            background-color: {selected_bg if self.is_selected else base};
-            border: {border};
-            border-radius: 8px;
-        """)
-        self.page_label.setStyleSheet(f"""
-            background: {label_bg};
-            color: {label_fg};
-            font-weight: normal;
-            border: none;
-        """)
-        self.format_label.setStyleSheet(f"""
-            background: {label_bg};
-            color: #888;
-            font-size: 9pt;
-            border: none;
-        """)
-        
-    def set_selected(self, selected):
+
+        self.set_selected(False)
+
+    def set_thumb(self, pixmap):
+        pixmap = pixmap.scaled(self.thumb_width - 20, self.thumb_height - 50, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.image_label.setPixmap(pixmap)
+
+    def set_selected(self, selected: bool):
         self.is_selected = selected
-        self.update_appearance()
-        
-    def set_focused(self, focused):
-        self.is_focused = focused
-        self.update_appearance()
-        
+        if self.is_selected:
+            # Ramka i tło w tym samym kolorze
+            self.setStyleSheet(
+                "background: #b3c6e0;"
+                "border: 3px solid #b3c6e0;"
+                "border-radius: 7px;"
+            )
+        else:
+            self.setStyleSheet(
+                "background: transparent;"
+                "border: none;"
+            )
+
+    def set_focused(self, focused: bool):
+        # Możesz dodać własny styl pod aktywną miniaturę
+        pass
+
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.drag_start_position = event.pos()
         self.clicked.emit(self.page_index, event.button(), event.modifiers())
         super().mousePressEvent(event)
-        
+
     def mouseMoveEvent(self, event):
         if not (event.buttons() & Qt.LeftButton):
             return
@@ -1131,6 +1128,7 @@ class PDFEditorQt(QMainWindow):
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.thumbnail_list = ThumbnailListWidget()
+      
         self.thumbnail_list.pages_dropped.connect(self.handle_page_drop)
         self.scroll_area.setWidget(self.thumbnail_list)
         main_layout.addWidget(self.scroll_area)
