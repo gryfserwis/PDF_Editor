@@ -2950,7 +2950,7 @@ class SelectablePDFViewer:
             self.pdf_document.insert_pdf(temp_doc_for_insert, start_at=insert_index)
             temp_doc_for_insert.close()
 
-            self.selected_pages.clear()
+       #     self.selected_pages.clear()
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
             self.thumb_frames.clear()
@@ -3089,7 +3089,7 @@ class SelectablePDFViewer:
             self.pdf_document.insert_pdf(imported_doc, from_page=0, to_page=0, start_at=insert_index)
             self.active_page_index = insert_index
 
-            self.selected_pages.clear()
+        #    self.selected_pages.clear()
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
@@ -3283,7 +3283,7 @@ class SelectablePDFViewer:
             if self.pdf_document: 
                 self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", previous_state_bytes)
-            self.selected_pages.clear()
+          #  self.selected_pages.clear()
             self.tk_images.clear()
             self.thumb_frames.clear()
             for widget in list(self.scrollable_frame.winfo_children()):  
@@ -3319,7 +3319,7 @@ class SelectablePDFViewer:
             if self.pdf_document:
                 self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", next_state_bytes)
-            self.selected_pages.clear()
+         #   self.selected_pages.clear()
             self.tk_images.clear()
             self.thumb_frames.clear()
             for widget in list(self.scrollable_frame.winfo_children()):
@@ -3411,7 +3411,7 @@ class SelectablePDFViewer:
                 width=width,  
                 height=height
             )
-            self.selected_pages.clear()
+           # self.selected_pages.clear()
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
             self.thumb_frames.clear()
@@ -3445,7 +3445,7 @@ class SelectablePDFViewer:
             temp_doc.close()
 
             # Odświeżenie GUI
-            self.selected_pages.clear()
+         #   self.selected_pages.clear()
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
@@ -3559,7 +3559,7 @@ class SelectablePDFViewer:
                 new_page.insert_image(rect, stream=img_bytes)
 
             # Odświeżenie GUI
-            self.selected_pages.clear()
+       #     self.selected_pages.clear()
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
