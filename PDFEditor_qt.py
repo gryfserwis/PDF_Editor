@@ -1410,10 +1410,12 @@ class PDFEditorQt(QMainWindow):
         
         # File operations
         self.action_open = QAction("📂 Otwórz", self)
+        self.action_open.setToolTip("Otwórz plik PDF")
         self.action_open.triggered.connect(self.open_pdf)
         toolbar.addAction(self.action_open)
         
         self.action_save = QAction("💾 Zapisz", self)
+        self.action_save.setToolTip("Zapisz całość do nowego pliku PDF")
         self.action_save.triggered.connect(self.save_document)
         self.action_save.setEnabled(False)
         toolbar.addAction(self.action_save)
@@ -1422,21 +1424,25 @@ class PDFEditorQt(QMainWindow):
         
         # Import/Export
         self.action_import_pdf = QAction("📥 Import PDF", self)
+        self.action_import_pdf.setToolTip("Importuj strony z pliku PDF.\nStrony zostaną wstawione po bieżącej, a przy braku zaznaczenia - na końcu pliku.")
         self.action_import_pdf.triggered.connect(self.import_pdf)
         self.action_import_pdf.setEnabled(False)
         toolbar.addAction(self.action_import_pdf)
         
         self.action_export_pdf = QAction("📤 Export PDF", self)
+        self.action_export_pdf.setToolTip("Eksportuj strony do pliku PDF.\nWymaga zaznaczenia przynajmniej jednej strony.")
         self.action_export_pdf.triggered.connect(self.extract_selected_pages)
         self.action_export_pdf.setEnabled(False)
         toolbar.addAction(self.action_export_pdf)
         
         self.action_import_image = QAction("🖼️ Import Obraz", self)
+        self.action_import_image.setToolTip("Importuj strony z pliku obrazu.\nStrony zostaną wstawione po bieżącej, a przy braku zaznaczenia - na końcu pliku.")
         self.action_import_image.triggered.connect(self.import_image)
         self.action_import_image.setEnabled(False)
         toolbar.addAction(self.action_import_image)
         
         self.action_export_image = QAction("🖼️ Export Obraz", self)
+        self.action_export_image.setToolTip("Eksportuj strony do plików PNG.\nWymaga zaznaczenia przynajmniej jednej strony.")
         self.action_export_image.triggered.connect(self.export_images)
         self.action_export_image.setEnabled(False)
         toolbar.addAction(self.action_export_image)
@@ -1445,11 +1451,13 @@ class PDFEditorQt(QMainWindow):
         
         # Undo/Redo
         self.action_undo = QAction("↩️ Cofnij", self)
+        self.action_undo.setToolTip("Cofnij ostatnią operację")
         self.action_undo.triggered.connect(self.undo)
         self.action_undo.setEnabled(False)
         toolbar.addAction(self.action_undo)
         
         self.action_redo = QAction("↪️ Ponów", self)
+        self.action_redo.setToolTip("Ponów cofniętą operację")
         self.action_redo.triggered.connect(self.redo)
         self.action_redo.setEnabled(False)
         toolbar.addAction(self.action_redo)
@@ -1499,16 +1507,19 @@ class PDFEditorQt(QMainWindow):
         
         # Page modifications
         self.action_shift_content = QAction("↔️ Przesuń", self)
+        self.action_shift_content.setToolTip("Przesuń zawartość zaznaczonych stron")
         self.action_shift_content.triggered.connect(self.shift_page_content)
         self.action_shift_content.setEnabled(False)
         toolbar.addAction(self.action_shift_content)
         
         self.action_remove_numbers = QAction("#️⃣❌ Usuń numery", self)
+        self.action_remove_numbers.setToolTip("Usuń numerację ze zaznaczonych stron")
         self.action_remove_numbers.triggered.connect(self.remove_page_numbers)
         self.action_remove_numbers.setEnabled(False)
         toolbar.addAction(self.action_remove_numbers)
         
         self.action_add_numbers = QAction("#️⃣➕ Dodaj numery", self)
+        self.action_add_numbers.setToolTip("Wstaw numerację na zaznaczonych stronach")
         self.action_add_numbers.triggered.connect(self.insert_page_numbers)
         self.action_add_numbers.setEnabled(False)
         toolbar.addAction(self.action_add_numbers)
@@ -1711,6 +1722,18 @@ class PDFEditorQt(QMainWindow):
     # ================================================================
     # DRAG & DROP HANDLERS FOR FILES
     # ================================================================
+    
+    def wheelEvent(self, event: QWheelEvent):
+        """Handle mouse wheel for zooming"""
+        if event.modifiers() & Qt.ControlModifier:
+            # Zoom with Ctrl+Wheel
+            if event.angleDelta().y() > 0:
+                self.zoom_in()
+            elif event.angleDelta().y() < 0:
+                self.zoom_out()
+            event.accept()
+        else:
+            super().wheelEvent(event)
     
     def dragEnterEvent(self, event: QDragEnterEvent):
         """Accept drag enter if files are dragged"""
