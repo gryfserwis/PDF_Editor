@@ -1759,9 +1759,44 @@ class PDFEditorQt(QMainWindow):
         if not self.pdf_document or not self.clipboard:
             self.update_status("Schowek jest pusty.")
             return
+        
+        # If multiple pages selected, ask for confirmation
         if len(self.selected_pages) > 1:
-            self.update_status("Zaznacz jedną stronę do wklejenia przed/po.")
+            num_copies = len(self.selected_pages)
+            reply = QMessageBox.question(
+                self, "Potwierdzenie wklejania",
+                f"Czy na pewno chcesz wkleić {num_copies} kopii stron?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                self.update_status("Wklejanie anulowane.")
+                return
+            
+            # Sort selected pages to insert in correct order
+            sorted_pages = sorted(list(self.selected_pages))
+            
+            try:
+                self._save_state_to_undo()
+                temp_doc = fitz.open("pdf", self.clipboard)
+                # Insert after each selected page (in reverse order to maintain indices)
+                for i, page_idx in enumerate(reversed(sorted_pages)):
+                    if before:
+                        insert_pos = page_idx + i
+                    else:
+                        insert_pos = page_idx + 1 + i
+                    self.pdf_document.insert_pdf(temp_doc, start_at=insert_pos)
+                temp_doc.close()
+                
+                # Don't clear clipboard
+                self.selected_pages.clear()
+                self.refresh_thumbnails()
+                self.update_buttons_state()
+                self.update_status(f"Wklejono {num_copies} kopii stron.")
+            except Exception as e:
+                QMessageBox.critical(self, "Błąd", f"Nie udało się wkleić stron: {e}")
             return
+        
+        # Single page or no selection
         if len(self.selected_pages) == 1:
             page_idx = list(self.selected_pages)[0]
             insert_index = page_idx if before else page_idx + 1
@@ -1773,8 +1808,9 @@ class PDFEditorQt(QMainWindow):
             self.pdf_document.insert_pdf(temp_doc, start_at=insert_index)
             num_inserted = len(temp_doc)
             temp_doc.close()
-            self.clipboard = None
-            self.pages_in_clipboard_count = 0
+            # Don't clear clipboard - keep it for future pastes
+            # self.clipboard = None
+            # self.pages_in_clipboard_count = 0
             self.selected_pages.clear()
             self.refresh_thumbnails()
             self.update_buttons_state()
@@ -2665,6 +2701,42 @@ Ctrl+- - Zoom out<br>
         if not self.pdf_document:
             self.update_status("Najpierw otwórz dokument PDF.")
             return
+        
+        # If multiple pages selected, ask for confirmation
+        if len(self.selected_pages) > 1:
+            num_inserts = len(self.selected_pages)
+            reply = QMessageBox.question(
+                self, "Potwierdzenie wstawiania",
+                f"Czy na pewno chcesz wstawić {num_inserts} stron?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                self.update_status("Wstawianie anulowane.")
+                return
+            
+            # Sort selected pages to insert in correct order
+            sorted_pages = sorted(list(self.selected_pages))
+            
+            try:
+                self._save_state_to_undo()
+                # Insert before each selected page (in reverse order to maintain indices)
+                for i, page_idx in enumerate(reversed(sorted_pages)):
+                    insert_pos = page_idx + i
+                    try:
+                        rect = self.pdf_document[page_idx].rect
+                        width = rect.width
+                        height = rect.height
+                    except Exception:
+                        width, height = (595.276, 841.89)
+                    self.pdf_document.insert_page(insert_pos, width=width, height=height)
+                
+                self.refresh_thumbnails()
+                self.update_status(f"Dodano {num_inserts} pustych stron.")
+            except Exception as e:
+                self.update_status(f"Błąd: {e}")
+            return
+        
+        # Single page or no selection
         try:
             self._save_state_to_undo()
             # use active_page_index (bugfix)
@@ -2679,6 +2751,42 @@ Ctrl+- - Zoom out<br>
         if not self.pdf_document:
             self.update_status("Najpierw otwórz dokument PDF.")
             return
+        
+        # If multiple pages selected, ask for confirmation
+        if len(self.selected_pages) > 1:
+            num_inserts = len(self.selected_pages)
+            reply = QMessageBox.question(
+                self, "Potwierdzenie wstawiania",
+                f"Czy na pewno chcesz wstawić {num_inserts} stron?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                self.update_status("Wstawianie anulowane.")
+                return
+            
+            # Sort selected pages to insert in correct order
+            sorted_pages = sorted(list(self.selected_pages))
+            
+            try:
+                self._save_state_to_undo()
+                # Insert after each selected page (in reverse order to maintain indices)
+                for i, page_idx in enumerate(reversed(sorted_pages)):
+                    insert_pos = page_idx + 1 + i
+                    try:
+                        rect = self.pdf_document[page_idx].rect
+                        width = rect.width
+                        height = rect.height
+                    except Exception:
+                        width, height = (595.276, 841.89)
+                    self.pdf_document.insert_page(insert_pos, width=width, height=height)
+                
+                self.refresh_thumbnails()
+                self.update_status(f"Dodano {num_inserts} pustych stron.")
+            except Exception as e:
+                self.update_status(f"Błąd: {e}")
+            return
+        
+        # Single page or no selection
         try:
             self._save_state_to_undo()
             insert_pos = self.active_page_index + 1 if self.active_page_index >= 0 else len(self.pdf_document)

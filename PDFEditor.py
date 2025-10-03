@@ -1014,6 +1014,8 @@ class ThumbnailFrame(tk.Frame):
         self.column_width = column_width
         self.bg_normal = "#F5F5F5"
         self.bg_selected = "#B3E5FC"
+        self.drag_start_x = None
+        self.drag_start_y = None
         self.outer_frame = tk.Frame(
             self, 
             bg=self.bg_normal, 
@@ -1052,9 +1054,33 @@ class ThumbnailFrame(tk.Frame):
         tk.Label(parent_frame, text=format_label, fg="gray", bg=self.bg_normal, font=("Helvetica", 9)).pack(pady=(0, 5))
 
         self._bind_all_children("<Button-1>", lambda event, idx=self.page_index: self.viewer_app._handle_lpm_click(idx, event))
+        self._bind_all_children("<B1-Motion>", lambda event, idx=self.page_index: self._on_drag_motion(event, idx))
+        self._bind_all_children("<ButtonRelease-1>", lambda event, idx=self.page_index: self._on_drag_release(event, idx))
 
         self._bind_all_children("<Button-3>", lambda event, idx=self.page_index: self._handle_ppm_click(event, idx))
         parent_frame.bind("<Enter>", lambda event, idx=self.page_index: self.viewer_app._focus_by_mouse(idx))
+    
+    def _on_drag_motion(self, event, page_index):
+        # Start dragging if moved more than 5 pixels
+        if self.drag_start_x is None:
+            self.drag_start_x = event.x_root
+            self.drag_start_y = event.y_root
+            return
+        
+        dx = abs(event.x_root - self.drag_start_x)
+        dy = abs(event.y_root - self.drag_start_y)
+        
+        if dx > 5 or dy > 5:
+            # Initiate drag operation
+            self.viewer_app._start_page_drag(page_index, event)
+            self.drag_start_x = None
+            self.drag_start_y = None
+    
+    def _on_drag_release(self, event, page_index):
+        # Reset drag tracking
+        self.drag_start_x = None
+        self.drag_start_y = None
+        self.viewer_app._end_page_drag(event)
 
     def _handle_ppm_click(self, event, page_index):
         self.viewer_app.active_page_index = page_index
@@ -1371,6 +1397,105 @@ class SelectablePDFViewer:
     def _focus_by_mouse(self, page_index):
         self.active_page_index = page_index
         self.update_focus_display(hide_mouse_focus=False)
+    
+    def _start_page_drag(self, page_index, event):
+        """Start dragging pages for reordering"""
+        # Make sure the page is selected
+        if page_index not in self.selected_pages:
+            self.selected_pages.clear()
+            self.selected_pages.add(page_index)
+            self.update_selection_display()
+        
+        # Store drag information
+        self.drag_source_indices = sorted(list(self.selected_pages))
+        self.drag_active = True
+        
+        # Change cursor to indicate drag
+        self.master.config(cursor="hand2")
+        self._update_status(f"Przeciąganie {len(self.drag_source_indices)} stron...")
+    
+    def _end_page_drag(self, event):
+        """End dragging and perform page reorder if valid drop target"""
+        if not hasattr(self, 'drag_active') or not self.drag_active:
+            return
+        
+        self.drag_active = False
+        self.master.config(cursor="")
+        
+        if not hasattr(self, 'drag_source_indices'):
+            return
+        
+        # Find the target thumbnail under the cursor
+        target_frame = None
+        target_index = None
+        
+        for idx, frame in self.thumb_frames.items():
+            try:
+                x1 = frame.winfo_rootx()
+                y1 = frame.winfo_rooty()
+                x2 = x1 + frame.winfo_width()
+                y2 = y1 + frame.winfo_height()
+                
+                if x1 <= event.x_root <= x2 and y1 <= event.y_root <= y2:
+                    target_frame = frame
+                    target_index = idx
+                    break
+            except:
+                pass
+        
+        if target_index is None:
+            self._update_status("Przeciąganie anulowane.")
+            return
+        
+        # Don't do anything if dropping on the same selection
+        if target_index in self.drag_source_indices:
+            self._update_status("Nie można przeciągnąć na tę samą pozycję.")
+            return
+        
+        # Perform the page reorder
+        self._reorder_pages(self.drag_source_indices, target_index)
+        
+        del self.drag_source_indices
+
+    def _reorder_pages(self, source_indices, target_index):
+        """Reorder pages by moving source_indices to target_index position"""
+        if not self.pdf_document:
+            return
+        
+        try:
+            self._save_state_to_undo()
+            
+            # Create a temporary document with the pages to move
+            temp_doc = fitz.open()
+            for idx in source_indices:
+                temp_doc.insert_pdf(self.pdf_document, from_page=idx, to_page=idx)
+            
+            # Delete the source pages (in reverse order)
+            for idx in reversed(source_indices):
+                self.pdf_document.delete_page(idx)
+            
+            # Adjust target index based on deleted pages
+            adjusted_target = target_index
+            for idx in source_indices:
+                if idx < target_index:
+                    adjusted_target -= 1
+            
+            # Insert pages at new position
+            self.pdf_document.insert_pdf(temp_doc, start_at=adjusted_target)
+            temp_doc.close()
+            
+            # Refresh display
+            self.selected_pages.clear()
+            self.tk_images.clear()
+            for widget in list(self.scrollable_frame.winfo_children()):
+                widget.destroy()
+            self.thumb_frames.clear()
+            self._reconfigure_grid()
+            self.update_tool_button_states()
+            
+            self._update_status(f"Przeniesiono {len(source_indices)} stron do pozycji {adjusted_target + 1}.")
+        except Exception as e:
+            self._update_status(f"BŁĄD podczas przenoszenia stron: {e}")
 
     def _setup_drag_and_drop_file(self):
         # Rejestrujemy canvas do odbioru plików DND
@@ -2206,7 +2331,11 @@ class SelectablePDFViewer:
         self.clipboard: Optional[bytes] = None 
         self.pages_in_clipboard_count: int = 0 
         
-        self.fixed_thumb_width = 250  
+        # Drag and drop state
+        self.drag_active = False
+        self.drag_source_indices = []
+        
+        self.fixed_thumb_width = 250
         self.min_zoom_width = 150    
         self.THUMB_PADDING = 8       
         self.ZOOM_FACTOR = 0.9       
@@ -3181,11 +3310,48 @@ class SelectablePDFViewer:
         if not self.pdf_document or not self.clipboard:
             self._update_status("BŁĄD: Schowek jest pusty.")
             return
-            
+        
+        # If multiple pages selected, ask for confirmation
         if len(self.selected_pages) > 1:
-             self._update_status("BŁĄD: Do wklejenia po/przed, zaznacz dokładnie jedną stronę, lub w ogóle by wkleić na końcu.")
-             return
+            num_copies = len(self.selected_pages)
+            response = messagebox.askyesno(
+                "Potwierdzenie wklejania",
+                f"Czy na pewno chcesz wkleić {num_copies} kopii stron?",
+                parent=self.master
+            )
+            if not response:
+                self._update_status("Wklejanie anulowane.")
+                return
             
+            # Sort selected pages to insert in correct order
+            sorted_pages = sorted(list(self.selected_pages))
+            self._save_state_to_undo()
+            
+            try:
+                temp_doc = fitz.open("pdf", self.clipboard)
+                # Insert after each selected page (in reverse order to maintain indices)
+                for i, page_idx in enumerate(reversed(sorted_pages)):
+                    if before:
+                        insert_pos = page_idx + i
+                    else:
+                        insert_pos = page_idx + 1 + i
+                    self.pdf_document.insert_pdf(temp_doc, start_at=insert_pos)
+                temp_doc.close()
+                
+                # Don't clear clipboard
+                self.selected_pages.clear()
+                self.tk_images.clear()
+                for widget in list(self.scrollable_frame.winfo_children()): 
+                    widget.destroy()
+                self.thumb_frames.clear()  
+                self._reconfigure_grid()
+                self.update_tool_button_states()
+                self._update_status(f"Wklejono {num_copies} kopii stron.")
+            except Exception as e:
+                self._update_status(f"BŁĄD Wklejania: {e}")
+            return
+            
+        # Single page or no selection
         target_index = len(self.pdf_document)
         if len(self.selected_pages) == 1:
             page_index = list(self.selected_pages)[0]
@@ -3203,8 +3369,9 @@ class SelectablePDFViewer:
             self.pdf_document.insert_pdf(temp_doc, start_at=target_index)
             num_inserted = len(temp_doc)
             temp_doc.close()
-            self.clipboard = None
-            self.pages_in_clipboard_count = 0
+            # Don't clear clipboard - keep it for future pastes
+            # self.clipboard = None
+            # self.pages_in_clipboard_count = 0
             self.selected_pages.clear()
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
@@ -3386,9 +3553,60 @@ class SelectablePDFViewer:
         self._handle_insert_operation(before=False)
         
     def _handle_insert_operation(self, before: bool):
-        if not self.pdf_document or len(self.selected_pages) != 1:  
-             self._update_status("BŁĄD: Zaznacz dokładnie jedną stronę, aby wstawić obok niej nową.")
+        if not self.pdf_document or len(self.selected_pages) == 0:  
+             self._update_status("BŁĄD: Zaznacz przynajmniej jedną stronę, aby wstawić obok niej nową.")
              return
+        
+        # If multiple pages selected, ask for confirmation
+        if len(self.selected_pages) > 1:
+            num_inserts = len(self.selected_pages)
+            response = messagebox.askyesno(
+                "Potwierdzenie wstawiania",
+                f"Czy na pewno chcesz wstawić {num_inserts} stron?",
+                parent=self.master
+            )
+            if not response:
+                self._update_status("Wstawianie anulowane.")
+                return
+            
+            # Sort selected pages to insert in correct order
+            sorted_pages = sorted(list(self.selected_pages))
+            
+            try:
+                self._save_state_to_undo()
+                # Insert after each selected page (in reverse order to maintain indices)
+                for i, page_idx in enumerate(reversed(sorted_pages)):
+                    try:
+                        rect = self.pdf_document[page_idx].rect
+                        width = rect.width
+                        height = rect.height  
+                    except Exception:
+                        width, height = (595.276, 841.89)
+                    
+                    if before:
+                        insert_pos = page_idx + i
+                    else:
+                        insert_pos = page_idx + 1 + i
+                    
+                    self.pdf_document.insert_page(
+                        pno=insert_pos,  
+                        width=width,  
+                        height=height
+                    )
+                
+                self.tk_images.clear()
+                for widget in list(self.scrollable_frame.winfo_children()): 
+                    widget.destroy()
+                self.thumb_frames.clear()
+                self._reconfigure_grid()  
+                self.update_tool_button_states()
+                self.update_focus_display()
+                self._update_status(f"Wstawiono {num_inserts} nowych stron. Aktualna liczba stron: {len(self.pdf_document)}.")
+            except Exception as e:
+                self._update_status(f"BŁĄD: Wystąpił błąd podczas wstawiania: {e}")
+            return
+        
+        # Single page selection
         width, height = (595.276, 841.89)
         page_index = list(self.selected_pages)[0]
         try:
