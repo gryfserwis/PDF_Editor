@@ -1583,6 +1583,20 @@ class PDFEditorQt(QMainWindow):
         select_menu.addAction(select_even_action)
         self.action_select_even = select_even_action
         
+        select_menu.addSeparator()
+        
+        select_portrait_action = QAction("Strony pionowe", self)
+        select_portrait_action.triggered.connect(self.select_portrait_pages)
+        select_portrait_action.setShortcut(QKeySequence("Ctrl+F1"))
+        select_menu.addAction(select_portrait_action)
+        self.action_select_portrait = select_portrait_action
+        
+        select_landscape_action = QAction("Strony poziome", self)
+        select_landscape_action.triggered.connect(self.select_landscape_pages)
+        select_landscape_action.setShortcut(QKeySequence("Ctrl+F2"))
+        select_menu.addAction(select_landscape_action)
+        self.action_select_landscape = select_landscape_action
+        
         # Modifications menu
         mod_menu = menubar.addMenu("Modyfikacje")
         mod_menu.addAction(self.action_rotate_left)
@@ -1591,6 +1605,48 @@ class PDFEditorQt(QMainWindow):
         mod_menu.addAction(self.action_shift_content)
         mod_menu.addAction(self.action_remove_numbers)
         mod_menu.addAction(self.action_add_numbers)
+        mod_menu.addSeparator()
+        
+        # Crop/Resize action
+        crop_resize_action = QAction("Przytnij/Zmień rozmiar", self)
+        crop_resize_action.triggered.connect(self.apply_page_crop_resize_dialog)
+        crop_resize_action.setShortcut(QKeySequence("F8"))
+        crop_resize_action.setEnabled(False)
+        self.action_crop_resize = crop_resize_action
+        mod_menu.addAction(crop_resize_action)
+        
+        # Merge to grid action
+        merge_grid_action = QAction("Scalaj strony w siatkę", self)
+        merge_grid_action.triggered.connect(self.merge_pages_to_grid)
+        merge_grid_action.setEnabled(False)
+        self.action_merge_grid = merge_grid_action
+        mod_menu.addAction(merge_grid_action)
+        
+        mod_menu.addSeparator()
+        
+        # Insert blank pages
+        insert_before_action = QAction("Wstaw pustą stronę przed", self)
+        insert_before_action.triggered.connect(self.insert_blank_page_before)
+        insert_before_action.setShortcut(QKeySequence("Ctrl+Shift+N"))
+        insert_before_action.setEnabled(False)
+        self.action_insert_before = insert_before_action
+        mod_menu.addAction(insert_before_action)
+        
+        insert_after_action = QAction("Wstaw pustą stronę po", self)
+        insert_after_action.triggered.connect(self.insert_blank_page_after)
+        insert_after_action.setShortcut(QKeySequence("Ctrl+N"))
+        insert_after_action.setEnabled(False)
+        self.action_insert_after = insert_after_action
+        mod_menu.addAction(insert_after_action)
+        
+        mod_menu.addSeparator()
+        
+        # Reverse pages
+        reverse_action = QAction("Odwróć kolejność stron", self)
+        reverse_action.triggered.connect(self.reverse_pages)
+        reverse_action.setEnabled(False)
+        self.action_reverse = reverse_action
+        mod_menu.addAction(reverse_action)
         
         # Help menu
         help_menu = menubar.addMenu("Pomoc")
@@ -1625,10 +1681,23 @@ class PDFEditorQt(QMainWindow):
         self.action_import_image.setShortcut(QKeySequence("Ctrl+Shift+I"))
         self.action_export_image.setShortcut(QKeySequence("Ctrl+Shift+E"))
         
+        # Paste before
+        self.action_paste_before.setShortcut(QKeySequence("Ctrl+Shift+V"))
+        
+        # Rotate
+        self.action_rotate_left.setShortcut(QKeySequence("Ctrl+Shift+-"))
+        self.action_rotate_right.setShortcut(QKeySequence("Ctrl+Shift++"))
+        
         # Modifications
         self.action_shift_content.setShortcut(QKeySequence("F5"))
         self.action_remove_numbers.setShortcut(QKeySequence("F6"))
         self.action_add_numbers.setShortcut(QKeySequence("F7"))
+        
+        # Select all alternative
+        select_all_f4 = QAction(self)
+        select_all_f4.setShortcut(QKeySequence("F4"))
+        select_all_f4.triggered.connect(self.select_all)
+        self.addAction(select_all_f4)
         
         # Zoom
         self.action_zoom_in.setShortcut(QKeySequence.ZoomIn)
@@ -2708,6 +2777,22 @@ class PDFEditorQt(QMainWindow):
             self.action_select_odd.setEnabled(doc_loaded)
         if hasattr(self, 'action_select_even'):
             self.action_select_even.setEnabled(doc_loaded)
+        if hasattr(self, 'action_select_portrait'):
+            self.action_select_portrait.setEnabled(doc_loaded)
+        if hasattr(self, 'action_select_landscape'):
+            self.action_select_landscape.setEnabled(doc_loaded)
+        
+        # New modification actions
+        if hasattr(self, 'action_crop_resize'):
+            self.action_crop_resize.setEnabled(doc_loaded and has_selection)
+        if hasattr(self, 'action_merge_grid'):
+            self.action_merge_grid.setEnabled(doc_loaded and has_selection)
+        if hasattr(self, 'action_insert_before'):
+            self.action_insert_before.setEnabled(doc_loaded)
+        if hasattr(self, 'action_insert_after'):
+            self.action_insert_after.setEnabled(doc_loaded)
+        if hasattr(self, 'action_reverse'):
+            self.action_reverse.setEnabled(doc_loaded)
             
         # Zoom
         self.action_zoom_in.setEnabled(doc_loaded and self.zoom_level > self.min_zoom)
@@ -2739,19 +2824,27 @@ Ctrl+Z - Cofnij<br>
 Ctrl+Y - Ponów<br>
 Ctrl+X - Wytnij<br>
 Ctrl+C - Kopiuj<br>
-Ctrl+V - Wklej<br>
+Ctrl+V - Wklej po<br>
+Ctrl+Shift+V - Wklej przed<br>
 Delete - Usuń<br>
 Ctrl+D - Duplikuj<br>
 <br>
 <b>Zaznacz:</b><br>
-Ctrl+A - Wszystkie strony<br>
+Ctrl+A / F4 - Wszystkie strony<br>
 F1 - Strony nieparzyste<br>
 F2 - Strony parzyste<br>
+Ctrl+F1 - Strony pionowe<br>
+Ctrl+F2 - Strony poziome<br>
 <br>
 <b>Modyfikacje:</b><br>
+Ctrl+Shift+- - Obróć w lewo<br>
+Ctrl+Shift++ - Obróć w prawo<br>
 F5 - Przesuń zawartość<br>
 F6 - Usuń numerację<br>
 F7 - Dodaj numerację<br>
+F8 - Przytnij/Zmień rozmiar<br>
+Ctrl+N - Wstaw pustą stronę po<br>
+Ctrl+Shift+N - Wstaw pustą stronę przed<br>
 <br>
 <b>Widok:</b><br>
 Ctrl++ - Zoom in<br>
@@ -2776,6 +2869,411 @@ Ctrl+- - Zoom out<br>
     # CLOSE EVENT
     # ================================================================
     
+    # ================================================================
+    # PAGE CROP AND RESIZE OPERATIONS
+    # ================================================================
+    
+    def apply_page_crop_resize_dialog(self):
+        """Open dialog and apply crop/resize operations to selected pages"""
+        if not self.pdf_document or not self.selected_pages:
+            self.update_status("Musisz zaznaczyć przynajmniej jedną stronę PDF.")
+            return
+        
+        dialog = PageCropResizeDialog(self)
+        dialog.exec_()
+        result = dialog.result
+        
+        if not result:
+            self.update_status("Anulowano operację.")
+            return
+        
+        # Get current PDF bytes
+        pdf_bytes_export = io.BytesIO()
+        self.pdf_document.save(pdf_bytes_export)
+        pdf_bytes_export.seek(0)
+        pdf_bytes_val = pdf_bytes_export.read()
+        indices = sorted(list(self.selected_pages))
+        
+        crop_mode = result["crop_mode"]
+        resize_mode = result["resize_mode"]
+        
+        try:
+            if crop_mode == "crop_only" and resize_mode == "noresize":
+                new_pdf_bytes = self._mask_crop_pages(
+                    pdf_bytes_val, indices,
+                    result["crop_top_mm"], result["crop_bottom_mm"],
+                    result["crop_left_mm"], result["crop_right_mm"]
+                )
+                msg = "Dodano białe maski zamiast przycinania stron."
+            elif crop_mode == "crop_resize" and resize_mode == "noresize":
+                new_pdf_bytes = self._crop_pages(
+                    pdf_bytes_val, indices,
+                    result["crop_top_mm"], result["crop_bottom_mm"],
+                    result["crop_left_mm"], result["crop_right_mm"],
+                    reposition=False
+                )
+                msg = "Zastosowano przycięcie i zmianę rozmiaru arkusza."
+            elif resize_mode == "resize_scale":
+                new_pdf_bytes = self._resize_scale(
+                    pdf_bytes_val, indices,
+                    result["target_width_mm"], result["target_height_mm"]
+                )
+                msg = "Zmieniono rozmiar i skalowano zawartość."
+            elif resize_mode == "resize_noscale":
+                new_pdf_bytes = self._resize_noscale(
+                    pdf_bytes_val, indices,
+                    result["target_width_mm"], result["target_height_mm"],
+                    pos_mode=result.get("position_mode") or "center",
+                    offset_x_mm=result.get("offset_x_mm") or 0,
+                    offset_y_mm=result.get("offset_y_mm") or 0
+                )
+                msg = "Zmieniono rozmiar strony (bez skalowania zawartości)."
+            else:
+                self.update_status("Nie wybrano żadnej operacji do wykonania.")
+                return
+            
+            self._save_state_to_undo()
+            self.pdf_document.close()
+            self.pdf_document = fitz.open("pdf", new_pdf_bytes)
+            self.update_status(msg)
+            self.refresh_thumbnails()
+            
+        except Exception as e:
+            self.update_status(f"Błąd podczas przetwarzania PDF: {e}")
+            
+    def _crop_pages(self, pdf_bytes, selected_indices, top_mm, bottom_mm, left_mm, right_mm, reposition=False, pos_mode="center", offset_x_mm=0, offset_y_mm=0):
+        """Crop pages by adjusting cropbox"""
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        writer = PdfWriter()
+        for i, page in enumerate(reader.pages):
+            if i not in selected_indices:
+                writer.add_page(page)
+                continue
+            orig_mediabox = RectangleObject([float(v) for v in page.mediabox])
+            x0, y0, x1, y1 = [float(v) for v in orig_mediabox]
+            new_x0 = x0 + mm2pt(left_mm)
+            new_y0 = y0 + mm2pt(bottom_mm)
+            new_x1 = x1 - mm2pt(right_mm)
+            new_y1 = y1 - mm2pt(top_mm)
+            if new_x0 >= new_x1 or new_y0 >= new_y1:
+                writer.add_page(page)
+                continue
+            new_rect = RectangleObject([new_x0, new_y0, new_x1, new_y1])
+            page.cropbox = new_rect
+            page.trimbox = new_rect
+            page.artbox = new_rect
+            page.mediabox = orig_mediabox
+            
+            if reposition:
+                dx = mm2pt(offset_x_mm) if pos_mode == "custom" else 0
+                dy = mm2pt(offset_y_mm) if pos_mode == "custom" else 0
+                if dx != 0 or dy != 0:
+                    transform = Transformation().translate(tx=dx, ty=dy)
+                    page.add_transformation(transform)
+            
+            writer.add_page(page)
+        out = io.BytesIO()
+        writer.write(out)
+        out.seek(0)
+        return out.read()
+        
+    def _mask_crop_pages(self, pdf_bytes, selected_indices, top_mm, bottom_mm, left_mm, right_mm):
+        """Mask crop pages by drawing white rectangles"""
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        MM_TO_PT = 72 / 25.4
+        for i in selected_indices:
+            page = doc[i]
+            rect = page.rect
+            
+            left_pt = left_mm * MM_TO_PT
+            right_pt = right_mm * MM_TO_PT
+            top_pt = top_mm * MM_TO_PT
+            bottom_pt = bottom_mm * MM_TO_PT
+            
+            if left_pt > 0:
+                mask_rect = fitz.Rect(rect.x0, rect.y0, rect.x0 + left_pt, rect.y1)
+                page.draw_rect(mask_rect, color=(1,1,1), fill=(1,1,1), overlay=True)
+            if right_pt > 0:
+                mask_rect = fitz.Rect(rect.x1 - right_pt, rect.y0, rect.x1, rect.y1)
+                page.draw_rect(mask_rect, color=(1,1,1), fill=(1,1,1), overlay=True)
+            if top_pt > 0:
+                mask_rect = fitz.Rect(rect.x0, rect.y1 - top_pt, rect.x1, rect.y1)
+                page.draw_rect(mask_rect, color=(1,1,1), fill=(1,1,1), overlay=True)
+            if bottom_pt > 0:
+                mask_rect = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y0 + bottom_pt)
+                page.draw_rect(mask_rect, color=(1,1,1), fill=(1,1,1), overlay=True)
+        
+        output_bytes = doc.write()
+        doc.close()
+        return output_bytes
+        
+    def _resize_scale(self, pdf_bytes, selected_indices, width_mm, height_mm):
+        """Resize pages with scaling"""
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        writer = PdfWriter()
+        target_width = mm2pt(width_mm)
+        target_height = mm2pt(height_mm)
+        for i, page in enumerate(reader.pages):
+            if i not in selected_indices:
+                writer.add_page(page)
+                continue
+            orig_w = float(page.mediabox.width)
+            orig_h = float(page.mediabox.height)
+            scale = min(target_width / orig_w, target_height / orig_h)
+            dx = (target_width - orig_w * scale) / 2
+            dy = (target_height - orig_h * scale) / 2
+            transform = Transformation().scale(sx=scale, sy=scale).translate(tx=dx, ty=dy)
+            page.add_transformation(transform)
+            page.mediabox = RectangleObject([0, 0, target_width, target_height])
+            page.cropbox = RectangleObject([0, 0, target_width, target_height])
+            writer.add_page(page)
+        out = io.BytesIO()
+        writer.write(out)
+        out.seek(0)
+        return out.read()
+        
+    def _resize_noscale(self, pdf_bytes, selected_indices, width_mm, height_mm, pos_mode="center", offset_x_mm=0, offset_y_mm=0):
+        """Resize pages without scaling"""
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        writer = PdfWriter()
+        target_width = mm2pt(width_mm)
+        target_height = mm2pt(height_mm)
+        for i, page in enumerate(reader.pages):
+            if i not in selected_indices:
+                writer.add_page(page)
+                continue
+            orig_w = float(page.mediabox.width)
+            orig_h = float(page.mediabox.height)
+            if pos_mode == "center":
+                dx = (target_width - orig_w) / 2
+                dy = (target_height - orig_h) / 2
+            else:
+                dx = mm2pt(offset_x_mm)
+                dy = mm2pt(offset_y_mm)
+            transform = Transformation().translate(tx=dx, ty=dy)
+            page.add_transformation(transform)
+            page.mediabox = RectangleObject([0, 0, target_width, target_height])
+            page.cropbox = RectangleObject([0, 0, target_width, target_height])
+            writer.add_page(page)
+        out = io.BytesIO()
+        writer.write(out)
+        out.seek(0)
+        return out.read()
+    
+    # ================================================================
+    # MERGE PAGES TO GRID
+    # ================================================================
+    
+    def merge_pages_to_grid(self):
+        """Merge selected pages into a grid on a single sheet"""
+        if not self.pdf_document or not self.selected_pages:
+            self.update_status("Musisz zaznaczyć strony do scalenia.")
+            return
+        
+        dialog = MergePageGridDialog(self, len(self.selected_pages))
+        dialog.exec_()
+        result = dialog.result
+        
+        if not result:
+            self.update_status("Anulowano scalanie.")
+            return
+        
+        try:
+            self._save_state_to_undo()
+            
+            # Get parameters
+            sheet_w_mm = result["sheet_width_mm"]
+            sheet_h_mm = result["sheet_height_mm"]
+            margin_t = result["margin_top_mm"]
+            margin_b = result["margin_bottom_mm"]
+            margin_l = result["margin_left_mm"]
+            margin_r = result["margin_right_mm"]
+            spacing_x = result["spacing_x_mm"]
+            spacing_y = result["spacing_y_mm"]
+            rows = result["rows"]
+            cols = result["cols"]
+            
+            # Convert to points
+            sheet_w_pt = mm2pt(sheet_w_mm)
+            sheet_h_pt = mm2pt(sheet_h_mm)
+            margin_t_pt = mm2pt(margin_t)
+            margin_b_pt = mm2pt(margin_b)
+            margin_l_pt = mm2pt(margin_l)
+            margin_r_pt = mm2pt(margin_r)
+            spacing_x_pt = mm2pt(spacing_x)
+            spacing_y_pt = mm2pt(spacing_y)
+            
+            # Calculate cell dimensions
+            if cols == 1:
+                cell_w = sheet_w_pt - margin_l_pt - margin_r_pt
+            else:
+                cell_w = (sheet_w_pt - margin_l_pt - margin_r_pt - (cols - 1) * spacing_x_pt) / cols
+            
+            if rows == 1:
+                cell_h = sheet_h_pt - margin_t_pt - margin_b_pt
+            else:
+                cell_h = (sheet_h_pt - margin_t_pt - margin_b_pt - (rows - 1) * spacing_y_pt) / rows
+            
+            # Create new document
+            new_doc = fitz.open()
+            new_page = new_doc.new_page(width=sheet_w_pt, height=sheet_h_pt)
+            
+            # Place pages in grid
+            sorted_indices = sorted(list(self.selected_pages))
+            for idx, page_idx in enumerate(sorted_indices):
+                if idx >= rows * cols:
+                    break
+                
+                row = idx // cols
+                col = idx % cols
+                
+                x = margin_l_pt + col * (cell_w + spacing_x_pt)
+                y = sheet_h_pt - margin_t_pt - (row + 1) * cell_h - row * spacing_y_pt
+                
+                rect = fitz.Rect(x, y, x + cell_w, y + cell_h)
+                new_page.show_pdf_page(rect, self.pdf_document, page_idx)
+            
+            # Replace document
+            self.pdf_document.close()
+            self.pdf_document = new_doc
+            self.selected_pages.clear()
+            self.refresh_thumbnails()
+            self.update_status(f"Scalono {len(sorted_indices)} stron w siatkę {rows}x{cols}.")
+            
+        except Exception as e:
+            self.update_status(f"Błąd podczas scalania: {e}")
+    
+    # ================================================================
+    # INSERT BLANK PAGES
+    # ================================================================
+    
+    def insert_blank_page_before(self):
+        """Insert blank page before active page"""
+        if not self.pdf_document:
+            self.update_status("Najpierw otwórz dokument PDF.")
+            return
+        
+        try:
+            self._save_state_to_undo()
+            insert_pos = self.active_page if self.active_page >= 0 else 0
+            self.pdf_document.insert_page(insert_pos)
+            self.refresh_thumbnails()
+            self.update_status(f"Dodano pustą stronę przed stroną {insert_pos + 1}.")
+        except Exception as e:
+            self.update_status(f"Błąd: {e}")
+    
+    def insert_blank_page_after(self):
+        """Insert blank page after active page"""
+        if not self.pdf_document:
+            self.update_status("Najpierw otwórz dokument PDF.")
+            return
+        
+        try:
+            self._save_state_to_undo()
+            insert_pos = self.active_page + 1 if self.active_page >= 0 else len(self.pdf_document)
+            self.pdf_document.insert_page(insert_pos)
+            self.refresh_thumbnails()
+            self.update_status(f"Dodano pustą stronę po stronie {self.active_page + 1}.")
+        except Exception as e:
+            self.update_status(f"Błąd: {e}")
+    
+    # ================================================================
+    # ADDITIONAL SELECTION OPERATIONS
+    # ================================================================
+    
+    def select_portrait_pages(self):
+        """Select portrait oriented pages"""
+        if not self.pdf_document:
+            return
+        
+        portrait_indices = []
+        for i in range(len(self.pdf_document)):
+            page = self.pdf_document[i]
+            rect = page.rect
+            if rect.height >= rect.width:
+                portrait_indices.append(i)
+        
+        self.selected_pages = set(portrait_indices)
+        self.update_selection_display()
+        self.update_buttons_state()
+        self.update_status(f"Zaznaczono {len(portrait_indices)} stron pionowych.")
+    
+    def select_landscape_pages(self):
+        """Select landscape oriented pages"""
+        if not self.pdf_document:
+            return
+        
+        landscape_indices = []
+        for i in range(len(self.pdf_document)):
+            page = self.pdf_document[i]
+            rect = page.rect
+            if rect.width > rect.height:
+                landscape_indices.append(i)
+        
+        self.selected_pages = set(landscape_indices)
+        self.update_selection_display()
+        self.update_buttons_state()
+        self.update_status(f"Zaznaczono {len(landscape_indices)} stron poziomych.")
+    
+    # ================================================================
+    # REVERSE PAGES
+    # ================================================================
+    
+    def reverse_pages(self):
+        """Reverse the order of all pages in the document"""
+        if not self.pdf_document:
+            QMessageBox.information(self, "Informacja", "Najpierw otwórz plik PDF.")
+            return
+        
+        try:
+            self._save_state_to_undo()
+            
+            page_count = len(self.pdf_document)
+            new_doc = fitz.open()
+            
+            for i in range(page_count - 1, -1, -1):
+                new_doc.insert_pdf(self.pdf_document, from_page=i, to_page=i)
+            
+            self.pdf_document.close()
+            self.pdf_document = new_doc
+            
+            self.active_page = 0
+            self.selected_pages.clear()
+            self.refresh_thumbnails()
+            self.update_status(f"Pomyślnie odwrócono kolejność {page_count} stron.")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Błąd", f"Wystąpił błąd podczas odwracania stron: {e}")
+    
+    # ================================================================
+    # EXPORT TO IMAGE
+    # ================================================================
+    
+    def export_selected_pages_to_image(self):
+        """Export selected pages as PNG images"""
+        if not self.pdf_document or not self.selected_pages:
+            self.update_status("Musisz zaznaczyć strony do eksportu.")
+            return
+        
+        folder = QFileDialog.getExistingDirectory(self, "Wybierz folder do zapisu obrazów")
+        if not folder:
+            return
+        
+        try:
+            dpi = 150  # Default DPI for image export
+            sorted_indices = sorted(list(self.selected_pages))
+            
+            for idx in sorted_indices:
+                page = self.pdf_document[idx]
+                pix = page.get_pixmap(dpi=dpi)
+                img_path = os.path.join(folder, f"page_{idx+1}.png")
+                pix.save(img_path)
+            
+            self.update_status(f"Wyeksportowano {len(sorted_indices)} stron do {folder}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Błąd", f"Błąd podczas eksportu: {e}")
+
     def closeEvent(self, event):
         """Handle window close event"""
         if self.pdf_document and len(self.undo_stack) > 0:
