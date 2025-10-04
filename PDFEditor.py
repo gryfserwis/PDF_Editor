@@ -61,7 +61,15 @@ FG_TEXT = "#444444" # Kolor tekstu na przyciskach
 A4_WIDTH_POINTS = 595.276 
 A4_HEIGHT_POINTS = 841.89
 
-
+def validate_float_range(value, minval, maxval):
+    if not value:
+        return True
+    try:
+        v = float(value.replace(",", "."))
+        return minval <= v <= maxval
+    except Exception:
+        return False
+        
 def resource_path(relative_path):
     """
     Tworzy poprawną ścieżkę do zasobów (logo, ikony itp.).
@@ -753,6 +761,10 @@ class ImageImportSettingsDialog(tk.Toplevel):
         self.keep_ratio = tk.BooleanVar(value=True)
         self._block_update = False  # zabezpieczenie przed zapętleniem synchronizacji
 
+        # === WALIDATORY ===
+        self.vcmd_scale = (self.register(lambda v: validate_float_range(v, 1, 500)), "%P")
+        self.vcmd_size = (self.register(lambda v: validate_float_range(v, 1, 4000)), "%P")
+
         self.initial_focus = self.body()
         self.buttonbox()
         self.update_scale_controls()
@@ -798,14 +810,13 @@ class ImageImportSettingsDialog(tk.Toplevel):
                 scale_frame, text=text, variable=self.scaling_mode, value=value,
                 command=self.update_scale_controls
             )
-            rb.pack(anchor="w", pady=2)  # brak padx, równo z ramką
+            rb.pack(anchor="w", pady=2)
             if value == "SKALA":
                 self.scale_entry_frame = ttk.Frame(scale_frame)
                 self.scale_entry_frame.pack(fill='x', pady=2, padx=24)
                 ttk.Label(self.scale_entry_frame, text="Skala [%]:").pack(side=tk.LEFT)
-                vcmd = (self.register(self.validate_scale), "%P")
                 self.scale_entry = ttk.Entry(
-                    self.scale_entry_frame, textvariable=self.scale_factor, width=6, validate="key", validatecommand=vcmd
+                    self.scale_entry_frame, textvariable=self.scale_factor, width=6, validate="key", validatecommand=self.vcmd_scale
                 )
                 self.scale_entry.pack(side=tk.LEFT, padx=5)
                 ttk.Label(self.scale_entry_frame, text="(1–500)").pack(side=tk.LEFT)
@@ -813,10 +824,10 @@ class ImageImportSettingsDialog(tk.Toplevel):
                 self.custom_size_frame = ttk.Frame(scale_frame)
                 self.custom_size_frame.pack(fill='x', pady=2, padx=24)
                 ttk.Label(self.custom_size_frame, text="Szerokość [mm]:").pack(side=tk.LEFT)
-                self.custom_width_entry = ttk.Entry(self.custom_size_frame, textvariable=self.custom_width, width=8)
+                self.custom_width_entry = ttk.Entry(self.custom_size_frame, textvariable=self.custom_width, width=8, validate="key", validatecommand=self.vcmd_size)
                 self.custom_width_entry.pack(side=tk.LEFT, padx=5)
                 ttk.Label(self.custom_size_frame, text="Wysokość [mm]:").pack(side=tk.LEFT)
-                self.custom_height_entry = ttk.Entry(self.custom_size_frame, textvariable=self.custom_height, width=8)
+                self.custom_height_entry = ttk.Entry(self.custom_size_frame, textvariable=self.custom_height, width=8, validate="key", validatecommand=self.vcmd_size)
                 self.custom_height_entry.pack(side=tk.LEFT, padx=5)
                 # Checkbox "Zachowaj proporcje" pod polami, równo z ramką
                 self.ratio_check_frame = ttk.Frame(scale_frame)
@@ -828,9 +839,9 @@ class ImageImportSettingsDialog(tk.Toplevel):
         orient_frame = ttk.LabelFrame(main_frame, text="Orientacja strony docelowej (A4)", padding=(8, 4))
         orient_frame.pack(fill='x', pady=(0, 8))
         self.rb_pion = ttk.Radiobutton(orient_frame, text="Pionowo", variable=self.page_orientation, value="PIONOWO")
-        self.rb_pion.pack(anchor="w")  # brak padx
+        self.rb_pion.pack(anchor="w")
         self.rb_poz = ttk.Radiobutton(orient_frame, text="Poziomo", variable=self.page_orientation, value="POZIOMO")
-        self.rb_poz.pack(anchor="w")   # brak padx
+        self.rb_poz.pack(anchor="w")
 
         # Sekcja 4: Wyrównanie
         align_frame = ttk.LabelFrame(main_frame, text="Wyrównanie na stronie", padding=(8, 4))
@@ -843,7 +854,7 @@ class ImageImportSettingsDialog(tk.Toplevel):
         ]
         for text, value in align_options:
             rb = ttk.Radiobutton(align_frame, text=text, variable=self.alignment_mode, value=value)
-            rb.pack(anchor="w", pady=2)  # brak padx
+            rb.pack(anchor="w", pady=2)
             self.align_rbs.append(rb)
 
         # Powiązania wpisów do zachowania proporcji
@@ -856,20 +867,17 @@ class ImageImportSettingsDialog(tk.Toplevel):
         return self.scale_entry if hasattr(self, "scale_entry") else self.custom_width_entry
 
     def update_scale_controls(self):
-        # Skala niestandardowa - pole aktywne tylko wtedy
         if hasattr(self, "scale_entry"):
             if self.scaling_mode.get() == "SKALA":
                 self.scale_entry.config(state=tk.NORMAL)
             else:
                 self.scale_entry.config(state=tk.DISABLED)
-        # Pola rozmiaru i checkbox tylko dla CUSTOM_SIZE
         custom_size_active = self.scaling_mode.get() == "CUSTOM_SIZE"
         if hasattr(self, "custom_width_entry") and hasattr(self, "custom_height_entry") and hasattr(self, "ratio_check"):
             state = tk.NORMAL if custom_size_active else tk.DISABLED
             self.custom_width_entry.config(state=state)
             self.custom_height_entry.config(state=state)
             self.ratio_check.config(state=state)
-        # Orientacja i wyrównanie tylko dla DOPASUJ, ORYGINALNY, SKALA
         if self.scaling_mode.get() in ("DOPASUJ", "ORYGINALNY", "SKALA"):
             self.rb_pion.config(state=tk.NORMAL)
             self.rb_poz.config(state=tk.NORMAL)
@@ -880,15 +888,6 @@ class ImageImportSettingsDialog(tk.Toplevel):
             self.rb_poz.config(state=tk.DISABLED)
             for rb in getattr(self, "align_rbs", []):
                 rb.config(state=tk.DISABLED)
-
-    def validate_scale(self, value):
-        if value == "":
-            return True
-        try:
-            v = float(value)
-            return 1 <= v <= 500
-        except Exception:
-            return False
 
     def on_width_change(self, event=None):
         if self.scaling_mode.get() != "CUSTOM_SIZE" or not self.keep_ratio.get() or self._block_update:
@@ -937,25 +936,19 @@ class ImageImportSettingsDialog(tk.Toplevel):
             try:
                 scale_val = self.scale_factor.get()
                 if not (1 <= scale_val <= 500):
-                    messagebox.showerror(
-                        "Błąd", "Skala musi być wartością liczbową od 1 do 500%.", parent=self
-                    )
-                    self.scale_entry.focus_set()
-                    return
-            except tk.TclError:
-                messagebox.showerror(
-                    "Błąd", "Wprowadź poprawną wartość liczbową skali.", parent=self
-                )
+                    raise ValueError
+            except Exception:
+                messagebox.showerror("Błąd", "Skala musi być wartością liczbową od 1 do 500%.", parent=self)
                 self.scale_entry.focus_set()
                 return
         if self.scaling_mode.get() == "CUSTOM_SIZE":
             try:
                 custom_width = float(self.custom_width.get().replace(",", "."))
                 custom_height = float(self.custom_height.get().replace(",", "."))
-                if custom_width <= 0 or custom_height <= 0:
-                    raise ValueError("Wymiary muszą być większe od zera.")
+                if not (1 <= custom_width <= 4000 and 1 <= custom_height <= 4000):
+                    raise ValueError
             except Exception:
-                messagebox.showerror("Błąd", "Podaj prawidłowe wymiary strony (w mm) dla opcji 'Dokładny wymiar strony'.", parent=self)
+                messagebox.showerror("Błąd", "Podaj prawidłowe wymiary strony (1–4000 mm) dla opcji 'Dokładny wymiar strony'.", parent=self)
                 return
 
         self.result = {
@@ -973,7 +966,6 @@ class ImageImportSettingsDialog(tk.Toplevel):
     def cancel(self, event=None):
         self.result = None
         self.destroy()
-
 # ====================================================================
 # KLASA: OKNO DIALOGOWE WYBORU ZAKRESU STRON (Bez zmian)
 # ====================================================================
@@ -3172,10 +3164,10 @@ class SelectablePDFViewer:
             except Exception:
                 image_dpi = 96
             settings = {
-                'scaling_mode': "DOPASUJ",
-                'alignment': "SRODEK",
+                'scaling_mode': "PAGE_TO_IMAGE",
+                'alignment': "SRODEK",  # alignment nieistotny w tym trybie
                 'scale_factor': 1.0,
-                'page_orientation': "PIONOWO",
+                'page_orientation': "PIONOWO",  # nieistotne
                 'image_dpi': image_dpi,
                 'custom_width_mm': None,
                 'custom_height_mm': None
