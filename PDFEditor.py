@@ -724,10 +724,6 @@ class ShiftContentDialog(tk.Toplevel):
         self.result = None
         self.destroy()
 
-import tkinter as tk
-from tkinter import ttk, messagebox
-from PIL import Image
-
 class ImageImportSettingsDialog(tk.Toplevel):
     def __init__(self, parent, title, image_path):
         super().__init__(parent)
@@ -752,6 +748,10 @@ class ImageImportSettingsDialog(tk.Toplevel):
         self.alignment_mode = tk.StringVar(value="SRODEK")
         self.scale_factor = tk.DoubleVar(value=100.0)
         self.page_orientation = tk.StringVar(value="PIONOWO")
+        self.custom_width = tk.StringVar(value="")
+        self.custom_height = tk.StringVar(value="")
+        self.keep_ratio = tk.BooleanVar(value=True)
+        self._block_update = False  # zabezpieczenie przed zapętleniem synchronizacji
 
         self.initial_focus = self.body()
         self.buttonbox()
@@ -759,7 +759,7 @@ class ImageImportSettingsDialog(tk.Toplevel):
 
         self.update_idletasks()
 
-        dialog_width = 360
+        dialog_width = 420
         dialog_height = self.winfo_height()
         parent_x, parent_y = parent.winfo_rootx(), parent.winfo_rooty()
         parent_width, parent_height = parent.winfo_width(), parent.winfo_height()
@@ -783,54 +783,144 @@ class ImageImportSettingsDialog(tk.Toplevel):
         ttk.Label(info_frame, text=f"Wymiary: {self.image_pixel_width} x {self.image_pixel_height} px", anchor="w").pack(fill='x')
         ttk.Label(info_frame, text=f"DPI: {self.image_dpi}", anchor="w").pack(fill='x')
 
-        # Sekcja 2: Orientacja strony A4
-        orient_frame = ttk.LabelFrame(main_frame, text="Orientacja strony docelowej (A4)", padding=(8, 4))
-        orient_frame.pack(fill='x', pady=(0, 8))
-        ttk.Radiobutton(orient_frame, text="Pionowo", variable=self.page_orientation, value="PIONOWO").pack(anchor="w", pady=2)
-        ttk.Radiobutton(orient_frame, text="Poziomo", variable=self.page_orientation, value="POZIOMO").pack(anchor="w", pady=2)
-
-        # Sekcja 3: Skalowanie
-        scale_frame = ttk.LabelFrame(main_frame, text="Ustawienia skalowania", padding=(8, 4))
+        # Sekcja 2: Ustawienia skalowania
+        scale_frame = ttk.LabelFrame(main_frame, text="Ustawienia importu", padding=(8, 4))
         scale_frame.pack(fill='x', pady=(0, 8))
         options = [
-            ("Dopasuj do strony A4", "DOPASUJ"),
+            ("Dopasuj do strony A4 (marginesy 25 mm)", "DOPASUJ"),
             ("Oryginalny rozmiar (100%)", "ORYGINALNY"),
-            ("Skala niestandardowa", "SKALA")
+            ("Skala niestandardowa", "SKALA"),
+            ("Dopasuj rozmiar strony do obrazu", "PAGE_TO_IMAGE"),
+            ("Dopasuj obraz do dokłanego rozmiaru strony", "CUSTOM_SIZE")
         ]
         for text, value in options:
             rb = ttk.Radiobutton(
                 scale_frame, text=text, variable=self.scaling_mode, value=value,
                 command=self.update_scale_controls
             )
-            rb.pack(anchor="w", pady=2)
+            rb.pack(anchor="w", pady=2)  # brak padx, równo z ramką
+            if value == "SKALA":
+                self.scale_entry_frame = ttk.Frame(scale_frame)
+                self.scale_entry_frame.pack(fill='x', pady=2, padx=24)
+                ttk.Label(self.scale_entry_frame, text="Skala [%]:").pack(side=tk.LEFT)
+                vcmd = (self.register(self.validate_scale), "%P")
+                self.scale_entry = ttk.Entry(
+                    self.scale_entry_frame, textvariable=self.scale_factor, width=6, validate="key", validatecommand=vcmd
+                )
+                self.scale_entry.pack(side=tk.LEFT, padx=5)
+                ttk.Label(self.scale_entry_frame, text="(1–500)").pack(side=tk.LEFT)
+            if value == "CUSTOM_SIZE":
+                self.custom_size_frame = ttk.Frame(scale_frame)
+                self.custom_size_frame.pack(fill='x', pady=2, padx=24)
+                ttk.Label(self.custom_size_frame, text="Szerokość [mm]:").pack(side=tk.LEFT)
+                self.custom_width_entry = ttk.Entry(self.custom_size_frame, textvariable=self.custom_width, width=8)
+                self.custom_width_entry.pack(side=tk.LEFT, padx=5)
+                ttk.Label(self.custom_size_frame, text="Wysokość [mm]:").pack(side=tk.LEFT)
+                self.custom_height_entry = ttk.Entry(self.custom_size_frame, textvariable=self.custom_height, width=8)
+                self.custom_height_entry.pack(side=tk.LEFT, padx=5)
+                # Checkbox "Zachowaj proporcje" pod polami, równo z ramką
+                self.ratio_check_frame = ttk.Frame(scale_frame)
+                self.ratio_check_frame.pack(fill='x', pady=(0, 5), padx=24)
+                self.ratio_check = ttk.Checkbutton(self.ratio_check_frame, text="Zachowaj proporcje", variable=self.keep_ratio)
+                self.ratio_check.pack(anchor="w")
 
-        self.scale_entry_frame = ttk.Frame(scale_frame)
-        self.scale_entry_frame.pack(fill='x', pady=4, padx=12)
-        ttk.Label(self.scale_entry_frame, text="Skala [%]:").pack(side=tk.LEFT)
-        self.scale_entry = ttk.Entry(self.scale_entry_frame, textvariable=self.scale_factor, width=6)
-        self.scale_entry.pack(side=tk.LEFT, padx=5)
+        # Sekcja 3: Orientacja strony (po skalowaniu, przed wyrównaniem)
+        orient_frame = ttk.LabelFrame(main_frame, text="Orientacja strony docelowej (A4)", padding=(8, 4))
+        orient_frame.pack(fill='x', pady=(0, 8))
+        self.rb_pion = ttk.Radiobutton(orient_frame, text="Pionowo", variable=self.page_orientation, value="PIONOWO")
+        self.rb_pion.pack(anchor="w")  # brak padx
+        self.rb_poz = ttk.Radiobutton(orient_frame, text="Poziomo", variable=self.page_orientation, value="POZIOMO")
+        self.rb_poz.pack(anchor="w")   # brak padx
 
         # Sekcja 4: Wyrównanie
         align_frame = ttk.LabelFrame(main_frame, text="Wyrównanie na stronie", padding=(8, 4))
         align_frame.pack(fill='x')
+        self.align_rbs = []
         align_options = [
             ("Środek strony", "SRODEK"),
             ("Góra", "GORA"),
             ("Dół", "DOL")
         ]
         for text, value in align_options:
-            ttk.Radiobutton(align_frame, text=text, variable=self.alignment_mode, value=value).pack(anchor="w", pady=2)
+            rb = ttk.Radiobutton(align_frame, text=text, variable=self.alignment_mode, value=value)
+            rb.pack(anchor="w", pady=2)  # brak padx
+            self.align_rbs.append(rb)
 
-        return self.scale_entry
+        # Powiązania wpisów do zachowania proporcji
+        if hasattr(self, "custom_width_entry") and hasattr(self, "custom_height_entry"):
+            self.custom_width_entry.bind("<KeyRelease>", self.on_width_change)
+            self.custom_height_entry.bind("<KeyRelease>", self.on_height_change)
+            self.custom_width_entry.bind("<FocusOut>", self.on_width_change)
+            self.custom_height_entry.bind("<FocusOut>", self.on_height_change)
+
+        return self.scale_entry if hasattr(self, "scale_entry") else self.custom_width_entry
 
     def update_scale_controls(self):
-        if self.scaling_mode.get() == "SKALA":
-            self.scale_entry.config(state=tk.NORMAL)
+        # Skala niestandardowa - pole aktywne tylko wtedy
+        if hasattr(self, "scale_entry"):
+            if self.scaling_mode.get() == "SKALA":
+                self.scale_entry.config(state=tk.NORMAL)
+            else:
+                self.scale_entry.config(state=tk.DISABLED)
+        # Pola rozmiaru i checkbox tylko dla CUSTOM_SIZE
+        custom_size_active = self.scaling_mode.get() == "CUSTOM_SIZE"
+        if hasattr(self, "custom_width_entry") and hasattr(self, "custom_height_entry") and hasattr(self, "ratio_check"):
+            state = tk.NORMAL if custom_size_active else tk.DISABLED
+            self.custom_width_entry.config(state=state)
+            self.custom_height_entry.config(state=state)
+            self.ratio_check.config(state=state)
+        # Orientacja i wyrównanie tylko dla DOPASUJ, ORYGINALNY, SKALA
+        if self.scaling_mode.get() in ("DOPASUJ", "ORYGINALNY", "SKALA"):
+            self.rb_pion.config(state=tk.NORMAL)
+            self.rb_poz.config(state=tk.NORMAL)
+            for rb in getattr(self, "align_rbs", []):
+                rb.config(state=tk.NORMAL)
         else:
-            self.scale_entry.config(state=tk.DISABLED)
+            self.rb_pion.config(state=tk.DISABLED)
+            self.rb_poz.config(state=tk.DISABLED)
+            for rb in getattr(self, "align_rbs", []):
+                rb.config(state=tk.DISABLED)
+
+    def validate_scale(self, value):
+        if value == "":
+            return True
+        try:
+            v = float(value)
+            return 1 <= v <= 500
+        except Exception:
+            return False
+
+    def on_width_change(self, event=None):
+        if self.scaling_mode.get() != "CUSTOM_SIZE" or not self.keep_ratio.get() or self._block_update:
+            return
+        try:
+            w = float(self.custom_width.get().replace(",", "."))
+            if w <= 0 or not self.image_pixel_width or not self.image_pixel_height:
+                return
+            prop = self.image_pixel_height / self.image_pixel_width
+            h = round(w * prop, 2)
+            self._block_update = True
+            self.custom_height.set(str(h))
+            self._block_update = False
+        except Exception:
+            pass
+
+    def on_height_change(self, event=None):
+        if self.scaling_mode.get() != "CUSTOM_SIZE" or not self.keep_ratio.get() or self._block_update:
+            return
+        try:
+            h = float(self.custom_height.get().replace(",", "."))
+            if h <= 0 or not self.image_pixel_width or not self.image_pixel_height:
+                return
+            prop = self.image_pixel_width / self.image_pixel_height
+            w = round(h * prop, 2)
+            self._block_update = True
+            self.custom_width.set(str(w))
+            self._block_update = False
+        except Exception:
+            pass
 
     def buttonbox(self):
-        # Wyśrodkowane przyciski z większym odstępem między nimi i mniejszym od góry
         box = ttk.Frame(self)
         box.pack(fill=tk.X, pady=(8, 10))
         center = ttk.Frame(box)
@@ -841,12 +931,14 @@ class ImageImportSettingsDialog(tk.Toplevel):
         self.bind("<Escape>", lambda e: self.cancel())
 
     def ok(self, event=None):
+        custom_width = None
+        custom_height = None
         if self.scaling_mode.get() == "SKALA":
             try:
                 scale_val = self.scale_factor.get()
-                if not (0.1 <= scale_val <= 1000):
+                if not (1 <= scale_val <= 500):
                     messagebox.showerror(
-                        "Błąd", "Skala musi być wartością liczbową od 0.1 do 1000%.", parent=self
+                        "Błąd", "Skala musi być wartością liczbową od 1 do 500%.", parent=self
                     )
                     self.scale_entry.focus_set()
                     return
@@ -856,19 +948,32 @@ class ImageImportSettingsDialog(tk.Toplevel):
                 )
                 self.scale_entry.focus_set()
                 return
+        if self.scaling_mode.get() == "CUSTOM_SIZE":
+            try:
+                custom_width = float(self.custom_width.get().replace(",", "."))
+                custom_height = float(self.custom_height.get().replace(",", "."))
+                if custom_width <= 0 or custom_height <= 0:
+                    raise ValueError("Wymiary muszą być większe od zera.")
+            except Exception:
+                messagebox.showerror("Błąd", "Podaj prawidłowe wymiary strony (w mm) dla opcji 'Dokładny wymiar strony'.", parent=self)
+                return
 
         self.result = {
             'scaling_mode': self.scaling_mode.get(),
             'scale_factor': self.scale_factor.get() / 100,
             'alignment': self.alignment_mode.get(),
             'page_orientation': self.page_orientation.get(),
-            'image_dpi': self.image_dpi
+            'image_dpi': self.image_dpi,
+            'custom_width_mm': custom_width,
+            'custom_height_mm': custom_height,
+            'keep_ratio': self.keep_ratio.get()
         }
         self.destroy()
 
     def cancel(self, event=None):
         self.result = None
         self.destroy()
+
 # ====================================================================
 # KLASA: OKNO DIALOGOWE WYBORU ZAKRESU STRON (Bez zmian)
 # ====================================================================
@@ -1391,7 +1496,7 @@ class SelectablePDFViewer:
                 return
             elif path.lower().endswith(('.png', '.jpg', '.jpeg', '.tif', '.tiff')):
                 if self.pdf_document is None:
-                    self._update_status("Najpierw otwórz dokument PDF, aby zaimportować obraz.")
+                    self.open_image_as_new_pdf(filepath=path)
                 else:
                     self.import_image_to_new_page(filepath=path)
                 return
@@ -2460,6 +2565,7 @@ class SelectablePDFViewer:
         self.file_menu = tk.Menu(menu_bar, tearoff=0)  
         menu_bar.add_cascade(label="Plik", menu=self.file_menu)
         self.file_menu.add_command(label="Otwórz PDF...", command=self.open_pdf, accelerator="Ctrl+O")
+        self.file_menu.add_command(label="Otwórz obraz jako PDF...", command=self.open_image_as_new_pdf, accelerator="Ctrl+Shift+O")
         self.file_menu.add_command(label="Zapisz jako...", command=self.save_document, state=tk.DISABLED, accelerator="Ctrl+S")
         self.file_menu.add_separator() 
         self.file_menu.add_command(label="Importuj strony z PDF...", command=self.import_pdf_after_active_page, state=tk.DISABLED, accelerator="Ctrl+I") 
@@ -2467,6 +2573,8 @@ class SelectablePDFViewer:
         self.file_menu.add_separator() 
         self.file_menu.add_command(label="Importuj obraz na nową stronę...", command=self.import_image_to_new_page, state=tk.DISABLED, accelerator="Ctrl+Shift+I") 
         self.file_menu.add_command(label="Eksportuj strony jako obrazy PNG...", command=self.export_selected_pages_to_image, state=tk.DISABLED, accelerator="Ctrl+Shift+E")
+        self.file_menu.add_separator()
+        self.file_menu.add_command(label="Zamknij plik", command=self.close_pdf, accelerator="Ctrl+Q")
         self.file_menu.add_separator()
         self.file_menu.add_command(label="Zamknij program", command=self.on_close_window)  
 
@@ -2619,6 +2727,7 @@ class SelectablePDFViewer:
     
     def _setup_key_bindings(self):
         self.master.bind('<Control-x>', lambda e: self.cut_selected_pages())
+        self.master.bind('<Control-Shift-O>', lambda e: self.open_image_as_new_pdf())
         self.master.bind('<Control-c>', lambda e: self.copy_selected_pages())
         self.master.bind('<Control-d>', lambda e: self.duplicate_selected_page())
         self.master.bind('<Control-z>', lambda e: self.undo())
@@ -2639,6 +2748,7 @@ class SelectablePDFViewer:
         self.master.bind('<minus>', lambda e: self.zoom_out())
         self.master.bind('<KP_Add>', lambda e: self.zoom_in())
         self.master.bind('<KP_Subtract>', lambda e: self.zoom_out())
+        self.master.bind('<Control-q>', lambda e: self.close_pdf())
                      
         self.master.bind('<Control-F1>', lambda e: self._select_portrait_pages())
         self.master.bind('<Control-F2>', lambda e: self._select_landscape_pages())
@@ -2872,12 +2982,14 @@ class SelectablePDFViewer:
             self.tk_images = {}
             self.undo_stack.clear()
             self.redo_stack.clear()
+            print("DEBUG: Czyszczenie historii open_pdf 1")
             self.clipboard = None
             self.pages_in_clipboard_count = 0
             self.active_page_index = 0
             self.thumb_frames.clear()
             self.undo_stack.clear()
             self.redo_stack.clear()
+            print("DEBUG: Czyszczenie historii open_pdf 2")
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
             self.target_num_cols = 4  
@@ -2891,10 +3003,77 @@ class SelectablePDFViewer:
         except Exception as e:
             self._update_status(f"BŁĄD: Nie udało się wczytać pliku PDF: {e}")
             self.pdf_document = None
+            print("DEBUG: Ustawiono self.pdf_document = None w open_pdf z powodu błędu:", e)
             self.save_button_icon.config(state=tk.DISABLED)
             self.file_menu.entryconfig("Zapisz jako...", state=tk.DISABLED)
             self.update_tool_button_states()
 
+    def close_pdf(self):
+        if self.pdf_document is not None:
+            self.pdf_document.close()
+            self.pdf_document = None
+        self.selected_pages.clear()
+        self.tk_images.clear()
+        self.thumb_frames.clear()
+        for widget in list(self.scrollable_frame.winfo_children()):
+            widget.destroy()
+        self.undo_stack.clear()
+        self.redo_stack.clear()
+        self.clipboard = None
+        self.pages_in_clipboard_count = 0
+        self.active_page_index = 0
+        self._update_status("Zamknięto plik PDF. Wybierz plik z menu, aby rozpocząć pracę.")
+        self.update_tool_button_states()
+        self.update_focus_display()
+    def open_image_as_new_pdf(self, filepath=None):
+        """
+        Otwiera obraz jako nowy PDF. 
+        Strona PDF będzie miała dokładnie taki rozmiar jak obraz (w punktach PDF).
+        Jeśli filepath jest podany (np. przez drag&drop), użyje go, inaczej wyświetli dialog wyboru pliku.
+        """
+        if filepath is None:
+            image_path = filedialog.askopenfilename(
+                filetypes=[("Obrazy", "*.png;*.jpg;*.jpeg;*.tif;*.tiff")],
+                title="Wybierz plik obrazu do otwarcia jako PDF"
+            )
+            if not image_path:
+                self._update_status("Anulowano otwieranie obrazu.")
+                return
+        else:
+            image_path = filepath
+
+        try:
+            img = Image.open(image_path)
+            image_width_px, image_height_px = img.size
+            image_dpi = img.info.get('dpi', (96, 96))[0] if isinstance(img.info.get('dpi'), tuple) else 96
+            img.close()
+        except Exception as e:
+            messagebox.showerror("Błąd", f"Nie można wczytać obrazu: {e}")
+            return
+
+        # Przelicz piksele na punkty PDF (1 cal = 72 punkty)
+        image_width_pt = (image_width_px / image_dpi) * 72
+        image_height_pt = (image_height_px / image_dpi) * 72
+
+        # Stwórz nowy dokument PDF
+        self.pdf_document = fitz.open()
+        self.undo_stack.clear()
+        self.redo_stack.clear()
+        self.selected_pages.clear()
+        self.tk_images.clear()
+        for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
+        self.thumb_frames.clear()
+
+        # Nowa strona o rozmiarze obrazu
+        page = self.pdf_document.new_page(width=image_width_pt, height=image_height_pt)
+        rect = fitz.Rect(0, 0, image_width_pt, image_height_pt)
+        page.insert_image(rect, filename=image_path)
+
+        self.active_page_index = 0
+        self._reconfigure_grid()
+        self.update_tool_button_states()
+        self.update_focus_display()
+        self._update_status("Utworzono nowy PDF ze stroną dopasowaną do obrazu.")
     
     def import_pdf_after_active_page(self, event=None, filepath=None):
         if self.pdf_document is None:
@@ -2985,7 +3164,6 @@ class SelectablePDFViewer:
 
         # 1. Otwarcie dialogu i pobranie ustawień (tylko jeśli nie drag&drop)
         if filepath:
-            # Ustawienia domyślne dla drag&drop
             try:
                 img = Image.open(image_path)
                 image_width_px, image_height_px = img.size
@@ -2993,13 +3171,14 @@ class SelectablePDFViewer:
                 img.close()
             except Exception:
                 image_dpi = 96
-            # Domyśl: dopasowanie, środek, pionowo, 100%
             settings = {
                 'scaling_mode': "DOPASUJ",
                 'alignment': "SRODEK",
                 'scale_factor': 1.0,
                 'page_orientation': "PIONOWO",
                 'image_dpi': image_dpi,
+                'custom_width_mm': None,
+                'custom_height_mm': None
             }
         else:
             dialog = ImageImportSettingsDialog(self.master, "Ustawienia importu obrazu", image_path)
@@ -3011,6 +3190,8 @@ class SelectablePDFViewer:
         alignment = settings['alignment']
         scale_factor = settings['scale_factor']
         page_orientation = settings['page_orientation']
+        custom_width_mm = settings.get('custom_width_mm')
+        custom_height_mm = settings.get('custom_height_mm')
 
         try:
             img = Image.open(image_path)
@@ -3023,11 +3204,57 @@ class SelectablePDFViewer:
             messagebox.showerror("Błąd", f"Nie można wczytać obrazu: {e}")
             return
 
-        # 2. Ustalanie wymiarów nowej strony docelowej (A4)
-        if page_orientation == "PIONOWO":
-            page_w, page_h = A4_WIDTH_POINTS, A4_HEIGHT_POINTS
+        MM_TO_POINTS = 72 / 25.4
+
+        # --- TRYB: DOKŁADNY WYMIAR STRONY - OBRAZ ROZCIĄGANY DO CAŁEJ STRONY ---
+        if scaling_mode == "CUSTOM_SIZE" and custom_width_mm and custom_height_mm:
+            page_w = custom_width_mm * MM_TO_POINTS
+            page_h = custom_height_mm * MM_TO_POINTS
+            rect = fitz.Rect(0, 0, page_w, page_h)
+        # --- TRYB: STRONA DOPASOWANA DO OBRAZU ---
+        elif scaling_mode == "PAGE_TO_IMAGE":
+            page_w = image_width_points
+            page_h = image_height_points
+            rect = fitz.Rect(0, 0, page_w, page_h)
+        # --- POZOSTAŁE TRYBY (proporcje zachowane, centrowanie, marginesy, itp.) ---
         else:
-            page_w, page_h = A4_HEIGHT_POINTS, A4_WIDTH_POINTS
+            if page_orientation == "PIONOWO":
+                page_w, page_h = A4_WIDTH_POINTS, A4_HEIGHT_POINTS
+            else:
+                page_w, page_h = A4_HEIGHT_POINTS, A4_WIDTH_POINTS
+
+            if scaling_mode == "ORYGINALNY":
+                scale = scale_factor
+            elif scaling_mode == "SKALA":
+                scale = scale_factor
+            elif scaling_mode == "DOPASUJ":
+                scale_margin_points = MM_TO_POINTS * 50  # 50mm marginesu (25mm z każdej strony)
+                scale_w = (page_w - scale_margin_points) / image_width_points
+                scale_h = (page_h - scale_margin_points) / image_height_points
+                scale = min(scale_w, scale_h)
+            else:
+                scale = 1.0
+
+            final_w = image_width_points * scale
+            final_h = image_height_points * scale
+
+            offset_mm = 25.0
+            offset_points = offset_mm * MM_TO_POINTS
+
+            if alignment == "SRODEK":
+                x_start = (page_w - final_w) / 2
+                y_start = (page_h - final_h) / 2
+            elif alignment == "GORA":
+                x_start = (page_w - final_w) / 2
+                y_start = offset_points
+            elif alignment == "DOL":
+                x_start = (page_w - final_w) / 2
+                y_start = page_h - final_h - offset_points
+            else:
+                x_start = offset_points
+                y_start = page_h - final_h - offset_points
+
+            rect = fitz.Rect(x_start, y_start, x_start + final_w, y_start + final_h)
 
         imported_doc = fitz.open()
         try:
@@ -3035,41 +3262,6 @@ class SelectablePDFViewer:
         except Exception as e:
             messagebox.showerror("Błąd inicjalizacji fitz", f"Nie udało się utworzyć tymczasowej strony PDF: {e}")
             return
-
-        # 3. Obliczanie Skalowania
-        if scaling_mode == "ORYGINALNY":
-            scale = scale_factor
-        elif scaling_mode == "SKALA":
-            scale = scale_factor
-        elif scaling_mode == "DOPASUJ":
-            scale_margin_points = MM_TO_POINTS * 50  # 50mm marginesu (25mm z każdej strony)
-            scale_w = (page_w - scale_margin_points) / image_width_points
-            scale_h = (page_h - scale_margin_points) / image_height_points
-            scale = min(scale_w, scale_h)
-        else:
-            scale = 1.0
-
-        final_w = image_width_points * scale
-        final_h = image_height_points * scale
-
-        # 4. Obliczanie Pozycji (Wyrównanie)
-        offset_mm = 25.0
-        offset_points = offset_mm * MM_TO_POINTS
-
-        if alignment == "SRODEK":
-            x_start = (page_w - final_w) / 2
-            y_start = (page_h - final_h) / 2
-        elif alignment == "GORA":
-            x_start = (page_w - final_w) / 2
-            y_start = offset_points
-        elif alignment == "DOL":
-            x_start = (page_w - final_w) / 2
-            y_start = page_h - final_h - offset_points
-        else:
-            x_start = offset_points
-            y_start = page_h - final_h - offset_points
-
-        rect = fitz.Rect(x_start, y_start, x_start + final_w, y_start + final_h)
 
         # 5. Wklejenie obrazu do tymczasowej strony fitz
         try:
@@ -3089,7 +3281,6 @@ class SelectablePDFViewer:
             self.pdf_document.insert_pdf(imported_doc, from_page=0, to_page=0, start_at=insert_index)
             self.active_page_index = insert_index
 
-        #    self.selected_pages.clear()
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
@@ -3106,9 +3297,7 @@ class SelectablePDFViewer:
         finally:
             if imported_doc and not imported_doc.is_closed:
                 imported_doc.close()
-
-   
-            
+                
     def _update_status(self, message):
         self.status_bar.config(text=message, fg="black")
             
@@ -3125,6 +3314,7 @@ class SelectablePDFViewer:
         else:
             self.undo_stack.clear()
             self.redo_stack.clear()
+            print("DEBUG: Czyszczenie historii _save_state_to_undo")
             self.update_tool_button_states()
             
     def _get_page_bytes(self, page_indices: Set[int]) -> bytes:
@@ -3217,10 +3407,14 @@ class SelectablePDFViewer:
             self._update_status(f"BŁĄD Wklejania: {e}")
             
     def delete_selected_pages(self, event=None, save_state: bool = True): 
-        if not self.pdf_document or not self.selected_pages:  
+        if not self.pdf_document or not self.selected_pages:
             self._update_status("BŁĄD: Brak zaznaczonych stron do usunięcia.")
             return
         pages_to_delete = sorted(list(self.selected_pages), reverse=True)
+        # --- BLOKADA: NIE USUWAJ OSTATNIEJ STRONY ---
+        if len(pages_to_delete) >= len(self.pdf_document):
+            self._update_status("BŁĄD: Nie można usunąć wszystkich stron. PDF musi mieć przynajmniej jedną stronę.")
+            return
         deleted_count = 0
         try:
             if save_state:
@@ -3239,7 +3433,9 @@ class SelectablePDFViewer:
             self.update_tool_button_states()
             self.update_focus_display()  
             if save_state:
-                 self._update_status(f"Usunięto {deleted_count} stron. Aktualna liczba stron: {self.total_pages}.")
+                self._update_status(
+                    f"Usunięto {deleted_count} stron. Aktualna liczba stron: {self.total_pages}."
+                )
         except Exception as e:
             self._update_status(f"BŁĄD: Wystąpił błąd podczas usuwania: {e}")
 
@@ -3352,6 +3548,7 @@ class SelectablePDFViewer:
             # Po zapisaniu czyścimy stosy undo/redo
             self.undo_stack.clear()
             self.redo_stack.clear()
+            print("DEBUG: Czyszczenie historii save_document")
             self.update_tool_button_states() 
         except Exception as e:
             self._update_status(f"BŁĄD: Nie udało się zapisać pliku: {e}")
