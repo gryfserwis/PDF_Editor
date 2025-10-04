@@ -29,7 +29,7 @@ FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
 
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
-PROGRAM_VERSION = "4.1.2"
+PROGRAM_VERSION = "4.2.0"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
 # === STAŁE DLA A4 [w punktach PDF i mm] ===
@@ -2502,15 +2502,16 @@ class SelectablePDFViewer:
         self.clipboard: Optional[bytes] = None 
         self.pages_in_clipboard_count: int = 0 
         
-        self.fixed_thumb_width = 250  
-        self.min_zoom_width = 150    
-        self.THUMB_PADDING = 2       
-        self.ZOOM_FACTOR = 0.9       
-        self.target_num_cols = 4     
-        self.min_cols = 2            
-        self.max_cols = 10           
+        # Thumbnail zoom settings - now based on width, not column count
+        self.thumb_width = 250          # Current thumbnail width (controlled by zoom)
+        self.min_thumb_width = 100      # Minimum thumbnail width
+        self.max_thumb_width = 600      # Maximum thumbnail width
+        self.zoom_step = 0.10           # Zoom step (10% change)
+        self.THUMB_PADDING = 10         # Padding between thumbnails
+        self.min_cols = 1               # Minimum columns (for safety)
+        self.max_cols = 20              # Maximum columns (for safety)
         self.MIN_WINDOW_WIDTH = 997
-        self.render_dpi_factor = 0.833 
+        self.render_dpi_factor = 0.833
         
         self.undo_stack: List[bytes] = []
         self.redo_stack: List[bytes] = []
@@ -2945,8 +2946,8 @@ class SelectablePDFViewer:
             'remove_numbers': doc_loaded and has_selection,
             'add_numbers': doc_loaded and has_selection,
             'crop': doc_loaded and has_selection,
-            'zoom_in': doc_loaded and self.target_num_cols > self.min_cols,
-            'zoom_out': doc_loaded and self.target_num_cols < self.max_cols,
+            'zoom_in': doc_loaded and self.thumb_width < self.max_thumb_width,
+            'zoom_out': doc_loaded and self.thumb_width > self.min_thumb_width,
         }
         
         return conditions.get(action_name, True)
@@ -3015,8 +3016,8 @@ class SelectablePDFViewer:
         self.master.bind('<space>', lambda e: self._toggle_selection_space())
         self.master.bind('<Left>', lambda e: self._move_focus_and_scroll(-1))
         self.master.bind('<Right>', lambda e: self._move_focus_and_scroll(1))
-        self.master.bind('<Up>', lambda e: self._move_focus_and_scroll(-self.target_num_cols))
-        self.master.bind('<Down>', lambda e: self._move_focus_and_scroll(self.target_num_cols))
+        self.master.bind('<Up>', lambda e: self._move_focus_and_scroll(-self._get_current_num_cols()))
+        self.master.bind('<Down>', lambda e: self._move_focus_and_scroll(self._get_current_num_cols()))
         self.master.bind('<Home>', lambda e: self._jump_to_first_page())
         self.master.bind('<End>', lambda e: self._jump_to_last_page())
         self.master.bind('<Prior>', lambda e: self._page_up())  # PageUp
@@ -3121,7 +3122,7 @@ class SelectablePDFViewer:
                 row_height = first_frame.winfo_height() + self.THUMB_PADDING
                 rows_per_page = max(1, canvas_height // row_height)
                 # Przesuń fokus o liczbę miniatur odpowiadającą liczbie wierszy * liczbie kolumn
-                delta = -(rows_per_page * self.target_num_cols)
+                delta = -(rows_per_page * self._get_current_num_cols())
                 self._move_focus_and_scroll(delta)
                 return
         # Fallback - przesuń o 10 stron
@@ -3140,7 +3141,7 @@ class SelectablePDFViewer:
                 row_height = first_frame.winfo_height() + self.THUMB_PADDING
                 rows_per_page = max(1, canvas_height // row_height)
                 # Przesuń fokus o liczbę miniatur odpowiadającą liczbie wierszy * liczbie kolumn
-                delta = rows_per_page * self.target_num_cols
+                delta = rows_per_page * self._get_current_num_cols()
                 self._move_focus_and_scroll(delta)
                 return
         # Fallback - przesuń o 10 stron
@@ -3211,8 +3212,8 @@ class SelectablePDFViewer:
         self.add_nums_btn.config(state=delete_state)
         
         if doc_loaded:
-             zoom_in_state = tk.NORMAL if self.target_num_cols > self.min_cols else tk.DISABLED
-             zoom_out_state = tk.NORMAL if self.target_num_cols < self.max_cols else tk.DISABLED
+             zoom_in_state = tk.NORMAL if self.thumb_width < self.max_thumb_width else tk.DISABLED
+             zoom_out_state = tk.NORMAL if self.thumb_width > self.min_thumb_width else tk.DISABLED
         else:
              zoom_in_state = tk.DISABLED
              zoom_out_state = tk.DISABLED
@@ -3306,8 +3307,8 @@ class SelectablePDFViewer:
             print("DEBUG: Czyszczenie historii open_pdf 2")
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
-            self.target_num_cols = 4  
-            self._reconfigure_grid()  
+            self.thumb_width = 250  # Reset to default thumbnail width
+            self._reconfigure_grid()
             self._update_status(f"Wczytano {len(self.pdf_document)} stron. Gotowy do edycji.")
             self.save_button_icon.config(state=tk.NORMAL)
             self.file_menu.entryconfig("Zapisz jako...", state=tk.NORMAL)
@@ -4300,17 +4301,34 @@ class SelectablePDFViewer:
             new_pos = min(1, current_top + step)
             self.canvas.yview_moveto(new_pos)
             
+    def _get_current_num_cols(self):
+        """Calculate current number of columns based on canvas width and thumb_width"""
+        if not self.pdf_document:
+            return 1
+        
+        actual_canvas_width = self.canvas.winfo_width()
+        scrollbar_safety = 25
+        available_width = max(100, actual_canvas_width - scrollbar_safety)
+        thumb_with_padding = self.thumb_width + (2 * self.THUMB_PADDING)
+        num_cols = max(self.min_cols, int(available_width / thumb_with_padding))
+        num_cols = min(self.max_cols, num_cols)
+        return max(1, num_cols)
+
     def zoom_in(self):
+        """Increase thumbnail size (zoom in)"""
         if self.pdf_document:
-            self.target_num_cols = max(self.min_cols, self.target_num_cols - 1)
+            new_width = int(self.thumb_width * (1 + self.zoom_step))
+            self.thumb_width = min(self.max_thumb_width, new_width)
             self._reconfigure_grid()
             self.update_tool_button_states()  
 
     def zoom_out(self):
+        """Decrease thumbnail size (zoom out)"""
         if self.pdf_document:
-            self.target_num_cols = min(self.max_cols, self.target_num_cols + 1)
+            new_width = int(self.thumb_width * (1 - self.zoom_step))
+            self.thumb_width = max(self.min_thumb_width, new_width)
             self._reconfigure_grid()
-            self.update_tool_button_states()  
+            self.update_tool_button_states()
 
     def _reconfigure_grid(self, event=None):
         if not self.pdf_document:  
@@ -4320,33 +4338,36 @@ class SelectablePDFViewer:
         self.master.update_idletasks()
         actual_canvas_width = self.canvas.winfo_width()
         scrollbar_safety = 25  
-        available_width = max(100, actual_canvas_width - scrollbar_safety)  
-        internal_padding = self.THUMB_PADDING  
-        min_thumb_size = self.min_zoom_width
-        min_required_col_size = min_thumb_size + internal_padding  
-        calculated_num_cols = int((available_width - internal_padding) / min_required_col_size)
-        num_cols = self.target_num_cols  
-        if num_cols > calculated_num_cols:
-            num_cols = calculated_num_cols
-            self.target_num_cols = max(self.min_cols, num_cols)
-        num_cols = max(self.min_cols, min(self.max_cols, num_cols))
-        total_padding_width = (num_cols + 1) * internal_padding
-        space_for_thumbs = available_width - total_padding_width
-        theoretical_width = space_for_thumbs / num_cols
-        final_column_width = theoretical_width * self.ZOOM_FACTOR
-        column_width = max(1, math.floor(final_column_width))  
-        self.fixed_thumb_width = column_width  
+        available_width = max(100, actual_canvas_width - scrollbar_safety)
         
+        # Calculate number of columns based on current thumbnail width
+        # Each thumbnail needs: thumb_width + padding on each side
+        thumb_with_padding = self.thumb_width + (2 * self.THUMB_PADDING)
+        
+        # Calculate how many thumbnails fit in available width
+        num_cols = max(self.min_cols, int(available_width / thumb_with_padding))
+        num_cols = min(self.max_cols, num_cols)  # Cap at max_cols
+        
+        # Ensure at least one column
+        if num_cols < 1:
+            num_cols = 1
+        
+        # Use the current thumb_width directly (no recalculation)
+        column_width = self.thumb_width
+        
+        # Clean up non-thumbnail widgets
         for widget in list(self.scrollable_frame.grid_slaves()):
              if not isinstance(widget, ThumbnailFrame):
                  widget.destroy()
 
+        # Configure grid columns
         for col in range(self.max_cols):  
              if col < num_cols:
-                 self.scrollable_frame.grid_columnconfigure(col, weight=1)  
+                 self.scrollable_frame.grid_columnconfigure(col, weight=0, minsize=column_width)
              else:
-                 self.scrollable_frame.grid_columnconfigure(col, weight=0)  
+                 self.scrollable_frame.grid_columnconfigure(col, weight=0, minsize=0)
 
+        # Create or update widgets
         if not self.thumb_frames:
              self._create_widgets(num_cols, column_width)
         else:
