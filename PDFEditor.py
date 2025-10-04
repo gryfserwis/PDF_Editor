@@ -120,6 +120,11 @@ class PageCropResizeDialog(tk.Toplevel):
         self.offset_x = tk.StringVar(value="0")
         self.offset_y = tk.StringVar(value="0")
 
+        # Walidatory dla marginesów, rozmiarów i położenia
+        self.vcmd_margin = (self.register(lambda v: validate_float_range(v, 0, 200)), "%P")
+        self.vcmd_size = (self.register(lambda v: validate_float_range(v, 1, 4000)), "%P")
+        self.vcmd_offset = (self.register(lambda v: validate_float_range(v, 0, 500)), "%P")
+
         self.build_ui()
         self.update_field_states()
         self.center_dialog(parent)
@@ -128,7 +133,6 @@ class PageCropResizeDialog(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self.cancel)
         self.resizable(False, False)
 
-        # --- Obsługa Enter i Esc jak w innych dialogach ---
         self.bind("<Return>", lambda e: self.ok())
         self.bind("<KP_Enter>", lambda e: self.ok())
         self.bind("<Escape>", lambda e: self.cancel())
@@ -156,21 +160,23 @@ class PageCropResizeDialog(tk.Toplevel):
             self.crop_radiobuttons.append(rb)
 
         margin_frame = ttk.Frame(crop_frame)
-        margin_frame.pack(fill="x", padx=12, pady=(4, 6))
+        margin_frame.pack(fill="x", padx=12, pady=(4, 0))
         ttk.Label(margin_frame, text="Góra [mm]:").grid(row=0, column=0, sticky="w", padx=(0,6), pady=pady_row1)
-        self.e_margin_top = ttk.Entry(margin_frame, textvariable=self.margin_top, width=6)
+        self.e_margin_top = ttk.Entry(margin_frame, textvariable=self.margin_top, width=6, validate="key", validatecommand=self.vcmd_margin)
         self.e_margin_top.grid(row=0, column=1, sticky="w", padx=(0,16), pady=pady_row1)
         ttk.Label(margin_frame, text="Dół [mm]:").grid(row=0, column=2, sticky="w", padx=(0,6), pady=pady_row1)
-        self.e_margin_bottom = ttk.Entry(margin_frame, textvariable=self.margin_bottom, width=6)
+        self.e_margin_bottom = ttk.Entry(margin_frame, textvariable=self.margin_bottom, width=6, validate="key", validatecommand=self.vcmd_margin)
         self.e_margin_bottom.grid(row=0, column=3, sticky="w", padx=(0,0), pady=pady_row1)
 
         ttk.Label(margin_frame, text="Lewo [mm]:").grid(row=1, column=0, sticky="w", padx=(0,6), pady=pady_row2)
-        self.e_margin_left = ttk.Entry(margin_frame, textvariable=self.margin_left, width=6)
+        self.e_margin_left = ttk.Entry(margin_frame, textvariable=self.margin_left, width=6, validate="key", validatecommand=self.vcmd_margin)
         self.e_margin_left.grid(row=1, column=1, sticky="w", padx=(0,16), pady=pady_row2)
         ttk.Label(margin_frame, text="Prawo [mm]:").grid(row=1, column=2, sticky="w", padx=(0,6), pady=pady_row2)
-        self.e_margin_right = ttk.Entry(margin_frame, textvariable=self.margin_right, width=6)
+        self.e_margin_right = ttk.Entry(margin_frame, textvariable=self.margin_right, width=6, validate="key", validatecommand=self.vcmd_margin)
         self.e_margin_right.grid(row=1, column=3, sticky="w", padx=(0,0), pady=pady_row2)
         self.margin_entries = [self.e_margin_top, self.e_margin_bottom, self.e_margin_left, self.e_margin_right]
+        # Komunikat zakresu marginesów
+        ttk.Label(margin_frame, text="Zakres: 0–200 mm", foreground="gray").grid(row=2, column=0, columnspan=4, sticky="w", pady=(6,0))
 
         # --- RESIZE SECTION ---
         resize_frame = ttk.LabelFrame(self, text="Zmiana rozmiaru arkusza")
@@ -197,11 +203,13 @@ class PageCropResizeDialog(tk.Toplevel):
         self.custom_size_frame = ttk.Frame(format_frame)
         self.custom_size_frame.grid(row=1, column=0, columnspan=2, sticky="w", pady=(8,0))
         ttk.Label(self.custom_size_frame, text="Szerokość [mm]:").grid(row=0, column=0, sticky="w", padx=(0,6), pady=pady_row1)
-        self.e_custom_width = ttk.Entry(self.custom_size_frame, textvariable=self.custom_width, width=8)
+        self.e_custom_width = ttk.Entry(self.custom_size_frame, textvariable=self.custom_width, width=8, validate="key", validatecommand=self.vcmd_size)
         self.e_custom_width.grid(row=0, column=1, sticky="w", padx=(0,12), pady=pady_row1)
         ttk.Label(self.custom_size_frame, text="Wysokość [mm]:").grid(row=0, column=2, sticky="w", padx=(0,6), pady=pady_row1)
-        self.e_custom_height = ttk.Entry(self.custom_size_frame, textvariable=self.custom_height, width=8)
+        self.e_custom_height = ttk.Entry(self.custom_size_frame, textvariable=self.custom_height, width=8, validate="key", validatecommand=self.vcmd_size)
         self.e_custom_height.grid(row=0, column=3, sticky="w", padx=(0,0), pady=pady_row1)
+        # Komunikat zakresu rozmiaru niestandardowego
+        ttk.Label(self.custom_size_frame, text="Zakres: 1–4000 mm", foreground="gray").grid(row=1, column=0, columnspan=4, sticky="w", pady=(0,0))
         self.custom_entries = [self.e_custom_width, self.e_custom_height]
 
         # --- POSITION SECTION (osobna ramka) ---
@@ -220,11 +228,12 @@ class PageCropResizeDialog(tk.Toplevel):
         self.offset_frame = ttk.Frame(self.position_frame)
         self.offset_frame.pack(fill="x", padx=18, pady=(0,0))
         ttk.Label(self.offset_frame, text="Od lewej [mm]:").grid(row=0, column=0, sticky="w", padx=(0,6), pady=pady_row1)
-        self.e_offset_x = ttk.Entry(self.offset_frame, textvariable=self.offset_x, width=8)
+        self.e_offset_x = ttk.Entry(self.offset_frame, textvariable=self.offset_x, width=8, validate="key", validatecommand=self.vcmd_offset)
         self.e_offset_x.grid(row=0, column=1, sticky="w", padx=(0,16), pady=pady_row1)
         ttk.Label(self.offset_frame, text="Od dołu [mm]:").grid(row=0, column=2, sticky="w", padx=(0,6), pady=pady_row1)
-        self.e_offset_y = ttk.Entry(self.offset_frame, textvariable=self.offset_y, width=8)
+        self.e_offset_y = ttk.Entry(self.offset_frame, textvariable=self.offset_y, width=8, validate="key", validatecommand=self.vcmd_offset)
         self.e_offset_y.grid(row=0, column=3, sticky="w", padx=(0,0), pady=pady_row1)
+        ttk.Label(self.offset_frame, text="Zakres: 0–500 mm", foreground="gray").grid(row=1, column=0, columnspan=4, sticky="w", pady=(0,0))
         self.offset_entries = [self.e_offset_x, self.e_offset_y]
 
         # --- BUTTONS ---
@@ -237,28 +246,22 @@ class PageCropResizeDialog(tk.Toplevel):
         crop_selected = self.crop_mode.get() != "nocrop"
         resize_selected = self.resize_mode.get() != "noresize"
 
-        # Ekskluzywność crop <-> resize
         for rb in self.resize_radiobuttons:
             rb["state"] = tk.DISABLED if crop_selected else tk.NORMAL
         for rb in self.crop_radiobuttons:
             rb["state"] = tk.DISABLED if resize_selected else tk.NORMAL
 
-        # Pola crop (marginesy)
         enable_crop = self.crop_mode.get() != "nocrop" and not resize_selected
         for entry in self.margin_entries:
             entry["state"] = tk.NORMAL if enable_crop else tk.DISABLED
 
-        # Pole wyboru formatu i niestandardowe rozmiary tylko dla resize_xxx
         enable_format = self.resize_mode.get() != "noresize" and not crop_selected
         self.format_combo["state"] = "readonly" if enable_format else tk.DISABLED
         enable_custom = enable_format and self.target_format.get() == "Niestandardowy"
         for entry in self.custom_entries:
             entry["state"] = tk.NORMAL if enable_custom else tk.DISABLED
 
-        # Pozycjonowanie i offsety:
-        # Aktywne dla (crop_only) lub (resize_noscale), ale tylko jeśli odpowiednie sekcje nie są zablokowane
         enable_position = (
-           # (self.crop_mode.get() == "crop_only" and not resize_selected) or
             (self.resize_mode.get() == "resize_noscale" and not crop_selected)
         )
         state_radio = tk.NORMAL if enable_position else tk.DISABLED
@@ -295,8 +298,8 @@ class PageCropResizeDialog(tk.Toplevel):
                 left = float(self.margin_left.get().replace(",", "."))
                 right = float(self.margin_right.get().replace(",", "."))
                 for v in [top, bottom, left, right]:
-                    if v < 0:
-                        raise ValueError("Marginesy muszą być nieujemne.")
+                    if v < 0 or v > 200:
+                        raise ValueError("Marginesy muszą być z zakresu 0–200 mm.")
 
             # Format i wymiary docelowe
             if resize_mode != "noresize":
@@ -304,8 +307,8 @@ class PageCropResizeDialog(tk.Toplevel):
                 if format_name == "Niestandardowy":
                     w = float(self.custom_width.get().replace(",", "."))
                     h = float(self.custom_height.get().replace(",", "."))
-                    if w <= 0 or h <= 0:
-                        raise ValueError("Rozmiar niestandardowy musi być większy od zera.")
+                    if w < 1 or h < 1 or w > 4000 or h > 4000:
+                        raise ValueError("Rozmiar niestandardowy musi być z zakresu 1–4000 mm.")
                     target_dims = (w, h)
                 else:
                     target_dims = self.PAPER_FORMATS[format_name]
@@ -315,7 +318,6 @@ class PageCropResizeDialog(tk.Toplevel):
 
             # Pozycjonowanie
             enable_position = (
-                (self.crop_mode.get() == "crop_only" and not (self.resize_mode.get() != "noresize")) or
                 (self.resize_mode.get() == "resize_noscale" and not (self.crop_mode.get() != "nocrop"))
             )
             if enable_position:
@@ -324,8 +326,8 @@ class PageCropResizeDialog(tk.Toplevel):
                 if position_mode == "custom":
                     offset_x = float(self.offset_x.get().replace(",", "."))
                     offset_y = float(self.offset_y.get().replace(",", "."))
-                    if offset_x < 0 or offset_y < 0:
-                        raise ValueError("Offset musi być nieujemny.")
+                    if offset_x < 0 or offset_x > 500 or offset_y < 0 or offset_y > 500:
+                        raise ValueError("Offset musi być z zakresu 0–500 mm.")
             else:
                 position_mode = None
                 offset_x = offset_y = None
@@ -351,7 +353,7 @@ class PageCropResizeDialog(tk.Toplevel):
     def cancel(self, event=None):
         self.result = None
         self.destroy()
-
+        
 class Tooltip:
     """
     Tworzy prosty, wielokrotnie używalny dymek pomocy (tooltip) 
@@ -422,6 +424,10 @@ class PageNumberingDialog(tk.Toplevel):
         self.title("Dodawanie numeracji stron")
         self.result = None
 
+        # Walidatory
+        self.vcmd_200 = (self.register(lambda v: validate_float_range(v, 1, 200)), "%P")
+        self.vcmd_9999 = (self.register(lambda v: validate_float_range(v, 1, 9999)), "%P")
+
         self.create_variables()
         self.build_ui()
 
@@ -472,18 +478,24 @@ class PageNumberingDialog(tk.Toplevel):
         config_inner = ttk.Frame(config_frame)
         config_inner.pack(anchor='w', padx=2, pady=(8, 2))
         ttk.Label(config_inner, text="Lewy:").pack(side='left', padx=(0,4))
-        ttk.Entry(config_inner, textvariable=self.v_margin_left, width=ENTRY_WIDTH).pack(side='left', padx=(0,10))
+        left_entry = ttk.Entry(config_inner, textvariable=self.v_margin_left, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_200)
+        left_entry.pack(side='left', padx=(0,10))
         ttk.Label(config_inner, text="Prawy:").pack(side='left', padx=(0,4))
-        ttk.Entry(config_inner, textvariable=self.v_margin_right, width=ENTRY_WIDTH).pack(side='left', padx=(0,0))
+        right_entry = ttk.Entry(config_inner, textvariable=self.v_margin_right, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_200)
+        right_entry.pack(side='left', padx=(0,10))
+        # Wspólny komunikat w tej samej linii z polami marginesów
+        #ttk.Label(config_inner, text="(zakres 1–200 mm)", foreground="gray").pack(side='left', padx=(8,0))
         ttk.Checkbutton(config_frame, text="Plik ma marginesy lustrzane", variable=self.v_mirror_margins).pack(anchor='w', padx=2, pady=(6,6))
 
         # 2. Położenie
         pos_frame = ttk.LabelFrame(main_frame, text="Położenie numeru strony")
         pos_frame.pack(fill="x", padx=PADX_GROUP, pady=PADY_GROUP)
-
         row_idx = 0
         ttk.Label(pos_frame, text="Od krawędzi:").grid(row=row_idx, column=0, sticky="w", padx=(2,4), pady=(2,2))
-        ttk.Entry(pos_frame, textvariable=self.v_margin_vertical_mm, width=ENTRY_WIDTH).grid(row=row_idx, column=1, sticky="w", padx=(0,2), pady=(2,2))
+        vertical_entry = ttk.Entry(pos_frame, textvariable=self.v_margin_vertical_mm, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_200)
+        vertical_entry.grid(row=row_idx, column=1, sticky="w", padx=(0,2), pady=(2,2))
+        # Komunikat w tej samej linii
+        #ttk.Label(pos_frame, text="(zakres 1–200 mm)", foreground="gray").grid(row=row_idx, column=2, sticky="w", padx=(8,2))
         row_idx += 1
 
         # Radiobuttony PION
@@ -499,7 +511,7 @@ class PageNumberingDialog(tk.Toplevel):
         ttk.Radiobutton(pos_frame, text="Prawo", variable=self.v_alignment, value='prawa').grid(row=row_idx, column=3, sticky="w", padx=(0,2))
         row_idx += 1
 
-        # Radiobuttony TRYP
+        # Radiobuttony TRYB
         ttk.Label(pos_frame, text="Tryb:").grid(row=row_idx, column=0, sticky="w", padx=(2,4), pady=(2,2))
         ttk.Radiobutton(pos_frame, text="Normalna", variable=self.v_mode, value='normalna').grid(row=row_idx, column=1, sticky="w", padx=(0,4))
         ttk.Radiobutton(pos_frame, text="Lustrzana", variable=self.v_mode, value='lustrzana').grid(row=row_idx, column=2, sticky="w", padx=(0,2))
@@ -510,8 +522,10 @@ class PageNumberingDialog(tk.Toplevel):
         counter_frame.pack(fill="x", padx=PADX_GROUP, pady=(8,0))
         counter_inner = ttk.Frame(counter_frame)
         counter_inner.pack(fill="x", padx=2, pady=(0,0))
-        ttk.Label(counter_inner, text="Licznik numeracji zacznij od numeru:").grid(row=0, column=0, sticky="w", padx=(2,4), pady=(0,10))
-        ttk.Entry(counter_inner, textvariable=self.v_start_number, width=ENTRY_WIDTH).grid(row=0, column=1, sticky="w", padx=(0,2), pady=(0,10))
+        ttk.Label(counter_inner, text="Licznik numeracji zacznij od numeru:").grid(row=0, column=0, sticky="w", padx=(2,4), pady=(0,4))
+        start_number_entry = ttk.Entry(counter_inner, textvariable=self.v_start_number, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_9999)
+        start_number_entry.grid(row=0, column=1, sticky="w", padx=(0,2), pady=(0,4))
+        # Brak komunikatu zakresu pod licznikiem!
 
         # 4. Czcionka i format
         style_frame = ttk.LabelFrame(main_frame, text="Czcionka i format numeracji")
@@ -539,7 +553,21 @@ class PageNumberingDialog(tk.Toplevel):
 
     def ok(self, event=None):
         try:
+            # Walidacja końcowa
+            fields = [
+                (self.v_margin_left.get(), 1, 200, "Lewy margines"),
+                (self.v_margin_right.get(), 1, 200, "Prawy margines"),
+                (self.v_margin_vertical_mm.get(), 1, 200, "Od krawędzi"),
+                (self.v_start_number.get(), 1, 9999, "Licznik numeracji"),
+            ]
+            for val, minv, maxv, label in fields:
+                if not validate_float_range(val, minv, maxv):
+                    raise ValueError(f"{label}: dozwolony zakres to {minv}–{maxv}")
+
             start_page_val = int(self.v_start_page.get())
+            if start_page_val < 1:
+                raise ValueError("Numer początkowej strony musi być >= 1.")
+
             result = {
                 'margin_left_mm': float(self.v_margin_left.get().replace(',', '.')),
                 'margin_right_mm': float(self.v_margin_right.get().replace(',', '.')),
@@ -554,8 +582,6 @@ class PageNumberingDialog(tk.Toplevel):
                 'mirror_margins': self.v_mirror_margins.get(),
                 'format_type': self.v_format_type.get()
             }
-            if result['start_num'] < 1 or start_page_val < 1:
-                raise ValueError("Numery startowe i strony muszą być >= 1.")
             self.result = result
             self.destroy()
         except Exception as e:
@@ -577,6 +603,7 @@ class PageNumberMarginDialog(tk.Toplevel):
         self.title("Usuwanie numeracji stron")
         self.result = None
 
+        self.vcmd_margin = (self.register(lambda v: validate_float_range(v, 0, 200)), "%P")
         self.create_widgets(initial_margin_mm)
         self.resizable(False, False)
         self.protocol("WM_DELETE_WINDOW", self.cancel)
@@ -592,11 +619,12 @@ class PageNumberMarginDialog(tk.Toplevel):
 
     def center_window(self):
         self.update_idletasks()
+        # Automatyczna szerokość (nie ustawiamy na sztywno)
         w = self.winfo_width()
         h = self.winfo_height()
         x = self.parent.winfo_x() + (self.parent.winfo_width() - w) // 2
         y = self.parent.winfo_y() + (self.parent.winfo_height() - h) // 2
-        self.geometry(f'+{x}+{y}')
+        self.geometry(f'{w}x{h}+{x}+{y}')
 
     def create_widgets(self, initial_margin_mm):
         main_frame = ttk.Frame(self, padding="6")
@@ -609,18 +637,31 @@ class PageNumberMarginDialog(tk.Toplevel):
 
         ENTRY_WIDTH = 4
 
-        # Marginesy w jednej kolumnie grid
-        for idx, (label_text, var_name) in enumerate([
-            ("Od góry (nagłówek):", "top_margin_entry"),
-            ("Od dołu (stopka):", "bottom_margin_entry")
-        ]):
-            ttk.Label(margin_frame, text=label_text).grid(
-                row=idx, column=0, sticky="e", padx=(2, 6), pady=(2, 2)
-            )
-            entry = ttk.Entry(margin_frame, width=ENTRY_WIDTH)
-            entry.insert(0, str(initial_margin_mm))
-            entry.grid(row=idx, column=1, sticky="w", padx=(0, 2), pady=(2, 2))
-            setattr(self, var_name, entry)
+        # Marginesy w jednym wierszu (etykiety i pola obok siebie)
+        ttk.Label(margin_frame, text="Od góry (nagłówek):").grid(
+            row=0, column=0, sticky="e", padx=(2, 6), pady=(2, 2)
+        )
+        self.top_margin_entry = ttk.Entry(margin_frame, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_margin)
+        self.top_margin_entry.insert(0, str(initial_margin_mm))
+        self.top_margin_entry.grid(row=0, column=1, sticky="w", padx=(0, 12), pady=(2, 2))
+
+        ttk.Label(margin_frame, text="Od dołu (stopka):").grid(
+            row=0, column=2, sticky="e", padx=(2, 6), pady=(2, 2)
+        )
+        self.bottom_margin_entry = ttk.Entry(margin_frame, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_margin)
+        self.bottom_margin_entry.insert(0, str(initial_margin_mm))
+        self.bottom_margin_entry.grid(row=0, column=3, sticky="w", padx=(0, 2), pady=(2, 2))
+
+        # Komunikat pod polami
+        info_label = ttk.Label(
+            margin_frame,
+            text="Zakres: 0–200 mm.\nSkrypt szuka nr stron w zadanym polu. Jeśli podasz zbyt duże wartości skrypt może usunąć np. nr rozdziału.",
+            foreground="gray",
+            justify="left",
+            font=("Arial", 9),
+            wraplength=300  # <-- ograniczenie szerokości komunikatu
+        )
+        info_label.grid(row=1, column=0, columnspan=4, sticky="w", padx=(2, 2), pady=(6, 2))
 
         # Przyciski
         button_frame = ttk.Frame(main_frame)
@@ -633,13 +674,30 @@ class PageNumberMarginDialog(tk.Toplevel):
             top_mm = float(self.top_margin_entry.get().replace(',', '.'))
             bottom_mm = float(self.bottom_margin_entry.get().replace(',', '.'))
 
-            if top_mm < 0 or bottom_mm < 0:
-                raise ValueError("Wartości marginesów muszą być nieujemne.")
+            if not (0 <= top_mm <= 200 and 0 <= bottom_mm <= 200):
+                raise ValueError("Wartości marginesów muszą być z zakresu 0–200 mm.")
 
             self.result = {'top_mm': top_mm, 'bottom_mm': bottom_mm}
             self.destroy()
         except ValueError:
-            messagebox.showerror("Błąd Wprowadzania", "Wprowadź prawidłowe, nieujemne liczby (w mm).")
+            messagebox.showerror("Błąd Wprowadzania", "Wprowadź prawidłowe, nieujemne liczby (w mm, max 200).")
+
+    def cancel(self, event=None):
+        self.result = None
+        self.destroy()
+
+    def ok(self, event=None):
+        try:
+            top_mm = float(self.top_margin_entry.get().replace(',', '.'))
+            bottom_mm = float(self.bottom_margin_entry.get().replace(',', '.'))
+
+            if not (0 <= top_mm <= 200 and 0 <= bottom_mm <= 200):
+                raise ValueError("Wartości marginesów muszą być z zakresu 0–200 mm.")
+
+            self.result = {'top_mm': top_mm, 'bottom_mm': bottom_mm}
+            self.destroy()
+        except ValueError:
+            messagebox.showerror("Błąd Wprowadzania", "Wprowadź prawidłowe, nieujemne liczby (w mm, max 200).")
 
     def cancel(self, event=None):
         self.result = None
@@ -653,6 +711,9 @@ class ShiftContentDialog(tk.Toplevel):
         self.transient(parent)
         self.title("Przesuwanie zawartości stron")
         self.result = None
+
+        # WALIDATOR: tylko liczby/kropka/przecinek, zakres 0–1000
+        self.vcmd_shift = (self.register(lambda v: validate_float_range(v, 0, 1000)), "%P")
 
         self.create_widgets()
         self.resizable(False, False)
@@ -682,29 +743,39 @@ class ShiftContentDialog(tk.Toplevel):
         main_frame = ttk.Frame(self, padding="8")
         main_frame.pack(fill="both", expand=True)
 
-        # Ramka sekcji X i Y razem, jak w innych dialogach
         xy_frame = ttk.LabelFrame(main_frame, text="Kierunek i wartość przesunięcia (mm)", padding=(8, 6))
         xy_frame.pack(fill='x', padx=4, pady=(8, 0))
 
         ENTRY_WIDTH = 4
 
-        # Przesunięcie X - grid, zwarty układ
+        # Przesunięcie X (poziome)
         ttk.Label(xy_frame, text="Poziome:").grid(row=0, column=0, sticky="w", padx=(2, 8), pady=(4,2))
-        self.x_value = ttk.Entry(xy_frame, width=ENTRY_WIDTH)
+        self.x_value = ttk.Entry(xy_frame, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_shift)
         self.x_value.insert(0, "0")
         self.x_value.grid(row=0, column=1, sticky="w", padx=(0,2), pady=(4,2))
         self.x_direction = tk.StringVar(value='P')
         ttk.Radiobutton(xy_frame, text="Lewo", variable=self.x_direction, value='L').grid(row=0, column=2, sticky="w", padx=(8, 4))
         ttk.Radiobutton(xy_frame, text="Prawo", variable=self.x_direction, value='P').grid(row=0, column=3, sticky="w", padx=(0,2))
 
-        # Przesunięcie Y
+        # Przesunięcie Y (pionowe)
         ttk.Label(xy_frame, text="Pionowe:").grid(row=1, column=0, sticky="w", padx=(2, 8), pady=(8,2))
-        self.y_value = ttk.Entry(xy_frame, width=ENTRY_WIDTH)
+        self.y_value = ttk.Entry(xy_frame, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_shift)
         self.y_value.insert(0, "0")
         self.y_value.grid(row=1, column=1, sticky="w", padx=(0,2), pady=(8,2))
         self.y_direction = tk.StringVar(value='G')
         ttk.Radiobutton(xy_frame, text="Dół", variable=self.y_direction, value='D').grid(row=1, column=2, sticky="w", padx=(8, 4))
         ttk.Radiobutton(xy_frame, text="Góra", variable=self.y_direction, value='G').grid(row=1, column=3, sticky="w", padx=(0,2))
+
+        # Komunikat informacyjny przeniesiony do ramki xy_frame
+        info_label = ttk.Label(
+            xy_frame,
+            text="Zakres: 0–1000 mm.",
+            foreground="gray",
+            justify="left",
+            font=("Arial", 9),
+            wraplength=240
+        )
+        info_label.grid(row=2, column=0, columnspan=4, sticky="w", padx=(2, 2), pady=(10, 2))
 
         # Przyciski
         button_frame = ttk.Frame(main_frame)
@@ -716,8 +787,8 @@ class ShiftContentDialog(tk.Toplevel):
         try:
             x_mm = float(self.x_value.get().replace(',', '.'))
             y_mm = float(self.y_value.get().replace(',', '.'))
-            if x_mm < 0 or y_mm < 0:
-                 raise ValueError("Wartości przesunięcia muszą być nieujemne.")
+            if not (0 <= x_mm <= 1000 and 0 <= y_mm <= 1000):
+                raise ValueError("Wartości przesunięcia muszą być z zakresu 0–1000 mm.")
             self.result = {
                 'x_dir': self.x_direction.get(),
                 'y_dir': self.y_direction.get(),
@@ -726,7 +797,10 @@ class ShiftContentDialog(tk.Toplevel):
             }
             self.destroy()
         except ValueError as e:
-            messagebox.showerror("Błąd Wprowadzania", f"Nieprawidłowa wartość: {e}. Użyj cyfr, kropki lub przecinka.")
+            messagebox.showerror(
+                "Błąd Wprowadzania", 
+                f"Nieprawidłowa wartość: {e}. Użyj cyfr, kropki lub przecinka."
+            )
 
     def cancel(self, event=None):
         self.result = None
@@ -1049,7 +1123,7 @@ class EnhancedPageRangeDialog(tk.Toplevel):
         ttk.Button(center, text="Anuluj", width=12, command=self.cancel).pack(side=tk.LEFT, padx=14)
         self.bind("<Return>", self.ok)
         self.bind("<Escape>", lambda e: self.cancel())
-
+    
     def ok(self, event=None):
         raw_range = self.entry.get().strip()
         if not raw_range:
@@ -1057,15 +1131,56 @@ class EnhancedPageRangeDialog(tk.Toplevel):
             self.entry.focus_set()
             return
 
+        # 1. Sprawdzenie czy wpisane liczby są z zakresu 1-max_pages i czy zakresy nie są zbyt szerokie
+        import re
+        nums = []
+        MAX_RANGE_LEN = 1000  # zabezpieczenie przed zbyt dużymi przedziałami
+        for part in raw_range.split(','):
+            part = part.strip()
+            if not part:
+                continue
+            if '-' in part:
+                try:
+                    start, end = map(int, part.split('-'))
+                    if start > end:
+                        continue
+                    # NOWOŚĆ: sprawdź długość zakresu
+                    if end - start + 1 > MAX_RANGE_LEN:
+                        messagebox.showerror(
+                            "Błąd zakresu",
+                            f"Zakres {start}-{end} jest zbyt szeroki (max {MAX_RANGE_LEN} stron w jednym zakresie).",
+                            parent=self
+                        )
+                        self.entry.focus_set()
+                        return
+                    for n in range(start, end + 1):
+                        nums.append(n)
+                except Exception:
+                    continue
+            else:
+                try:
+                    nums.append(int(part))
+                except Exception:
+                    continue
+        too_large = [n for n in nums if n < 1 or n > self.max_pages]
+        if too_large:
+            messagebox.showerror(
+                "Błąd zakresu",
+                f"Podano numery spoza zakresu 1-{self.max_pages}: {', '.join(map(str, too_large))}",
+                parent=self
+            )
+            self.entry.focus_set()
+            return
+
         page_indices = self._parse_range(raw_range)
-        if page_indices is None:
+        if page_indices is None or len(page_indices) == 0:
             messagebox.showerror("Błąd formatu", "Niepoprawny format zakresu. Użyj np. 1, 3-5, 7.", parent=self)
             self.entry.focus_set()
             return
 
         self.result = page_indices
         self.destroy()
-
+    
     def cancel(self, event=None):
         self.result = None
         self.destroy()
@@ -1168,9 +1283,6 @@ class ThumbnailFrame(tk.Frame):
 # DIALOG SCALANIA STRON NA ARKUSZU
 # ====================================================================
 
-import tkinter as tk
-from tkinter import ttk, messagebox
-
 class MergePageGridDialog(tk.Toplevel):
     PAPER_FORMATS = {
         'A0': (841, 1189),
@@ -1181,6 +1293,7 @@ class MergePageGridDialog(tk.Toplevel):
         'A5': (148, 210),
         'A6': (105, 148),
     }
+
     def __init__(self, parent, page_count):
         super().__init__(parent)
         self.title("Scalanie strony na arkuszu")
@@ -1192,29 +1305,35 @@ class MergePageGridDialog(tk.Toplevel):
         # Domyślne wartości
         self.sheet_format = tk.StringVar(value="A4")
         self.orientation = tk.StringVar(value="Pionowa")
-        self.margin_top_mm = tk.StringVar(value="4")
-        self.margin_bottom_mm = tk.StringVar(value="4")
+        self.margin_top_mm = tk.StringVar(value="5")
+        self.margin_bottom_mm = tk.StringVar(value="5")
         self.margin_left_mm = tk.StringVar(value="5")
         self.margin_right_mm = tk.StringVar(value="5")
         self.spacing_x_mm = tk.StringVar(value="10")
         self.spacing_y_mm = tk.StringVar(value="10")
-        self.rows_var = tk.IntVar()
-        self.cols_var = tk.IntVar()
+        self.rows_var = tk.StringVar()
+        self.cols_var = tk.StringVar()
         self.page_count = page_count
 
-        # Automatycznie ustaw kwadratową siatkę dla >1 obrazka
+        # Walidatory marginesów i odstępów
+        self.vcmd_200 = (self.register(lambda v: validate_float_range(v, 0, 200)), "%P")
+
+        # Zakres dla wierszy i kolumn - stringi "1"-"10"
+        self.grid_range = [str(i) for i in range(1, 11)]
+
+        # Automatyczne ustawienie siatki początkowej
         if page_count == 1:
-            self.rows_var.set(1)
-            self.cols_var.set(1)
+            self.rows_var.set("1")
+            self.cols_var.set("1")
         else:
             import math
-            sq = math.ceil(page_count ** 0.5)
+            sq = min(max(math.ceil(page_count ** 0.5), 1), 10)
             if (sq - 1) * sq >= page_count:
-                self.rows_var.set(sq - 1)
-                self.cols_var.set(sq)
+                self.rows_var.set(str(min(max(sq - 1, 1), 10)))
+                self.cols_var.set(str(min(max(sq, 1), 10)))
             else:
-                self.rows_var.set(sq)
-                self.cols_var.set(sq)
+                self.rows_var.set(str(min(max(sq, 1), 10)))
+                self.cols_var.set(str(min(max(sq, 1), 10)))
 
         self.build_ui()
         self._update_grid_preview()
@@ -1227,6 +1346,15 @@ class MergePageGridDialog(tk.Toplevel):
         self.bind("<KP_Enter>", lambda e: self.ok())
         self.bind("<Escape>", lambda e: self.cancel())
         self.wait_window(self)
+
+    def _combo_key_num(self, combo, var, event):
+        # obsługa klawiszy 1-9 i 0 (jako 10) gdy lista rozwinięta lub focus na comboboxie
+        if event.char in "123456789":
+            var.set(event.char)
+            combo.event_generate('<<ComboboxSelected>>')
+        elif event.char == "0":
+            var.set("10")
+            combo.event_generate('<<ComboboxSelected>>')
 
     def build_ui(self):
         main_frame = ttk.Frame(self)
@@ -1266,38 +1394,37 @@ class MergePageGridDialog(tk.Toplevel):
         # Marginesy
         margin_frame = ttk.LabelFrame(left_frame, text="Marginesy [mm]")
         margin_frame.pack(fill="x", pady=8)
-        ttk.Label(margin_frame, text="Górny:").grid(row=0, column=0, sticky="e", padx=4, pady=2)
-        ttk.Entry(margin_frame, textvariable=self.margin_top_mm, width=6).grid(row=0, column=1, sticky="w", padx=2, pady=2)
-        ttk.Label(margin_frame, text="Dolny:").grid(row=0, column=2, sticky="e", padx=4, pady=2)
-        ttk.Entry(margin_frame, textvariable=self.margin_bottom_mm, width=6).grid(row=0, column=3, sticky="w", padx=2, pady=2)
-        ttk.Label(margin_frame, text="Lewy:").grid(row=1, column=0, sticky="e", padx=4, pady=2)
-        ttk.Entry(margin_frame, textvariable=self.margin_left_mm, width=6).grid(row=1, column=1, sticky="w", padx=2, pady=2)
-        ttk.Label(margin_frame, text="Prawy:").grid(row=1, column=2, sticky="e", padx=4, pady=2)
-        ttk.Entry(margin_frame, textvariable=self.margin_right_mm, width=6).grid(row=1, column=3, sticky="w", padx=2, pady=2)
-        for child in margin_frame.winfo_children():
-            if isinstance(child, ttk.Entry):
-                child.bind("<KeyRelease>", lambda e: self._update_grid_preview())
+        ttk.Label(margin_frame, text="Górny:").grid(row=0, column=0, sticky="w", padx=4, pady=2)
+        ttk.Entry(margin_frame, textvariable=self.margin_top_mm, width=6, validate="key", validatecommand=self.vcmd_200).grid(row=0, column=1, sticky="w", padx=2, pady=2)
+        ttk.Label(margin_frame, text="Dolny:").grid(row=0, column=2, sticky="w", padx=4, pady=2)
+        ttk.Entry(margin_frame, textvariable=self.margin_bottom_mm, width=6, validate="key", validatecommand=self.vcmd_200).grid(row=0, column=3, sticky="w", padx=2, pady=2)
+        ttk.Label(margin_frame, text="Lewy:").grid(row=1, column=0, sticky="w", padx=4, pady=2)
+        ttk.Entry(margin_frame, textvariable=self.margin_left_mm, width=6, validate="key", validatecommand=self.vcmd_200).grid(row=1, column=1, sticky="w", padx=2, pady=2)
+        ttk.Label(margin_frame, text="Prawy:").grid(row=1, column=2, sticky="w", padx=4, pady=2)
+        ttk.Entry(margin_frame, textvariable=self.margin_right_mm, width=6, validate="key", validatecommand=self.vcmd_200).grid(row=1, column=3, sticky="w", padx=2, pady=2)
+        ttk.Label(margin_frame, text="Zakres: 0–200 mm", foreground="gray").grid(row=2, column=0, columnspan=4, sticky="w", padx=4, pady=(3,2))
 
         # Odstępy
         spacing_frame = ttk.LabelFrame(left_frame, text="Odstępy [mm]")
         spacing_frame.pack(fill="x", pady=(0, 8))
-        ttk.Label(spacing_frame, text="Między kolumnami:").grid(row=0, column=0, sticky="e", padx=4, pady=2)
-        ttk.Entry(spacing_frame, textvariable=self.spacing_x_mm, width=6).grid(row=0, column=1, sticky="w", padx=2, pady=2)
-        ttk.Label(spacing_frame, text="Między wierszami:").grid(row=1, column=0, sticky="e", padx=4, pady=2)
-        ttk.Entry(spacing_frame, textvariable=self.spacing_y_mm, width=6).grid(row=1, column=1, sticky="w", padx=2, pady=2)
-        for child in spacing_frame.winfo_children():
-            if isinstance(child, ttk.Entry):
-                child.bind("<KeyRelease>", lambda e: self._update_grid_preview())
+        ttk.Label(spacing_frame, text="Między kolumnami:").grid(row=0, column=0, sticky="w", padx=4, pady=2)
+        ttk.Entry(spacing_frame, textvariable=self.spacing_x_mm, width=6, validate="key", validatecommand=self.vcmd_200).grid(row=0, column=1, sticky="w", padx=2, pady=2)
+        ttk.Label(spacing_frame, text="Między wierszami:").grid(row=1, column=0, sticky="w", padx=4, pady=2)
+        ttk.Entry(spacing_frame, textvariable=self.spacing_y_mm, width=6, validate="key", validatecommand=self.vcmd_200).grid(row=1, column=1, sticky="w", padx=2, pady=2)
+        ttk.Label(spacing_frame, text="Zakres: 0–200 mm", foreground="gray").grid(row=2, column=0, columnspan=2, sticky="w", padx=4, pady=(2,2))
 
-        # Liczba wierszy/kolumn
+        # Liczba wierszy/kolumn jako combobox 1-10
         grid_frame = ttk.LabelFrame(left_frame, text="Siatka stron")
         grid_frame.pack(fill="x", pady=(0, 8))
-        ttk.Label(grid_frame, text="Wiersze:").grid(row=0, column=0, sticky="e", padx=4, pady=4)
-        self.rows_entry = ttk.Entry(grid_frame, textvariable=self.rows_var, width=5, justify="center")
-        self.rows_entry.grid(row=0, column=1, sticky="w", padx=2, pady=4)
-        ttk.Label(grid_frame, text="Kolumny:").grid(row=0, column=2, sticky="e", padx=4, pady=4)
-        self.cols_entry = ttk.Entry(grid_frame, textvariable=self.cols_var, width=5, justify="center")
-        self.cols_entry.grid(row=0, column=3, sticky="w", padx=2, pady=4)
+        ttk.Label(grid_frame, text="Wiersze:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
+        self.rows_combo = ttk.Combobox(grid_frame, textvariable=self.rows_var, values=self.grid_range, width=5, state="readonly", justify="center")
+        self.rows_combo.grid(row=0, column=1, sticky="w", padx=2, pady=4)
+        self.rows_combo.bind("<Key>", lambda e: self._combo_key_num(self.rows_combo, self.rows_var, e))
+        ttk.Label(grid_frame, text="Kolumny:").grid(row=0, column=2, sticky="w", padx=4, pady=4)
+        self.cols_combo = ttk.Combobox(grid_frame, textvariable=self.cols_var, values=self.grid_range, width=5, state="readonly", justify="center")
+        self.cols_combo.grid(row=0, column=3, sticky="w", padx=2, pady=4)
+        self.cols_combo.bind("<Key>", lambda e: self._combo_key_num(self.cols_combo, self.cols_var, e))
+        #ttk.Label(grid_frame, text="Zakres: 1–10, liczba komórek ≥ liczba stron", foreground="gray").grid(row=1, column=0, columnspan=4, sticky="w", padx=4, pady=(4,2))
         self.rows_var.trace_add("write", lambda *a: self._update_grid_preview())
         self.cols_var.trace_add("write", lambda *a: self._update_grid_preview())
 
@@ -1342,7 +1469,6 @@ class MergePageGridDialog(tk.Toplevel):
             cols = int(self.cols_var.get())
             sheet_w, sheet_h = self._get_sheet_dimensions()
 
-            # Ustal pole podglądu z paddingiem
             preview_area_w = self.PREVIEW_W - 2 * self.PREVIEW_PAD
             preview_area_h = self.PREVIEW_H - 2 * self.PREVIEW_PAD
             scale = min(preview_area_w / sheet_w, preview_area_h / sheet_h)
@@ -1358,7 +1484,6 @@ class MergePageGridDialog(tk.Toplevel):
             spacing_y_px = spacing_y * scale
 
             self.preview_canvas.delete("all")
-            # Tło papieru (A4 lub poziomo) - wyśrodkowany
             self.preview_canvas.create_rectangle(
                 offset_x, offset_y, offset_x + width_px, offset_y + height_px, fill="white", outline="#bbb", width=1
             )
@@ -1408,19 +1533,28 @@ class MergePageGridDialog(tk.Toplevel):
             margin_right = float(self.margin_right_mm.get().replace(",", "."))
             spacing_x = float(self.spacing_x_mm.get().replace(",", "."))
             spacing_y = float(self.spacing_y_mm.get().replace(",", "."))
-            if any(m < 0 for m in [margin_top, margin_bottom, margin_left, margin_right]):
-                raise ValueError("Marginesy muszą być nieujemne.")
-            if spacing_x < 0 or spacing_y < 0:
-                raise ValueError("Odstępy muszą być nieujemne.")
+            if not validate_float_range(self.margin_top_mm.get(), 0, 200):
+                raise ValueError("Margines górny musi być z zakresu 0–200 mm.")
+            if not validate_float_range(self.margin_bottom_mm.get(), 0, 200):
+                raise ValueError("Margines dolny musi być z zakresu 0–200 mm.")
+            if not validate_float_range(self.margin_left_mm.get(), 0, 200):
+                raise ValueError("Margines lewy musi być z zakresu 0–200 mm.")
+            if not validate_float_range(self.margin_right_mm.get(), 0, 200):
+                raise ValueError("Margines prawy musi być z zakresu 0–200 mm.")
+            if not validate_float_range(self.spacing_x_mm.get(), 0, 200):
+                raise ValueError("Odstęp poziomy musi być z zakresu 0–200 mm.")
+            if not validate_float_range(self.spacing_y_mm.get(), 0, 200):
+                raise ValueError("Odstęp pionowy musi być z zakresu 0–200 mm.")
             rows = int(self.rows_var.get())
             cols = int(self.cols_var.get())
-            if rows < 1 or cols < 1:
-                raise ValueError("Liczba wierszy i kolumn musi być dodatnia.")
+            if not (1 <= rows <= 10 and 1 <= cols <= 10):
+                raise ValueError("Liczba wierszy i kolumn musi być z zakresu 1–10.")
+            if rows * cols < self.page_count:
+                raise ValueError("Liczba komórek siatki musi być nie mniejsza niż liczba scalanych stron.")
 
             format_name = self.sheet_format.get()
             sheet_dims = self.PAPER_FORMATS[format_name]
             orientation = self.orientation.get()
-            # Zamiana szerokości i wysokości jeśli pozioma
             if orientation == "Pozioma":
                 sheet_dims = (sheet_dims[1], sheet_dims[0])
 
@@ -1445,7 +1579,6 @@ class MergePageGridDialog(tk.Toplevel):
     def cancel(self, event=None):
         self.result = None
         self.destroy()
-        
 # ====================================================================
 # GŁÓWNA KLASA PROGRAMU: SELECTABLEPDFVIEWER
 # ====================================================================
@@ -1704,12 +1837,12 @@ class SelectablePDFViewer:
         (self.selected_pages) oraz poprawnej logiki centrowania ('srodek').
         """
         if not self.pdf_document:
-            self._update_status("Musisz najpierw załadować plik PDF.")
+            self._update_status("Musisz zaznaczyć przynajmniej jedną stronę PDF.")
             return
 
         # POPRAWKA: Sprawdzamy i używamy atrybutu self.selected_pages
         if not hasattr(self, 'selected_pages') or not self.selected_pages:
-             messagebox.showwarning("Brak wyboru", "Najpierw zaznacz strony, które mają być numerowane.")
+             self._update_status("Musisz zaznaczyć przynajmniej jedną stronę PDF.")
              return
         
         # 1. Wywołanie dialogu i pobranie ustawień
@@ -1882,7 +2015,7 @@ class SelectablePDFViewer:
         Usuwa numery stron z marginesów określonych przez użytkownika.
         """
         if not self.pdf_document or not self.selected_pages:
-            self._update_status("Musisz załadować dokument i zaznaczyć strony.")
+            self._update_status("Musisz zaznaczyć przynajmniej jedną stronę PDF.")
             return
 
         # 1. Otwarcie dialogu i pobranie wartości od użytkownika
@@ -2056,7 +2189,7 @@ class SelectablePDFViewer:
         używając PyPDF do transformacji macierzowej.
         """
         if not self.pdf_document or not self.selected_pages:
-            self._update_status("Musisz załadować dokument i zaznaczyć strony do przesunięcia.")
+            self._update_status("Musisz zaznaczyć przynajmniej jedną stronę PDF.")
             return
 
         # 1. Uruchomienie okna dialogowego i pobranie wyników
@@ -2070,53 +2203,50 @@ class SelectablePDFViewer:
         # 2. Konwersja i określenie transformacji
         dx_pt = result['x_mm'] * self.MM_TO_POINTS
         dy_pt = result['y_mm'] * self.MM_TO_POINTS
-        
+
         # Określenie znaku przesunięcia
         x_sign = 1 if result['x_dir'] == 'P' else -1 # Prawo (+), Lewo (-)
         y_sign = 1 if result['y_dir'] == 'G' else -1 # Góra (+), Dół (-)
-        
+
         final_dx = dx_pt * x_sign
         final_dy = dy_pt * y_sign # Pamiętaj, że w PDF Y rośnie w górę
 
         try:
+            self._save_state_to_undo()  # <-- najpierw zapisujemy stan przed modyfikacją
+
             pages_to_shift = sorted(list(self.selected_pages))
-            
-            # === Przygotowanie do transformacji za pomocą PyPDF ===
-            
-            # Krok 1: Zapisz aktualny dokument PyMuPDF do bufora PyPDF może go wczytać
+            # --- Zabezpieczenie przed przesuwaniem złych stron ---
+            # Przed serializacją zapisz aktualne indeksy stron do przesunięcia:
+            pages_to_shift_set = set(pages_to_shift)
+
+            # Krok 1: Zapisz aktualny dokument PyMuPDF do bufora, żeby PyPDF mógł go wczytać
             pdf_bytes = self.pdf_document.tobytes()
             pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
             pdf_writer = PdfWriter()
-            
+
             # Krok 2: Tworzenie macierzy transformacji (przesunięcie)
-            # [1, 0, 0, 1, x, y]
-            # Używamy ujemnego Y, aby przesunąć w górę (G), co jest zgodne z PDF
-            
             transform = Transformation().translate(tx=final_dx, ty=final_dy)
-            
+
             # Krok 3: Iteracja przez strony i stosowanie macierzy
             for i, page in enumerate(pdf_reader.pages):
-                if i in pages_to_shift:
-                    # Stosowanie transformacji do strony
+                if i in pages_to_shift_set:
                     page.add_transformation(transform)
-                    
-                # Dodaj stronę do nowego writera
                 pdf_writer.add_page(page)
 
             # Krok 4: Zapisanie nowego dokumentu do bufora
             new_pdf_stream = io.BytesIO()
             pdf_writer.write(new_pdf_stream)
             new_pdf_bytes = new_pdf_stream.getvalue()
-            
+
             # Krok 5: Aktualizacja stanu aplikacji za pomocą PyMuPDF
-            if self.pdf_document: self.pdf_document.close()
+            if self.pdf_document:
+                self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", new_pdf_bytes)
-            
-            # 3. Zapisanie stanu i odświeżenie GUI
-            self._save_state_to_undo() # Zapisuje nowy stan do historii
-            self._reconfigure_grid() 
+
+            # 3. Odświeżenie GUI i statusu
+            self._reconfigure_grid()
             self._update_status(f"Przesunięto zawartość na {len(pages_to_shift)} stronach o {result['x_mm']} mm (X) i {result['y_mm']} mm (Y) za pomocą PyPDF.")
-            
+
         except Exception as e:
             self._update_status(f"BŁĄD PyPDF: Nie udało się przesunąć zawartości: {e}")
             
@@ -3689,12 +3819,12 @@ class SelectablePDFViewer:
             PT_TO_INCH = 1 / 72
 
             total_cells = rows * cols
-            source_pages = []
-            for i in range(total_cells):
-                if i < num_pages:
-                    source_pages.append(selected_indices[i])
-                else:
-                    source_pages.append(selected_indices[-1])
+
+            # Poprawka: powielaj tylko jeśli jedna strona, przy wielu nie powielaj żadnej
+            if num_pages == 1:
+                source_pages = [selected_indices[0]] * total_cells
+            else:
+                source_pages = [selected_indices[i] if i < num_pages else None for i in range(total_cells)]
 
             # Oblicz rozmiar komórki (punkt PDF)
             if cols == 1:
@@ -3714,6 +3844,8 @@ class SelectablePDFViewer:
                 col = idx % cols
                 if row >= rows:
                     break
+                if src_idx is None:
+                    continue  # Pusta komórka
 
                 x = margin_left_pt + col * (cell_width + spacing_x_pt)
                 y = margin_top_pt + row * (cell_height + spacing_y_pt)
@@ -3735,7 +3867,6 @@ class SelectablePDFViewer:
                 bitmap_h = int(round(cell_height * TARGET_DPI * PT_TO_INCH))
 
                 if rotate == 90:
-                    # Zamień szerokość i wysokość strony do przeliczenia skali
                     scale_x = bitmap_w / page_h
                     scale_y = bitmap_h / page_w
                 else:
@@ -3749,7 +3880,6 @@ class SelectablePDFViewer:
                 new_page.insert_image(rect, stream=img_bytes)
 
             # Odświeżenie GUI
-       #     self.selected_pages.clear()
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
