@@ -32,7 +32,7 @@ PROGRAM_TITLE = "GRYF PDF Editor"
 PROGRAM_VERSION = "4.1.1"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
-# === STAŁE DLA A4 (w punktach PDF i mm) ===
+# === STAŁE DLA A4 [w punktach PDF i mm] ===
 A4_WIDTH_POINTS = 595.276 
 A4_HEIGHT_POINTS = 841.89
 MM_TO_POINTS = 72 / 25.4 # ~2.8346
@@ -474,7 +474,7 @@ class PageNumberingDialog(tk.Toplevel):
         ENTRY_WIDTH = 4
 
         # 1. Marginesy poziome i lustrzane
-        config_frame = ttk.LabelFrame(main_frame, text="Marginesy poziome (mm)")
+        config_frame = ttk.LabelFrame(main_frame, text="Marginesy poziome [mm]")
         config_frame.pack(fill="x", padx=PADX_GROUP, pady=PADY_GROUP)
         config_inner = ttk.Frame(config_frame)
         config_inner.pack(anchor='w', padx=2, pady=(8, 2))
@@ -632,7 +632,7 @@ class PageNumberMarginDialog(tk.Toplevel):
         main_frame.pack(fill="both", expand=True)
 
         margin_frame = ttk.LabelFrame(
-            main_frame, text="Wysokość pola z numerem (mm)", padding=(8, 4)
+            main_frame, text="Wysokość pola z numerem [mm]", padding=(8, 4)
         )
         margin_frame.pack(fill="x", padx=4, pady=(6, 2))
 
@@ -681,7 +681,7 @@ class PageNumberMarginDialog(tk.Toplevel):
             self.result = {'top_mm': top_mm, 'bottom_mm': bottom_mm}
             self.destroy()
         except ValueError:
-            messagebox.showerror("Błąd Wprowadzania", "Wprowadź prawidłowe, nieujemne liczby (w mm, max 200).")
+            messagebox.showerror("Błąd Wprowadzania", "Wprowadź prawidłowe, nieujemne liczby [w mm, max 200].")
 
     def cancel(self, event=None):
         self.result = None
@@ -698,7 +698,7 @@ class PageNumberMarginDialog(tk.Toplevel):
             self.result = {'top_mm': top_mm, 'bottom_mm': bottom_mm}
             self.destroy()
         except ValueError:
-            messagebox.showerror("Błąd Wprowadzania", "Wprowadź prawidłowe, nieujemne liczby (w mm, max 200).")
+            messagebox.showerror("Błąd Wprowadzania", "Wprowadź prawidłowe, nieujemne liczby [w mm, max 200].")
 
     def cancel(self, event=None):
         self.result = None
@@ -744,7 +744,7 @@ class ShiftContentDialog(tk.Toplevel):
         main_frame = ttk.Frame(self, padding="8")
         main_frame.pack(fill="both", expand=True)
 
-        xy_frame = ttk.LabelFrame(main_frame, text="Kierunek i wartość przesunięcia (mm)", padding=(8, 6))
+        xy_frame = ttk.LabelFrame(main_frame, text="Kierunek i wartość przesunięcia [mm]", padding=(8, 6))
         xy_frame.pack(fill='x', padx=4, pady=(8, 0))
 
         ENTRY_WIDTH = 4
@@ -874,7 +874,7 @@ class ImageImportSettingsDialog(tk.Toplevel):
         scale_frame = ttk.LabelFrame(main_frame, text="Ustawienia importu", padding=(8, 4))
         scale_frame.pack(fill='x', pady=(0, 8))
         options = [
-            ("Dopasuj do strony A4 (marginesy 25 mm)", "DOPASUJ"),
+            ("Dopasuj do strony A4 [marginesy 25 mm]", "DOPASUJ"),
             ("Oryginalny rozmiar (100%)", "ORYGINALNY"),
             ("Skala niestandardowa", "SKALA"),
             ("Dopasuj rozmiar strony do obrazu", "PAGE_TO_IMAGE"),
@@ -1023,7 +1023,7 @@ class ImageImportSettingsDialog(tk.Toplevel):
                 if not (1 <= custom_width <= 4000 and 1 <= custom_height <= 4000):
                     raise ValueError
             except Exception:
-                messagebox.showerror("Błąd", "Podaj prawidłowe wymiary strony (1–4000 mm) dla opcji 'Dokładny wymiar strony'.", parent=self)
+                messagebox.showerror("Błąd", "Podaj prawidłowe wymiary strony [1–4000 mm] dla opcji 'Dokładny wymiar strony'.", parent=self)
                 return
 
         self.result = {
@@ -1586,7 +1586,7 @@ class MergePageGridDialog(tk.Toplevel):
 class SelectablePDFViewer:
     MM_TO_POINTS = 72 / 25.4 # ~2.8346
     # === NOWE STAŁE DLA MARGINESU ===
-    # Określamy wysokość marginesu do skanowania w milimetrach (np. 20 mm)
+    # Określamy wysokość marginesu do skanowania w milimetrach [np. 20 mm]
     MARGIN_HEIGHT_MM = 20
     # Obliczamy wysokość w punktach, używając Twojej stałej konwersji
     MARGIN_HEIGHT_PT = MARGIN_HEIGHT_MM * MM_TO_POINTS 
@@ -2847,49 +2847,96 @@ class SelectablePDFViewer:
         menu_obj.add_command(label="Scal strony na arkuszu...", command=self.merge_pages_to_grid, state=tk.DISABLED)
         menu_obj.add_command(label="Odwróć kolejność wszystkich stron", command=self._reverse_pages, state=tk.DISABLED)
     
+    def _check_action_allowed(self, action_name):
+        """Check if an action is allowed based on current button/menu state"""
+        doc_loaded = self.pdf_document is not None
+        has_selection = len(self.selected_pages) > 0
+        has_single_selection = len(self.selected_pages) == 1
+        has_undo = len(self.undo_stack) > 0
+        has_redo = len(self.redo_stack) > 0
+        has_clipboard_content = self.clipboard is not None
+        
+        # Map action names to their conditions
+        conditions = {
+            'delete': doc_loaded and has_selection,
+            'cut': doc_loaded and has_selection,
+            'copy': doc_loaded and has_selection,
+            'paste': has_clipboard_content and doc_loaded and (len(self.selected_pages) <= 1),
+            'undo': has_undo,
+            'redo': has_redo,
+            'rotate': doc_loaded and has_selection,
+            'insert': doc_loaded and has_single_selection,
+            'duplicate': doc_loaded and has_single_selection,
+            'import': doc_loaded,
+            'export': doc_loaded and has_selection,
+            'select': doc_loaded,
+            'shift': doc_loaded and has_selection,
+            'remove_numbers': doc_loaded and has_selection,
+            'add_numbers': doc_loaded and has_selection,
+            'crop': doc_loaded and has_selection,
+            'zoom_in': doc_loaded and self.target_num_cols > self.min_cols,
+            'zoom_out': doc_loaded and self.target_num_cols < self.max_cols,
+        }
+        
+        return conditions.get(action_name, True)
+    
     def _setup_key_bindings(self):
-        self.master.bind('<Control-x>', lambda e: self.cut_selected_pages())
+        # With Caps Lock support - bind both lowercase and uppercase variants
+        self.master.bind('<Control-x>', lambda e: self._check_action_allowed('cut') and self.cut_selected_pages())
+        self.master.bind('<Control-X>', lambda e: self._check_action_allowed('cut') and self.cut_selected_pages())
         self.master.bind('<Control-Shift-O>', lambda e: self.open_image_as_new_pdf())
-        self.master.bind('<Control-c>', lambda e: self.copy_selected_pages())
-        self.master.bind('<Control-d>', lambda e: self.duplicate_selected_page())
-        self.master.bind('<Control-z>', lambda e: self.undo())
-        self.master.bind('<Control-y>', lambda e: self.redo())
-        self.master.bind('<Delete>', lambda e: self.delete_selected_pages())
-        self.master.bind('<BackSpace>', lambda e: self.delete_selected_pages())
-        self.master.bind('<Control-a>', lambda e: self._select_all())
-        self.master.bind('<F4>', lambda e: self._select_all())
-        self.master.bind('<F1>', lambda e: self._select_odd_pages())
-        self.master.bind('<F2>', lambda e: self._select_even_pages())
-        self.master.bind('<Control-Shift-minus>', lambda e: self.rotate_selected_page(-90))
-        self.master.bind('<Control-Shift-plus>', lambda e: self.rotate_selected_page(+90))
-        self.master.bind('<F5>', lambda e: self.shift_page_content())
-        self.master.bind('<F6>', lambda e: self.remove_page_numbers())
-        self.master.bind('<F7>', lambda e: self.insert_page_numbers())
-        self.master.bind('<F8>', lambda e: self.apply_page_crop_resize_dialog())
-        self.master.bind('<plus>', lambda e: self.zoom_in())
-        self.master.bind('<minus>', lambda e: self.zoom_out())
-        self.master.bind('<KP_Add>', lambda e: self.zoom_in())
-        self.master.bind('<KP_Subtract>', lambda e: self.zoom_out())
+        self.master.bind('<Control-c>', lambda e: self._check_action_allowed('copy') and self.copy_selected_pages())
+        self.master.bind('<Control-C>', lambda e: self._check_action_allowed('copy') and self.copy_selected_pages())
+        self.master.bind('<Control-d>', lambda e: self._check_action_allowed('duplicate') and self.duplicate_selected_page())
+        self.master.bind('<Control-D>', lambda e: self._check_action_allowed('duplicate') and self.duplicate_selected_page())
+        self.master.bind('<Control-z>', lambda e: self._check_action_allowed('undo') and self.undo())
+        self.master.bind('<Control-Z>', lambda e: self._check_action_allowed('undo') and self.undo())
+        self.master.bind('<Control-y>', lambda e: self._check_action_allowed('redo') and self.redo())
+        self.master.bind('<Control-Y>', lambda e: self._check_action_allowed('redo') and self.redo())
+        self.master.bind('<Delete>', lambda e: self._check_action_allowed('delete') and self.delete_selected_pages())
+        self.master.bind('<BackSpace>', lambda e: self._check_action_allowed('delete') and self.delete_selected_pages())
+        self.master.bind('<Control-a>', lambda e: self._check_action_allowed('select') and self._select_all())
+        self.master.bind('<Control-A>', lambda e: self._check_action_allowed('select') and self._select_all())
+        self.master.bind('<F4>', lambda e: self._check_action_allowed('select') and self._select_all())
+        self.master.bind('<F1>', lambda e: self._check_action_allowed('select') and self._select_odd_pages())
+        self.master.bind('<F2>', lambda e: self._check_action_allowed('select') and self._select_even_pages())
+        self.master.bind('<Control-Shift-minus>', lambda e: self._check_action_allowed('rotate') and self.rotate_selected_page(-90))
+        self.master.bind('<Control-Shift-plus>', lambda e: self._check_action_allowed('rotate') and self.rotate_selected_page(+90))
+        self.master.bind('<F5>', lambda e: self._check_action_allowed('shift') and self.shift_page_content())
+        self.master.bind('<F6>', lambda e: self._check_action_allowed('remove_numbers') and self.remove_page_numbers())
+        self.master.bind('<F7>', lambda e: self._check_action_allowed('add_numbers') and self.insert_page_numbers())
+        self.master.bind('<F8>', lambda e: self._check_action_allowed('crop') and self.apply_page_crop_resize_dialog())
+        self.master.bind('<plus>', lambda e: self._check_action_allowed('zoom_in') and self.zoom_in())
+        self.master.bind('<minus>', lambda e: self._check_action_allowed('zoom_out') and self.zoom_out())
+        self.master.bind('<KP_Add>', lambda e: self._check_action_allowed('zoom_in') and self.zoom_in())
+        self.master.bind('<KP_Subtract>', lambda e: self._check_action_allowed('zoom_out') and self.zoom_out())
         self.master.bind('<Control-q>', lambda e: self.close_pdf())
+        self.master.bind('<Control-Q>', lambda e: self.close_pdf())
                      
-        self.master.bind('<Control-F1>', lambda e: self._select_portrait_pages())
-        self.master.bind('<Control-F2>', lambda e: self._select_landscape_pages())
-        self.master.bind('<Control-v>', lambda e: self.paste_pages_after())
-        self.master.bind('<Control-Shift-V>', lambda e: self.paste_pages_before())
-        self.master.bind('<Control-n>', lambda e: self.insert_blank_page_after())
-        self.master.bind('<Control-Shift-N>', lambda e: self.insert_blank_page_before())
+        self.master.bind('<Control-F1>', lambda e: self._check_action_allowed('select') and self._select_portrait_pages())
+        self.master.bind('<Control-F2>', lambda e: self._check_action_allowed('select') and self._select_landscape_pages())
+        self.master.bind('<Control-v>', lambda e: self._check_action_allowed('paste') and self.paste_pages_after())
+        self.master.bind('<Control-V>', lambda e: self._check_action_allowed('paste') and self.paste_pages_after())
+        self.master.bind('<Control-Shift-V>', lambda e: self._check_action_allowed('paste') and self.paste_pages_before())
+        self.master.bind('<Control-n>', lambda e: self._check_action_allowed('insert') and self.insert_blank_page_after())
+        self.master.bind('<Control-N>', lambda e: self._check_action_allowed('insert') and self.insert_blank_page_after())
+        self.master.bind('<Control-Shift-N>', lambda e: self._check_action_allowed('insert') and self.insert_blank_page_before())
         # === SKRÓTY DLA EKSPORTU ===
         # Ctrl+E dla Eksportu stron do nowego PDF
-        self.master.bind('<Control-e>', lambda e: self.extract_selected_pages())
+        self.master.bind('<Control-e>', lambda e: self._check_action_allowed('export') and self.extract_selected_pages())
+        self.master.bind('<Control-E>', lambda e: self._check_action_allowed('export') and self.extract_selected_pages())
         # Ctrl+Shift+E dla Eksportu stron jako obrazów PNG
-        self.master.bind('<Control-Shift-E>', lambda e: self.export_selected_pages_to_image())
+        self.master.bind('<Control-Shift-E>', lambda e: self._check_action_allowed('export') and self.export_selected_pages_to_image())
         # ===========================
         self._setup_focus_logic()
         self.master.bind('<Control-o>', lambda e: self.open_pdf())
+        self.master.bind('<Control-O>', lambda e: self.open_pdf())
         self.master.bind('<Control-s>', lambda e: self.save_document())
+        self.master.bind('<Control-S>', lambda e: self.save_document())
         # Zmienione skróty
-        self.master.bind('<Control-Shift-I>', lambda e: self.import_image_to_new_page()) # Ctrl+K dla obrazu
-        self.master.bind('<Control-i>', lambda e: self.import_pdf_after_active_page()) # Ctrl+I dla PDF
+        self.master.bind('<Control-Shift-I>', lambda e: self._check_action_allowed('import') and self.import_image_to_new_page()) # Ctrl+K dla obrazu
+        self.master.bind('<Control-i>', lambda e: self._check_action_allowed('import') and self.import_pdf_after_active_page()) # Ctrl+I dla PDF
+        self.master.bind('<Control-I>', lambda e: self._check_action_allowed('import') and self.import_pdf_after_active_page()) # Ctrl+I dla PDF
         
     def _setup_focus_logic(self):
         self.master.bind('<Escape>', lambda e: self._clear_all_selection())
