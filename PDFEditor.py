@@ -2863,7 +2863,7 @@ class SelectablePDFViewer:
             'delete': doc_loaded and has_selection,
             'cut': doc_loaded and has_selection,
             'copy': doc_loaded and has_selection,
-            'paste': has_clipboard_content and doc_loaded,
+            'paste': has_clipboard_content and doc_loaded and has_selection,
             'undo': has_undo,
             'redo': has_redo,
             'rotate': doc_loaded and has_selection,
@@ -3051,7 +3051,7 @@ class SelectablePDFViewer:
         
         delete_state = tk.NORMAL if doc_loaded and has_selection else tk.DISABLED
         insert_state = tk.NORMAL if doc_loaded and has_single_selection else tk.DISABLED
-        paste_enable_state = tk.NORMAL if has_clipboard_content and doc_loaded and (len(self.selected_pages) <= 1) else tk.DISABLED 
+        paste_enable_state = tk.NORMAL if has_clipboard_content and doc_loaded and (len(self.selected_pages) > 0) else tk.DISABLED 
         rotate_state = tk.NORMAL if doc_loaded and has_selection else tk.DISABLED
         undo_state = tk.NORMAL if has_undo else tk.DISABLED
         redo_state = tk.NORMAL if has_redo else tk.DISABLED
@@ -3193,6 +3193,19 @@ class SelectablePDFViewer:
             self.update_tool_button_states()
 
     def close_pdf(self):
+        if self.pdf_document is not None and len(self.undo_stack) > 0:
+            response = messagebox.askyesnocancel(
+                "Niezapisane zmiany",
+                "Dokument został zmodyfikowany. Czy chcesz zapisać zmiany przed zamknięciem pliku?",
+                parent=self.master
+            )
+            if response is None:
+                return  # Anuluj zamykanie pliku
+            elif response is True:
+                self.save_document()
+                if len(self.undo_stack) > 0:
+                    return  # Jeśli nie udało się zapisać, nie zamykaj pliku
+            # jeśli Nie - kontynuuj zamykanie pliku (bez zapisu)
         if self.pdf_document is not None:
             self.pdf_document.close()
             self.pdf_document = None
@@ -3571,64 +3584,63 @@ class SelectablePDFViewer:
         if not self.pdf_document or not self.clipboard:
             self._update_status("BŁĄD: Schowek jest pusty.")
             return
-        
+
         num_selected = len(self.selected_pages)
-        
+        if num_selected == 0:
+            self._update_status("BŁĄD: Wklejanie wymaga zaznaczenia przynajmniej jednej strony jako miejsca docelowego.")
+            return
+        temp_doc = fitz.open("pdf", self.clipboard)
+        pages_per_paste = len(temp_doc)
+
         # Confirmation dialog for multiple pages
         if num_selected > 1:
             direction = "przed" if before else "po"
             result = messagebox.askyesno(
                 "Potwierdzenie",
-                f"Czy na pewno chcesz wkleić {self.pages_in_clipboard_count} stron {direction} {num_selected} stronach?",
+                f"Czy na pewno chcesz wkleić {pages_per_paste} stron {direction} {num_selected} stronach?",
                 parent=self.master
             )
             if not result:
                 self._update_status("Anulowano wklejanie stron.")
                 return
-        
+
         if num_selected == 0:
             # No selection - paste at the end
             target_index = len(self.pdf_document)
             self._perform_paste(target_index)
         else:
-            # Paste before/after each selected page
-            # Sort in reverse order to maintain correct indices
-            sorted_pages = sorted(self.selected_pages, reverse=True)
-            
             try:
                 self._save_state_to_undo()
-                temp_doc = fitz.open("pdf", self.clipboard)
-                pages_per_paste = len(temp_doc)
-                
-                # Track all newly pasted page indices
+                # Sort selected pages rosnąco (wstawianie od końca nie sprawdza się, bo za każdym razem przesuwamy dokument)
+                sorted_pages = sorted(self.selected_pages)
                 new_page_indices = set()
-                
+                offset = 0  # Ile już wstawiono (przesunięcie indeksów po każdej insercji)
+
                 for page_index in sorted_pages:
                     if before:
-                        target_index = page_index
+                        target_index = page_index + offset
                     else:
-                        target_index = page_index + 1
-                    
+                        target_index = page_index + 1 + offset
+
                     self.pdf_document.insert_pdf(temp_doc, start_at=target_index)
-                    
-                    # Add indices of newly pasted pages
+                    # Dodajemy do zaznaczenia nowo wstawione indeksy
                     for i in range(pages_per_paste):
                         new_page_indices.add(target_index + i)
-                
-                num_inserted = pages_per_paste * len(sorted_pages)
+                    offset += pages_per_paste
+
                 temp_doc.close()
-                
-                # Select the newly pasted pages
                 self.selected_pages = new_page_indices
-                
+
                 self.tk_images.clear()
-                for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
-                self.thumb_frames.clear()  
+                for widget in list(self.scrollable_frame.winfo_children()):
+                    widget.destroy()
+                self.thumb_frames.clear()
                 self._reconfigure_grid()
                 self.update_selection_display()
                 self.update_tool_button_states()
                 self.update_focus_display()
-                
+
+                num_inserted = pages_per_paste * num_selected
                 if num_selected == 1:
                     self._update_status(f"Wklejono {pages_per_paste} stron.")
                 else:
@@ -3643,13 +3655,14 @@ class SelectablePDFViewer:
             num_inserted = len(temp_doc)
             self.pdf_document.insert_pdf(temp_doc, start_at=target_index)
             temp_doc.close()
-            
+
             # Select the newly pasted pages
             self.selected_pages = set(range(target_index, target_index + num_inserted))
-            
+
             self.tk_images.clear()
-            for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
-            self.thumb_frames.clear()  
+            for widget in list(self.scrollable_frame.winfo_children()):
+                widget.destroy()
+            self.thumb_frames.clear()
             self._reconfigure_grid()
             self.update_selection_display()
             self.update_tool_button_states()
@@ -3926,7 +3939,7 @@ class SelectablePDFViewer:
             return
 
         num_selected = len(self.selected_pages)
-        
+
         # Confirmation dialog for multiple pages
         if num_selected > 1:
             result = messagebox.askyesno(
@@ -3940,31 +3953,31 @@ class SelectablePDFViewer:
 
         try:
             self._save_state_to_undo()
-            
-            # Sort pages in reverse order to maintain correct indices
-            sorted_pages = sorted(self.selected_pages, reverse=True)
-            
-            # Track newly created page indices
+
+            # Sort pages in ascending order
+            sorted_pages = sorted(self.selected_pages)
             new_page_indices = set()
-            
-            for page_index in sorted_pages:
-                # Tworzymy tymczasowy dokument
+            offset = 0
+
+            for original_index in sorted_pages:
+                # Po każdej insercji kolejne strony są przesunięte o offset
+                idx = original_index + offset
+
                 temp_doc = fitz.open()
-                temp_doc.insert_pdf(self.pdf_document, from_page=page_index, to_page=page_index)
-                # Wstawiamy kopię z temp_doc do oryginału
+                temp_doc.insert_pdf(self.pdf_document, from_page=idx, to_page=idx)
                 self.pdf_document.insert_pdf(
                     temp_doc,
                     from_page=0,
                     to_page=0,
-                    start_at=page_index + 1
+                    start_at=idx + 1
                 )
                 temp_doc.close()
-                # Add the new duplicated page index
-                new_page_indices.add(page_index + 1)
+                # Wstawiona strona jest zawsze na pozycji idx+1
+                new_page_indices.add(idx + 1)
+                offset += 1
 
-            # Select the newly duplicated pages
             self.selected_pages = new_page_indices
-            
+
             # Odświeżenie GUI
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()):
@@ -3974,7 +3987,7 @@ class SelectablePDFViewer:
             self.update_selection_display()
             self.update_tool_button_states()
             self.update_focus_display()
-            
+
             if num_selected == 1:
                 self._update_status(f"Zduplikowano 1 stronę.")
             else:
