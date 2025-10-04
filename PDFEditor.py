@@ -3877,6 +3877,9 @@ class SelectablePDFViewer:
             # Sort pages in reverse order to maintain correct indices when inserting
             sorted_pages = sorted(self.selected_pages, reverse=True)
             
+            # Track newly inserted page indices
+            new_page_indices = set()
+            
             for page_index in sorted_pages:
                 try:
                     # Use dimensions of existing page
@@ -3896,11 +3899,16 @@ class SelectablePDFViewer:
                     width=width,  
                     height=height
                 )
+                new_page_indices.add(target_page)
+            
+            # Select the newly inserted pages
+            self.selected_pages = new_page_indices
             
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
             self.thumb_frames.clear()
-            self._reconfigure_grid()  
+            self._reconfigure_grid()
+            self.update_selection_display()
             self.update_tool_button_states()
             self.update_focus_display()
             
