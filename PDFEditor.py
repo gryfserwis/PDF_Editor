@@ -3050,7 +3050,7 @@ class SelectablePDFViewer:
         has_clipboard_content = self.clipboard is not None
         
         delete_state = tk.NORMAL if doc_loaded and has_selection else tk.DISABLED
-        insert_state = tk.NORMAL if doc_loaded and has_single_selection else tk.DISABLED
+        insert_state = tk.NORMAL if doc_loaded and (len(self.selected_pages) > 0) else tk.DISABLED
         paste_enable_state = tk.NORMAL if has_clipboard_content and doc_loaded and (len(self.selected_pages) > 0) else tk.DISABLED 
         rotate_state = tk.NORMAL if doc_loaded and has_selection else tk.DISABLED
         undo_state = tk.NORMAL if has_undo else tk.DISABLED
@@ -3866,10 +3866,9 @@ class SelectablePDFViewer:
         
     def _handle_insert_operation(self, before: bool):
         if not self.pdf_document or len(self.selected_pages) < 1:  
-             self._update_status("BŁĄD: Zaznacz przynajmniej jedną stronę, aby wstawić obok niej nową.")
-             return
+            self._update_status("BŁĄD: Zaznacz przynajmniej jedną stronę, aby wstawić obok niej nową.")
+            return
         
-        # Confirmation dialog for multiple pages
         num_selected = len(self.selected_pages)
         if num_selected > 1:
             direction = "przed" if before else "po"
@@ -3881,50 +3880,48 @@ class SelectablePDFViewer:
             if not result:
                 self._update_status("Anulowano wstawianie pustych stron.")
                 return
-        
-        width, height = (595.276, 841.89)
-        
+
+        width, height = (595.276, 841.89)  # Domyślny A4
+
         try:
             self._save_state_to_undo()
-            
-            # Sort pages in reverse order to maintain correct indices when inserting
-            sorted_pages = sorted(self.selected_pages, reverse=True)
-            
-            # Track newly inserted page indices
+
+            sorted_pages = sorted(self.selected_pages)
             new_page_indices = set()
-            
+            offset = 0
+
             for page_index in sorted_pages:
                 try:
-                    # Use dimensions of existing page
-                    rect = self.pdf_document[page_index].rect
+                    rect = self.pdf_document[page_index + offset].rect
                     width = rect.width
                     height = rect.height  
                 except Exception:
-                    pass # Keep default A4
-                
+                    pass  # Zostaw domyślne
+
                 if before:
-                    target_page = page_index
+                    target_page = page_index + offset
                 else:
-                    target_page = page_index + 1
-                
+                    target_page = page_index + 1 + offset
+
                 self.pdf_document.insert_page(
                     pno=target_page,  
                     width=width,  
                     height=height
                 )
                 new_page_indices.add(target_page)
-            
-            # Select the newly inserted pages
+                offset += 1
+
             self.selected_pages = new_page_indices
-            
+
             self.tk_images.clear()
-            for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
+            for widget in list(self.scrollable_frame.winfo_children()):
+                widget.destroy()
             self.thumb_frames.clear()
             self._reconfigure_grid()
             self.update_selection_display()
             self.update_tool_button_states()
             self.update_focus_display()
-            
+
             if num_selected == 1:
                 self._update_status(f"Wstawiono nową, pustą stronę. Aktualna liczba stron: {len(self.pdf_document)}.")
             else:
