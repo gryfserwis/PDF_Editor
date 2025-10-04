@@ -2114,7 +2114,8 @@ class SelectablePDFViewer:
             ("Wklej po", "Ctrl+V"),
             ("Wklej przed", "Ctrl+Shift+V"),
             ("Usuń strony", "Delete/Backspace"),
-            ("Duplikuj stronę", "Ctrl+D"),
+            ("Duplikuj strony", "Ctrl+D"),
+            ("Zamień miejscami", "Ctrl+Tab"),
             ("Nowa strona po", "Ctrl+N"),
             ("Nowa strona przed", "Ctrl+Shift+N"),
         ]
@@ -2820,6 +2821,7 @@ class SelectablePDFViewer:
         menu_obj.add_command(label="Wklej po", command=self.paste_pages_after, accelerator="Ctrl+V")
         menu_obj.add_separator()
         menu_obj.add_command(label="Duplikuj stronę", command=self.duplicate_selected_page, accelerator="Ctrl+D")
+        menu_obj.add_command(label="Zamień strony miejscami", command=self.swap_pages, accelerator="Ctrl+Tab")
         menu_obj.add_separator()
         menu_obj.add_command(label="Wstaw nową stronę przed", command=self.insert_blank_page_before, accelerator="Ctrl+Shift+N")
         menu_obj.add_command(label="Wstaw nową stronę po", command=self.insert_blank_page_after, accelerator="Ctrl+N")
@@ -2861,12 +2863,13 @@ class SelectablePDFViewer:
             'delete': doc_loaded and has_selection,
             'cut': doc_loaded and has_selection,
             'copy': doc_loaded and has_selection,
-            'paste': has_clipboard_content and doc_loaded and (len(self.selected_pages) <= 1),
+            'paste': has_clipboard_content and doc_loaded,
             'undo': has_undo,
             'redo': has_redo,
             'rotate': doc_loaded and has_selection,
-            'insert': doc_loaded and has_single_selection,
-            'duplicate': doc_loaded and has_single_selection,
+            'insert': doc_loaded and has_selection,
+            'duplicate': doc_loaded and has_selection,
+            'swap': doc_loaded and len(self.selected_pages) == 2,
             'import': doc_loaded,
             'export': doc_loaded and has_selection,
             'select': doc_loaded,
@@ -2889,6 +2892,7 @@ class SelectablePDFViewer:
         self.master.bind('<Control-C>', lambda e: self._check_action_allowed('copy') and self.copy_selected_pages())
         self.master.bind('<Control-d>', lambda e: self._check_action_allowed('duplicate') and self.duplicate_selected_page())
         self.master.bind('<Control-D>', lambda e: self._check_action_allowed('duplicate') and self.duplicate_selected_page())
+        self.master.bind('<Control-Tab>', lambda e: self._check_action_allowed('swap') and self.swap_pages())
         self.master.bind('<Control-z>', lambda e: self._check_action_allowed('undo') and self.undo())
         self.master.bind('<Control-Z>', lambda e: self._check_action_allowed('undo') and self.undo())
         self.master.bind('<Control-y>', lambda e: self._check_action_allowed('redo') and self.redo())
@@ -3537,20 +3541,59 @@ class SelectablePDFViewer:
         if not self.pdf_document or not self.clipboard:
             self._update_status("BŁĄD: Schowek jest pusty.")
             return
+        
+        num_selected = len(self.selected_pages)
+        
+        # Confirmation dialog for multiple pages
+        if num_selected > 1:
+            direction = "przed" if before else "po"
+            result = messagebox.askyesno(
+                "Potwierdzenie",
+                f"Czy na pewno chcesz wkleić {self.pages_in_clipboard_count} stron {direction} {num_selected} stronach?",
+                parent=self.master
+            )
+            if not result:
+                self._update_status("Anulowano wklejanie stron.")
+                return
+        
+        if num_selected == 0:
+            # No selection - paste at the end
+            target_index = len(self.pdf_document)
+            self._perform_paste(target_index)
+        else:
+            # Paste before/after each selected page
+            # Sort in reverse order to maintain correct indices
+            sorted_pages = sorted(self.selected_pages, reverse=True)
             
-        if len(self.selected_pages) > 1:
-             self._update_status("BŁĄD: Do wklejenia po/przed, zaznacz dokładnie jedną stronę, lub w ogóle by wkleić na końcu.")
-             return
-            
-        target_index = len(self.pdf_document)
-        if len(self.selected_pages) == 1:
-            page_index = list(self.selected_pages)[0]
-            if before:
-                target_index = page_index  
-            else:
-                target_index = page_index + 1  
-            
-        self._perform_paste(target_index)
+            try:
+                self._save_state_to_undo()
+                temp_doc = fitz.open("pdf", self.clipboard)
+                pages_per_paste = len(temp_doc)
+                
+                for page_index in sorted_pages:
+                    if before:
+                        target_index = page_index
+                    else:
+                        target_index = page_index + 1
+                    
+                    self.pdf_document.insert_pdf(temp_doc, start_at=target_index)
+                
+                num_inserted = pages_per_paste * len(sorted_pages)
+                temp_doc.close()
+                
+                self.selected_pages.clear()
+                self.tk_images.clear()
+                for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
+                self.thumb_frames.clear()  
+                self._reconfigure_grid()
+                self.update_tool_button_states()
+                
+                if num_selected == 1:
+                    self._update_status(f"Wklejono {pages_per_paste} stron.")
+                else:
+                    self._update_status(f"Wklejono {num_inserted} stron razem.")
+            except Exception as e:
+                self._update_status(f"BŁĄD Wklejania: {e}")
 
     def _perform_paste(self, target_index: int):
         try:
@@ -3750,63 +3793,102 @@ class SelectablePDFViewer:
         self._handle_insert_operation(before=False)
         
     def _handle_insert_operation(self, before: bool):
-        if not self.pdf_document or len(self.selected_pages) != 1:  
-             self._update_status("BŁĄD: Zaznacz dokładnie jedną stronę, aby wstawić obok niej nową.")
+        if not self.pdf_document or len(self.selected_pages) < 1:  
+             self._update_status("BŁĄD: Zaznacz przynajmniej jedną stronę, aby wstawić obok niej nową.")
              return
-        width, height = (595.276, 841.89)
-        page_index = list(self.selected_pages)[0]
-        try:
-            # Użycie wymiarów istniejącej strony
-            rect = self.pdf_document[page_index].rect
-            width = rect.width
-            height = rect.height  
-        except Exception:
-            pass # Pozostawienie domyślnych A4
         
-        if before:
-              target_page = page_index
-        else:
-              target_page = page_index + 1
-              
+        # Confirmation dialog for multiple pages
+        num_selected = len(self.selected_pages)
+        if num_selected > 1:
+            direction = "przed" if before else "po"
+            result = messagebox.askyesno(
+                "Potwierdzenie",
+                f"Czy na pewno chcesz wstawić pustą stronę {direction} {num_selected} stronach?",
+                parent=self.master
+            )
+            if not result:
+                self._update_status("Anulowano wstawianie pustych stron.")
+                return
+        
+        width, height = (595.276, 841.89)
+        
         try:
             self._save_state_to_undo()
-            self.pdf_document.insert_page(
-                pno=target_page,  
-                width=width,  
-                height=height
-            )
-           # self.selected_pages.clear()
+            
+            # Sort pages in reverse order to maintain correct indices when inserting
+            sorted_pages = sorted(self.selected_pages, reverse=True)
+            
+            for page_index in sorted_pages:
+                try:
+                    # Use dimensions of existing page
+                    rect = self.pdf_document[page_index].rect
+                    width = rect.width
+                    height = rect.height  
+                except Exception:
+                    pass # Keep default A4
+                
+                if before:
+                    target_page = page_index
+                else:
+                    target_page = page_index + 1
+                
+                self.pdf_document.insert_page(
+                    pno=target_page,  
+                    width=width,  
+                    height=height
+                )
+            
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
             self.thumb_frames.clear()
             self._reconfigure_grid()  
             self.update_tool_button_states()
             self.update_focus_display()
-            self._update_status(f"Wstawiono nową, pustą stronę. Aktualna liczba stron: {len(self.pdf_document)}.")
+            
+            if num_selected == 1:
+                self._update_status(f"Wstawiono nową, pustą stronę. Aktualna liczba stron: {len(self.pdf_document)}.")
+            else:
+                self._update_status(f"Wstawiono {num_selected} nowych, pustych stron. Aktualna liczba stron: {len(self.pdf_document)}.")
         except Exception as e:
             self._update_status(f"BŁĄD: Wystąpił błąd podczas wstawiania: {e}")
     
     def duplicate_selected_page(self):
-        """Duplikuje aktualnie zaznaczoną stronę i wstawia ją zaraz po oryginale."""
-        if not self.pdf_document or len(self.selected_pages) != 1:
-            self._update_status("BŁĄD: Zaznacz dokładnie jedną stronę, aby ją zduplikować.")
+        """Duplikuje zaznaczone strony i wstawia je zaraz po oryginałach."""
+        if not self.pdf_document or len(self.selected_pages) < 1:
+            self._update_status("BŁĄD: Zaznacz przynajmniej jedną stronę, aby ją zduplikować.")
             return
 
-        page_index = list(self.selected_pages)[0]
+        num_selected = len(self.selected_pages)
+        
+        # Confirmation dialog for multiple pages
+        if num_selected > 1:
+            result = messagebox.askyesno(
+                "Potwierdzenie",
+                f"Czy na pewno zduplikować {num_selected} stron?",
+                parent=self.master
+            )
+            if not result:
+                self._update_status("Anulowano duplikowanie stron.")
+                return
 
         try:
             self._save_state_to_undo()
-            # Tworzymy tymczasowy dokument
-            temp_doc = fitz.open()
-            temp_doc.insert_pdf(self.pdf_document, from_page=page_index, to_page=page_index)
-            # Wstawiamy kopię z temp_doc do oryginału
-            self.pdf_document.insert_pdf(
-                temp_doc,
-                from_page=0,
-                to_page=0,
-                start_at=page_index + 1
-            )
-            temp_doc.close()
+            
+            # Sort pages in reverse order to maintain correct indices
+            sorted_pages = sorted(self.selected_pages, reverse=True)
+            
+            for page_index in sorted_pages:
+                # Tworzymy tymczasowy dokument
+                temp_doc = fitz.open()
+                temp_doc.insert_pdf(self.pdf_document, from_page=page_index, to_page=page_index)
+                # Wstawiamy kopię z temp_doc do oryginału
+                self.pdf_document.insert_pdf(
+                    temp_doc,
+                    from_page=0,
+                    to_page=0,
+                    start_at=page_index + 1
+                )
+                temp_doc.close()
 
             # Odświeżenie GUI
          #   self.selected_pages.clear()
@@ -3817,10 +3899,58 @@ class SelectablePDFViewer:
             self._reconfigure_grid()
             self.update_tool_button_states()
             self.update_focus_display()
-
-            self._update_status(f"Zduplikowano stronę {page_index + 1}. Aktualna liczba stron: {len(self.pdf_document)}.")
+            
+            if num_selected == 1:
+                self._update_status(f"Zduplikowano 1 stronę.")
+            else:
+                self._update_status(f"Zduplikowano {num_selected} stron.")
         except Exception as e:
             self._update_status(f"BŁĄD: Wystąpił błąd podczas duplikowania strony: {e}")
+  
+    def swap_pages(self):
+        """Zamienia miejscami dokładnie 2 zaznaczone strony."""
+        if not self.pdf_document or len(self.selected_pages) != 2:
+            self._update_status("BŁĄD: Zaznacz dokładnie 2 strony, aby je zamienić miejscami.")
+            return
+        
+        try:
+            self._save_state_to_undo()
+            
+            # Get the two page indices
+            pages = sorted(list(self.selected_pages))
+            page1_idx = pages[0]
+            page2_idx = pages[1]
+            
+            # Create temporary documents for both pages
+            temp_doc1 = fitz.open()
+            temp_doc1.insert_pdf(self.pdf_document, from_page=page1_idx, to_page=page1_idx)
+            
+            temp_doc2 = fitz.open()
+            temp_doc2.insert_pdf(self.pdf_document, from_page=page2_idx, to_page=page2_idx)
+            
+            # Delete both pages (delete higher index first to maintain lower index)
+            self.pdf_document.delete_page(page2_idx)
+            self.pdf_document.delete_page(page1_idx)
+            
+            # Insert them in swapped positions
+            self.pdf_document.insert_pdf(temp_doc2, from_page=0, to_page=0, start_at=page1_idx)
+            self.pdf_document.insert_pdf(temp_doc1, from_page=0, to_page=0, start_at=page2_idx)
+            
+            temp_doc1.close()
+            temp_doc2.close()
+            
+            # Refresh GUI
+            self.tk_images.clear()
+            for widget in list(self.scrollable_frame.winfo_children()):
+                widget.destroy()
+            self.thumb_frames.clear()
+            self._reconfigure_grid()
+            self.update_tool_button_states()
+            self.update_focus_display()
+            
+            self._update_status(f"Zamieniono strony {page1_idx + 1} i {page2_idx + 1} miejscami.")
+        except Exception as e:
+            self._update_status(f"BŁĄD: Wystąpił błąd podczas zamiany stron: {e}")
   
     def merge_pages_to_grid(self):
         """
