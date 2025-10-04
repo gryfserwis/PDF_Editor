@@ -3049,6 +3049,7 @@ class SelectablePDFViewer:
         import_state = tk.NORMAL if doc_loaded else tk.DISABLED 
         select_state = tk.NORMAL if doc_loaded else tk.DISABLED
         reverse_state = tk.NORMAL if doc_loaded else tk.DISABLED
+        two_pages_state = tk.NORMAL if doc_loaded and len(self.selected_pages) == 2 else tk.DISABLED,
          
         # 1. Aktualizacja przycisków w panelu głównym
         self.undo_button.config(state=undo_state)
@@ -3115,6 +3116,10 @@ class SelectablePDFViewer:
             "Przesuń zawartość zaznaczonych stron...": delete_state,
             "Przytnij / zmień rozmiar...": delete_state,
             "Scal strony na arkuszu...": delete_state,
+            "Zamknij plik": import_state, 
+            "Zapisz jako...": import_state,
+            "Zamień strony miejscami": two_pages_state            
+            
         }
         
         for menu in menus_to_update:
