@@ -23,8 +23,9 @@ else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 ICON_FOLDER = os.path.join(BASE_DIR, "icons")
-FOCUS_HIGHLIGHT_COLOR = "#B3E5FC" # Czarny (Black)
-FOCUS_HIGHLIGHT_WIDTH = 4        # Szerokość ramki fokusu (stała)
+#FOCUS_HIGHLIGHT_COLOR = "#B3E5FC" # Czarny (Black)
+FOCUS_HIGHLIGHT_COLOR = "#d3d3d3" # Czarny (Black)
+FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
 
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
@@ -1266,7 +1267,7 @@ class ThumbnailFrame(tk.Frame):
         self._bind_all_children("<Button-1>", lambda event, idx=self.page_index: self.viewer_app._handle_lpm_click(idx, event))
 
         self._bind_all_children("<Button-3>", lambda event, idx=self.page_index: self._handle_ppm_click(event, idx))
-        parent_frame.bind("<Enter>", lambda event, idx=self.page_index: self.viewer_app._focus_by_mouse(idx))
+       # parent_frame.bind("<Enter>", lambda event, idx=self.page_index: self.viewer_app._focus_by_mouse(idx))
 
     def _handle_ppm_click(self, event, page_index):
         self.viewer_app.active_page_index = page_index
@@ -1302,7 +1303,6 @@ class MergePageGridDialog(tk.Toplevel):
 
         self.configure(bg=parent.cget('bg'))
 
-        # Domyślne wartości
         self.sheet_format = tk.StringVar(value="A4")
         self.orientation = tk.StringVar(value="Pionowa")
         self.margin_top_mm = tk.StringVar(value="5")
@@ -1313,15 +1313,12 @@ class MergePageGridDialog(tk.Toplevel):
         self.spacing_y_mm = tk.StringVar(value="10")
         self.rows_var = tk.StringVar()
         self.cols_var = tk.StringVar()
+        self.dpi_var = tk.StringVar(value="300")
         self.page_count = page_count
 
-        # Walidatory marginesów i odstępów
         self.vcmd_200 = (self.register(lambda v: validate_float_range(v, 0, 200)), "%P")
-
-        # Zakres dla wierszy i kolumn - stringi "1"-"10"
         self.grid_range = [str(i) for i in range(1, 11)]
 
-        # Automatyczne ustawienie siatki początkowej
         if page_count == 1:
             self.rows_var.set("1")
             self.cols_var.set("1")
@@ -1348,7 +1345,6 @@ class MergePageGridDialog(tk.Toplevel):
         self.wait_window(self)
 
     def _combo_key_num(self, combo, var, event):
-        # obsługa klawiszy 1-9 i 0 (jako 10) gdy lista rozwinięta lub focus na comboboxie
         if event.char in "123456789":
             var.set(event.char)
             combo.event_generate('<<ComboboxSelected>>')
@@ -1360,15 +1356,11 @@ class MergePageGridDialog(tk.Toplevel):
         main_frame = ttk.Frame(self)
         main_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # LEWA CZĘŚĆ - POLA USTAWIEŃ
         left_frame = ttk.Frame(main_frame)
         left_frame.pack(side="left", fill="y", expand=False, padx=(0, 10))
-
-        # PRAWA CZĘŚĆ - PODGLĄD
         right_frame = ttk.Frame(main_frame)
         right_frame.pack(side="left", fill="both", expand=True)
 
-        # Format arkusza i orientacja
         format_frame = ttk.LabelFrame(left_frame, text="Arkusz docelowy")
         format_frame.pack(fill="x", pady=(0, 8))
         ttk.Label(format_frame, text="Format:").grid(row=0, column=0, sticky="e", padx=4, pady=4)
@@ -1381,7 +1373,6 @@ class MergePageGridDialog(tk.Toplevel):
         )
         format_combo.grid(row=0, column=1, sticky="w", padx=4, pady=4)
         format_combo.bind("<<ComboboxSelected>>", lambda e: self._update_grid_preview())
-        # Orientacja - radio buttony
         orient_label = ttk.Label(format_frame, text="Orientacja:")
         orient_label.grid(row=1, column=0, sticky="e", padx=4, pady=4)
         orient_radio_frame = ttk.Frame(format_frame)
@@ -1391,7 +1382,6 @@ class MergePageGridDialog(tk.Toplevel):
         orient_poz = ttk.Radiobutton(orient_radio_frame, text="Pozioma", variable=self.orientation, value="Pozioma", command=self._update_grid_preview)
         orient_poz.pack(side="left")
 
-        # Marginesy
         margin_frame = ttk.LabelFrame(left_frame, text="Marginesy [mm]")
         margin_frame.pack(fill="x", pady=8)
         ttk.Label(margin_frame, text="Górny:").grid(row=0, column=0, sticky="w", padx=4, pady=2)
@@ -1404,7 +1394,6 @@ class MergePageGridDialog(tk.Toplevel):
         ttk.Entry(margin_frame, textvariable=self.margin_right_mm, width=6, validate="key", validatecommand=self.vcmd_200).grid(row=1, column=3, sticky="w", padx=2, pady=2)
         ttk.Label(margin_frame, text="Zakres: 0–200 mm", foreground="gray").grid(row=2, column=0, columnspan=4, sticky="w", padx=4, pady=(3,2))
 
-        # Odstępy
         spacing_frame = ttk.LabelFrame(left_frame, text="Odstępy [mm]")
         spacing_frame.pack(fill="x", pady=(0, 8))
         ttk.Label(spacing_frame, text="Między kolumnami:").grid(row=0, column=0, sticky="w", padx=4, pady=2)
@@ -1413,7 +1402,19 @@ class MergePageGridDialog(tk.Toplevel):
         ttk.Entry(spacing_frame, textvariable=self.spacing_y_mm, width=6, validate="key", validatecommand=self.vcmd_200).grid(row=1, column=1, sticky="w", padx=2, pady=2)
         ttk.Label(spacing_frame, text="Zakres: 0–200 mm", foreground="gray").grid(row=2, column=0, columnspan=2, sticky="w", padx=4, pady=(2,2))
 
-        # Liczba wierszy/kolumn jako combobox 1-10
+        # NOWY WYBÓR DPI
+        dpi_frame = ttk.LabelFrame(left_frame, text="Rozdzielczość eksportu (DPI)")
+        dpi_frame.pack(fill="x", pady=(0, 8))
+        ttk.Label(dpi_frame, text="DPI:").grid(row=0, column=0, sticky="e", padx=4, pady=4)
+        dpi_combo = ttk.Combobox(
+            dpi_frame,
+            textvariable=self.dpi_var,
+            values=["72", "150", "300", "600"],
+            state="readonly",
+            width=6
+        )
+        dpi_combo.grid(row=0, column=1, sticky="w", padx=2, pady=4)
+
         grid_frame = ttk.LabelFrame(left_frame, text="Siatka stron")
         grid_frame.pack(fill="x", pady=(0, 8))
         ttk.Label(grid_frame, text="Wiersze:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
@@ -1424,16 +1425,14 @@ class MergePageGridDialog(tk.Toplevel):
         self.cols_combo = ttk.Combobox(grid_frame, textvariable=self.cols_var, values=self.grid_range, width=5, state="readonly", justify="center")
         self.cols_combo.grid(row=0, column=3, sticky="w", padx=2, pady=4)
         self.cols_combo.bind("<Key>", lambda e: self._combo_key_num(self.cols_combo, self.cols_var, e))
-        #ttk.Label(grid_frame, text="Zakres: 1–10, liczba komórek ≥ liczba stron", foreground="gray").grid(row=1, column=0, columnspan=4, sticky="w", padx=4, pady=(4,2))
         self.rows_var.trace_add("write", lambda *a: self._update_grid_preview())
         self.cols_var.trace_add("write", lambda *a: self._update_grid_preview())
 
-        # Podgląd na tle okna, wyśrodkowany, zawsze ten sam rozmiar
         preview_frame = ttk.LabelFrame(right_frame, text="Podgląd rozkładu stron")
         preview_frame.pack(fill="both", expand=True)
         self.PREVIEW_W = 320
         self.PREVIEW_H = 450
-        self.PREVIEW_PAD = 20  # odstęp od ramki
+        self.PREVIEW_PAD = 20
         self.preview_canvas = tk.Canvas(
             preview_frame,
             width=self.PREVIEW_W,
@@ -1443,7 +1442,6 @@ class MergePageGridDialog(tk.Toplevel):
         )
         self.preview_canvas.pack(padx=0, pady=0, fill="both", expand=True)
 
-        # Przyciski na dole
         button_frame = ttk.Frame(self)
         button_frame.pack(fill="x", padx=16, pady=(0, 12), side="bottom")
         ttk.Button(button_frame, text="Zastosuj", command=self.ok).pack(side="left", expand=True, padx=5)
@@ -1570,7 +1568,8 @@ class MergePageGridDialog(tk.Toplevel):
                 "spacing_y_mm": spacing_y,
                 "rows": rows,
                 "cols": cols,
-                "orientation": orientation
+                "orientation": orientation,
+                "dpi": int(self.dpi_var.get())
             }
             self.destroy()
         except Exception as e:
@@ -1579,6 +1578,7 @@ class MergePageGridDialog(tk.Toplevel):
     def cancel(self, event=None):
         self.result = None
         self.destroy()
+
 # ====================================================================
 # GŁÓWNA KLASA PROGRAMU: SELECTABLEPDFVIEWER
 # ====================================================================
@@ -1598,9 +1598,9 @@ class SelectablePDFViewer:
 
     MM_TO_POINTS = 72 / 25.4
 
-    def _focus_by_mouse(self, page_index):
-        self.active_page_index = page_index
-        self.update_focus_display(hide_mouse_focus=False)
+    #def _focus_by_mouse(self, page_index):
+    #   self.hovered_page_index = page_index
+    #    self.update_focus_display(hide_mouse_focus=False)
 
     def _setup_drag_and_drop_file(self):
         # Rejestrujemy canvas do odbioru plików DND
@@ -2914,15 +2914,13 @@ class SelectablePDFViewer:
             self.update_focus_display()
             
     def _select_range(self, start_index, end_index):
-        if not self.pdf_document: return
+        if not self.pdf_document:
+            return
         if start_index > end_index:
             start_index, end_index = end_index, start_index
-        self.selected_pages.clear() 
-        for i in range(start_index, end_index + 1):
-            if i < len(self.pdf_document):
-                self.selected_pages.add(i)
+        self.selected_pages = set(range(start_index, end_index + 1))
         self.update_selection_display()
-        self.active_page_index = end_index 
+        self.active_page_index = end_index
         
     def _clear_all_selection(self):
         if self.pdf_document:
@@ -2975,8 +2973,7 @@ class SelectablePDFViewer:
         else:
             self._toggle_selection_lpm(page_index)
         self.active_page_index = page_index
-        self.update_focus_display(hide_mouse_focus=False)
-
+        self.update_focus_display(hide_mouse_focus=True)
     def _toggle_selection_lpm(self, page_index):
         if page_index in self.selected_pages:
             self.selected_pages.remove(page_index)
@@ -3815,7 +3812,7 @@ class SelectablePDFViewer:
             rows = params["rows"]
             cols = params["cols"]
 
-            TARGET_DPI = 600  # Bardzo wysoka rozdzielczość bitmapy
+            TARGET_DPI = params.get("dpi", 600)
             PT_TO_INCH = 1 / 72
 
             total_cells = rows * cols
