@@ -29,7 +29,7 @@ FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
 
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
-PROGRAM_VERSION = "4.1.1"
+PROGRAM_VERSION = "4.1.2"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
 # === STAŁE DLA A4 [w punktach PDF i mm] ===
@@ -106,6 +106,9 @@ class PageCropResizeDialog(tk.Toplevel):
         self.title("Kadrowanie i zmiana rozmiaru stron")
         self.transient(parent)
         self.result = None
+        
+        # Pozycjonuj poza ekranem, aby uniknąć migotania
+        self.geometry("+10000+10000")
 
         self.crop_mode = tk.StringVar(value="nocrop")
         self.margin_top = tk.StringVar(value="10")
@@ -424,6 +427,9 @@ class PageNumberingDialog(tk.Toplevel):
         self.transient(parent)
         self.title("Dodawanie numeracji stron")
         self.result = None
+        
+        # Pozycjonuj poza ekranem, aby uniknąć migotania
+        self.geometry("+10000+10000")
 
         # Walidatory
         self.vcmd_200 = (self.register(lambda v: validate_float_range(v, 1, 200)), "%P")
@@ -603,6 +609,9 @@ class PageNumberMarginDialog(tk.Toplevel):
         self.transient(parent)
         self.title("Usuwanie numeracji stron")
         self.result = None
+        
+        # Pozycjonuj poza ekranem, aby uniknąć migotania
+        self.geometry("+10000+10000")
 
         self.vcmd_margin = (self.register(lambda v: validate_float_range(v, 0, 200)), "%P")
         self.create_widgets(initial_margin_mm)
@@ -712,6 +721,9 @@ class ShiftContentDialog(tk.Toplevel):
         self.transient(parent)
         self.title("Przesuwanie zawartości stron")
         self.result = None
+        
+        # Pozycjonuj poza ekranem, aby uniknąć migotania
+        self.geometry("+10000+10000")
 
         # WALIDATOR: tylko liczby/kropka/przecinek, zakres 0–1000
         self.vcmd_shift = (self.register(lambda v: validate_float_range(v, 0, 1000)), "%P")
@@ -814,6 +826,9 @@ class ImageImportSettingsDialog(tk.Toplevel):
         self.title(title)
         self.image_path = image_path
         self.result = None
+        
+        # Pozycjonuj poza ekranem, aby uniknąć migotania
+        self.geometry("+10000+10000")
 
         self.image_pixel_width, self.image_pixel_height = 0, 0
         self.image_dpi = 96
@@ -1056,6 +1071,9 @@ class EnhancedPageRangeDialog(tk.Toplevel):
         self.transient(parent)
         self.title(title)
         self.imported_doc = imported_doc
+        
+        # Pozycjonuj poza ekranem, aby uniknąć migotania
+        self.geometry("+10000+10000")
 
         try:
             self.max_pages = len(imported_doc)
@@ -1068,6 +1086,11 @@ class EnhancedPageRangeDialog(tk.Toplevel):
 
         self.result = None
 
+        self.initial_focus = self.body()
+        self.buttonbox()
+        
+        self.update_idletasks()
+        
         dialog_width, dialog_height = 300, 155
         parent_x, parent_y = parent.winfo_rootx(), parent.winfo_rooty()
         parent_width, parent_height = parent.winfo_width(), parent.winfo_height()
@@ -1076,9 +1099,6 @@ class EnhancedPageRangeDialog(tk.Toplevel):
         self.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
         self.resizable(False, False)
         self.grab_set()
-
-        self.initial_focus = self.body()
-        self.buttonbox()
 
         if self.initial_focus:
             self.initial_focus.focus_set()
@@ -1300,6 +1320,9 @@ class MergePageGridDialog(tk.Toplevel):
         self.title("Scalanie strony na arkuszu")
         self.transient(parent)
         self.result = None
+        
+        # Pozycjonuj poza ekranem, aby uniknąć migotania
+        self.geometry("+10000+10000")
 
         self.configure(bg=parent.cget('bg'))
 
@@ -2103,6 +2126,7 @@ class SelectablePDFViewer:
         shortcuts_left = [
             ("Otwórz PDF", "Ctrl+O"),
             ("Zapisz jako...", "Ctrl+S"),
+            ("Zamknij plik", "Ctrl+Q"),
             ("Importuj PDF", "Ctrl+I"),
             ("Importuj obraz", "Ctrl+Shift+I"),
             ("Eksportuj PDF", "Ctrl+E"),
@@ -2131,57 +2155,115 @@ class SelectablePDFViewer:
             ("Usuń numery", "F6"),
             ("Wstaw numery", "F7"),
             ("Przytnij/zmień rozmiar", "F8"),
-            ("Zoom +", "+"),
-            ("Zoom -", "-"),
+            ("Zoom +", "Ctrl++ / +"),
+            ("Zoom -", "Ctrl+- / -"),
+            ("Pierwsza strona", "Home"),
+            ("Ostatnia strona", "End"),
+            ("Poprzednia strona", "PageUp"),
+            ("Następna strona", "PageDown"),
             ("Nawigacja", "Strzałki, Spacja, Esc"),
         ]
 
         import tkinter as tk
         dialog = tk.Toplevel(self.master)
         dialog.title("Skróty klawiszowe")
-        dialog.resizable(False, False)
         dialog.transient(self.master)
-        width, height = 650, 490
-        x = self.master.winfo_x() + (self.master.winfo_width() - width) // 2
-        y = self.master.winfo_y() + (self.master.winfo_height() - height) // 2
-        dialog.geometry(f"{width}x{height}+{x}+{y}")
+        
+        # Pozycjonuj poza ekranem, aby uniknąć migotania
+        dialog.geometry("+10000+10000")
 
         bg = "white"
         grid_color = "#e3e3e3"
-        table = tk.Frame(dialog, bg=bg, bd=1, relief="solid", highlightbackground=grid_color, highlightthickness=1)
-        table.pack(padx=24, pady=24, fill="both", expand=False)
-
+        
+        # Oblicz maksymalną dostępną wysokość (80% wysokości ekranu)
+        screen_height = dialog.winfo_screenheight()
+        max_height = int(screen_height * 0.8)
+        
+        # Ramka zewnętrzna z możliwością scrollowania
+        outer_frame = tk.Frame(dialog, bg=bg)
+        outer_frame.pack(fill="both", expand=True, padx=24, pady=24)
+        
+        # Canvas i scrollbar
+        canvas = tk.Canvas(outer_frame, bg=bg, highlightthickness=0)
+        scrollbar = tk.Scrollbar(outer_frame, orient="vertical", command=canvas.yview)
+        
+        # Ramka wewnętrzna z tabelą
+        scrollable_frame = tk.Frame(canvas, bg=bg, bd=1, relief="solid", 
+                                     highlightbackground=grid_color, highlightthickness=1)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Budowa tabeli ze skrótami
         max_rows = max(len(shortcuts_left), len(shortcuts_right))
         for i in range(max_rows):
             row_idx = i * 2
             # Lewa kolumna
             if i < len(shortcuts_left):
                 op, key = shortcuts_left[i]
-                l_op = tk.Label(table, text=op, bg=bg, anchor="w", font=("Arial", 10))
-                l_key = tk.Label(table, text=key, bg=bg, anchor="e", font=("Arial", 10, "bold"), fg="#234")
+                l_op = tk.Label(scrollable_frame, text=op, bg=bg, anchor="w", font=("Arial", 10))
+                l_key = tk.Label(scrollable_frame, text=key, bg=bg, anchor="e", font=("Arial", 10, "bold"), fg="#234")
                 l_op.grid(row=row_idx, column=0, sticky="ew", padx=(10, 6), pady=(2,2))
                 l_key.grid(row=row_idx, column=1, sticky="ew", padx=(2, 20), pady=(2,2))
             else:
-                tk.Label(table, text="", bg=bg).grid(row=row_idx, column=0)
-                tk.Label(table, text="", bg=bg).grid(row=row_idx, column=1)
+                tk.Label(scrollable_frame, text="", bg=bg).grid(row=row_idx, column=0)
+                tk.Label(scrollable_frame, text="", bg=bg).grid(row=row_idx, column=1)
             # Prawa kolumna
             if i < len(shortcuts_right):
                 op, key = shortcuts_right[i]
-                r_op = tk.Label(table, text=op, bg=bg, anchor="w", font=("Arial", 10))
-                r_key = tk.Label(table, text=key, bg=bg, anchor="e", font=("Arial", 10, "bold"), fg="#234")
+                r_op = tk.Label(scrollable_frame, text=op, bg=bg, anchor="w", font=("Arial", 10))
+                r_key = tk.Label(scrollable_frame, text=key, bg=bg, anchor="e", font=("Arial", 10, "bold"), fg="#234")
                 r_op.grid(row=row_idx, column=2, sticky="ew", padx=(20, 6), pady=(2,2))
                 r_key.grid(row=row_idx, column=3, sticky="ew", padx=(2, 10), pady=(2,2))
             else:
-                tk.Label(table, text="", bg=bg).grid(row=row_idx, column=2)
-                tk.Label(table, text="", bg=bg).grid(row=row_idx, column=3)
+                tk.Label(scrollable_frame, text="", bg=bg).grid(row=row_idx, column=2)
+                tk.Label(scrollable_frame, text="", bg=bg).grid(row=row_idx, column=3)
             # Linia pozioma pod każdym wierszem (poza ostatnim)
             if i < max_rows-1:
                 for col in range(4):
-                    frame = tk.Frame(table, bg=grid_color, height=1)
+                    frame = tk.Frame(scrollable_frame, bg=grid_color, height=1)
                     frame.grid(row=row_idx+1, column=col, sticky="ewns")
+        
         for col in range(4):
-            table.grid_columnconfigure(col, weight=1)
+            scrollable_frame.grid_columnconfigure(col, weight=1)
+        
+        # Aktualizuj geometry i sprawdź czy potrzebny scrollbar
+        dialog.update_idletasks()
+        
+        # Szerokość dialogu
+        width = 700
+        
+        # Oblicz wysokość zawartości
+        content_height = scrollable_frame.winfo_reqheight() + 48  # +48 na paddingi
+        
+        # Ustal wysokość dialogu
+        if content_height > max_height:
+            height = max_height
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+        else:
+            height = content_height
+            canvas.pack(side="left", fill="both", expand=True)
+        
+        # Wyśrodkuj okno
+        x = self.master.winfo_x() + (self.master.winfo_width() - width) // 2
+        y = self.master.winfo_y() + (self.master.winfo_height() - height) // 2
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
+        
+        dialog.resizable(False, False)
         dialog.bind('<Escape>', lambda e: dialog.destroy())
+        
+        # Obsługa kółka myszy dla scrollowania
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        dialog.bind("<Destroy>", lambda e: canvas.unbind_all("<MouseWheel>"))
+        
         dialog.focus_force()
         
     def shift_page_content(self):
@@ -2949,6 +3031,10 @@ class SelectablePDFViewer:
         self.master.bind('<Right>', lambda e: self._move_focus_and_scroll(1))
         self.master.bind('<Up>', lambda e: self._move_focus_and_scroll(-self.target_num_cols))
         self.master.bind('<Down>', lambda e: self._move_focus_and_scroll(self.target_num_cols))
+        self.master.bind('<Home>', lambda e: self._jump_to_first_page())
+        self.master.bind('<End>', lambda e: self._jump_to_last_page())
+        self.master.bind('<Prior>', lambda e: self._page_up())  # PageUp
+        self.master.bind('<Next>', lambda e: self._page_down())  # PageDown
 
     def _select_all(self):
         if self.pdf_document:
@@ -3015,6 +3101,64 @@ class SelectablePDFViewer:
                 elif norm_bottom > current_bottom:
                     scroll_pos = norm_bottom - (current_bottom - current_top)
                     self.canvas.yview_moveto(scroll_pos)
+    
+    def _jump_to_first_page(self):
+        """Przejdź do pierwszej strony (Home)"""
+        if not self.pdf_document or len(self.pdf_document) == 0:
+            return
+        self.active_page_index = 0
+        self.update_focus_display(hide_mouse_focus=False)
+        frame = self._get_page_frame(0)
+        if frame:
+            self.canvas.yview_moveto(0)
+    
+    def _jump_to_last_page(self):
+        """Przejdź do ostatniej strony (End)"""
+        if not self.pdf_document or len(self.pdf_document) == 0:
+            return
+        self.active_page_index = len(self.pdf_document) - 1
+        self.update_focus_display(hide_mouse_focus=False)
+        frame = self._get_page_frame(self.active_page_index)
+        if frame:
+            self.canvas.yview_moveto(1.0)
+    
+    def _page_up(self):
+        """Przewiń w górę o jedną 'stronę' miniatur (PageUp)"""
+        if not self.pdf_document:
+            return
+        # Oblicz ile wierszy mieści się w oknie
+        canvas_height = self.canvas.winfo_height()
+        # Oszacuj wysokość wiersza (średnia wysokość miniatury + padding)
+        if self.thumb_frames:
+            first_frame = self._get_page_frame(0)
+            if first_frame:
+                row_height = first_frame.winfo_height() + self.THUMB_PADDING
+                rows_per_page = max(1, canvas_height // row_height)
+                # Przesuń fokus o liczbę miniatur odpowiadającą liczbie wierszy * liczbie kolumn
+                delta = -(rows_per_page * self.target_num_cols)
+                self._move_focus_and_scroll(delta)
+                return
+        # Fallback - przesuń o 10 stron
+        self._move_focus_and_scroll(-10)
+    
+    def _page_down(self):
+        """Przewiń w dół o jedną 'stronę' miniatur (PageDown)"""
+        if not self.pdf_document:
+            return
+        # Oblicz ile wierszy mieści się w oknie
+        canvas_height = self.canvas.winfo_height()
+        # Oszacuj wysokość wiersza (średnia wysokość miniatury + padding)
+        if self.thumb_frames:
+            first_frame = self._get_page_frame(0)
+            if first_frame:
+                row_height = first_frame.winfo_height() + self.THUMB_PADDING
+                rows_per_page = max(1, canvas_height // row_height)
+                # Przesuń fokus o liczbę miniatur odpowiadającą liczbie wierszy * liczbie kolumn
+                delta = rows_per_page * self.target_num_cols
+                self._move_focus_and_scroll(delta)
+                return
+        # Fallback - przesuń o 10 stron
+        self._move_focus_and_scroll(10)
                         
     def _handle_lpm_click(self, page_index, event):
         # Validate page_index before using it
