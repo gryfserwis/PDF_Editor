@@ -3017,6 +3017,10 @@ class SelectablePDFViewer:
                     self.canvas.yview_moveto(scroll_pos)
                         
     def _handle_lpm_click(self, page_index, event):
+        # Validate page_index before using it
+        if not self.pdf_document or page_index < 0 or page_index >= len(self.pdf_document):
+            return
+        
         is_shift_pressed = (event.state & 0x1) != 0 
         if is_shift_pressed and self.selected_pages:
             last_active = self.active_page_index
@@ -3025,7 +3029,12 @@ class SelectablePDFViewer:
             self._toggle_selection_lpm(page_index)
         self.active_page_index = page_index
         self.update_focus_display(hide_mouse_focus=True)
+        
     def _toggle_selection_lpm(self, page_index):
+        # Validate page_index before using it
+        if not self.pdf_document or page_index < 0 or page_index >= len(self.pdf_document):
+            return
+            
         if page_index in self.selected_pages:
             self.selected_pages.remove(page_index)
         else:
@@ -3304,12 +3313,15 @@ class SelectablePDFViewer:
             self.pdf_document.insert_pdf(temp_doc_for_insert, start_at=insert_index)
             temp_doc_for_insert.close()
 
-       #     self.selected_pages.clear()
+            # Select the newly imported pages
+            self.selected_pages = set(range(insert_index, insert_index + num_inserted))
+            
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
             self.thumb_frames.clear()
 
             self._reconfigure_grid()
+            self.update_selection_display()
             self.update_tool_button_states()
             self.update_focus_display()
             self._update_status(f"Zaimportowano {num_inserted} wybranych stron i wstawiono w pozycji {insert_index}.")
@@ -3454,6 +3466,9 @@ class SelectablePDFViewer:
 
             self._save_state_to_undo()
             self.pdf_document.insert_pdf(imported_doc, from_page=0, to_page=0, start_at=insert_index)
+            
+            # Select the newly imported image page
+            self.selected_pages = {insert_index}
             self.active_page_index = insert_index
 
             self.tk_images.clear()
@@ -3462,6 +3477,7 @@ class SelectablePDFViewer:
             self.thumb_frames.clear()
 
             self._reconfigure_grid()
+            self.update_selection_display()
             self.update_tool_button_states()
             self.update_focus_display()
 
@@ -3527,11 +3543,20 @@ class SelectablePDFViewer:
                 self.pdf_document.delete_page(page_index)
             deleted_count = len(self.selected_pages)
             self.selected_pages.clear()
+            
+            # Validate and update active_page_index after deletion
+            if self.pdf_document and len(self.pdf_document) > 0:
+                self.active_page_index = min(self.active_page_index, len(self.pdf_document) - 1)
+                self.active_page_index = max(0, self.active_page_index)
+            else:
+                self.active_page_index = 0
+            
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
             self.thumb_frames.clear()  
             self._reconfigure_grid()
             self.update_tool_button_states()
+            self.update_focus_display()
             self._update_status(f"Wycięto {deleted_count} stron i skopiowano do schowka.")
         except Exception as e:
             self._update_status(f"BŁĄD Wycinania: {e}")
@@ -3575,6 +3600,9 @@ class SelectablePDFViewer:
                 temp_doc = fitz.open("pdf", self.clipboard)
                 pages_per_paste = len(temp_doc)
                 
+                # Track all newly pasted page indices
+                new_page_indices = set()
+                
                 for page_index in sorted_pages:
                     if before:
                         target_index = page_index
@@ -3582,16 +3610,24 @@ class SelectablePDFViewer:
                         target_index = page_index + 1
                     
                     self.pdf_document.insert_pdf(temp_doc, start_at=target_index)
+                    
+                    # Add indices of newly pasted pages
+                    for i in range(pages_per_paste):
+                        new_page_indices.add(target_index + i)
                 
                 num_inserted = pages_per_paste * len(sorted_pages)
                 temp_doc.close()
                 
-                self.selected_pages.clear()
+                # Select the newly pasted pages
+                self.selected_pages = new_page_indices
+                
                 self.tk_images.clear()
                 for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
                 self.thumb_frames.clear()  
                 self._reconfigure_grid()
+                self.update_selection_display()
                 self.update_tool_button_states()
+                self.update_focus_display()
                 
                 if num_selected == 1:
                     self._update_status(f"Wklejono {pages_per_paste} stron.")
@@ -3604,18 +3640,20 @@ class SelectablePDFViewer:
         try:
             self._save_state_to_undo()
             temp_doc = fitz.open("pdf", self.clipboard)
-            self.pdf_document.insert_pdf(temp_doc, start_at=target_index)
             num_inserted = len(temp_doc)
+            self.pdf_document.insert_pdf(temp_doc, start_at=target_index)
             temp_doc.close()
-          # czyszczenie schowka
-          #  self.clipboard = None
-          # self.pages_in_clipboard_count = 0
-            self.selected_pages.clear()
+            
+            # Select the newly pasted pages
+            self.selected_pages = set(range(target_index, target_index + num_inserted))
+            
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
             self.thumb_frames.clear()  
             self._reconfigure_grid()
+            self.update_selection_display()
             self.update_tool_button_states()
+            self.update_focus_display()
             self._update_status(f"Wklejono {num_inserted} stron w pozycji {target_index}.")
         except Exception as e:
             self._update_status(f"BŁĄD Wklejania: {e}")
@@ -3694,13 +3732,21 @@ class SelectablePDFViewer:
             if self.pdf_document: 
                 self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", previous_state_bytes)
-          #  self.selected_pages.clear()
+            
+            # Clear selection and validate indices after restoring document
+            self.selected_pages.clear()
             self.tk_images.clear()
             self.thumb_frames.clear()
             for widget in list(self.scrollable_frame.winfo_children()):  
                 widget.destroy()
 
-            self.active_page_index = min(self.active_page_index, len(self.pdf_document) - 1)
+            # Validate and clamp active_page_index to valid range
+            if self.pdf_document and len(self.pdf_document) > 0:
+                self.active_page_index = min(self.active_page_index, len(self.pdf_document) - 1)
+                self.active_page_index = max(0, self.active_page_index)
+            else:
+                self.active_page_index = 0
+            
             self._reconfigure_grid()  
             self.update_tool_button_states()
             self.update_focus_display()
@@ -3730,13 +3776,21 @@ class SelectablePDFViewer:
             if self.pdf_document:
                 self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", next_state_bytes)
-         #   self.selected_pages.clear()
+            
+            # Clear selection and validate indices after restoring document
+            self.selected_pages.clear()
             self.tk_images.clear()
             self.thumb_frames.clear()
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
 
-            self.active_page_index = min(self.active_page_index, len(self.pdf_document) - 1)
+            # Validate and clamp active_page_index to valid range
+            if self.pdf_document and len(self.pdf_document) > 0:
+                self.active_page_index = min(self.active_page_index, len(self.pdf_document) - 1)
+                self.active_page_index = max(0, self.active_page_index)
+            else:
+                self.active_page_index = 0
+            
             self._reconfigure_grid()
             self.update_tool_button_states()
             self.update_focus_display()
@@ -3823,6 +3877,9 @@ class SelectablePDFViewer:
             # Sort pages in reverse order to maintain correct indices when inserting
             sorted_pages = sorted(self.selected_pages, reverse=True)
             
+            # Track newly inserted page indices
+            new_page_indices = set()
+            
             for page_index in sorted_pages:
                 try:
                     # Use dimensions of existing page
@@ -3842,11 +3899,16 @@ class SelectablePDFViewer:
                     width=width,  
                     height=height
                 )
+                new_page_indices.add(target_page)
+            
+            # Select the newly inserted pages
+            self.selected_pages = new_page_indices
             
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
             self.thumb_frames.clear()
-            self._reconfigure_grid()  
+            self._reconfigure_grid()
+            self.update_selection_display()
             self.update_tool_button_states()
             self.update_focus_display()
             
@@ -3882,6 +3944,9 @@ class SelectablePDFViewer:
             # Sort pages in reverse order to maintain correct indices
             sorted_pages = sorted(self.selected_pages, reverse=True)
             
+            # Track newly created page indices
+            new_page_indices = set()
+            
             for page_index in sorted_pages:
                 # Tworzymy tymczasowy dokument
                 temp_doc = fitz.open()
@@ -3894,14 +3959,19 @@ class SelectablePDFViewer:
                     start_at=page_index + 1
                 )
                 temp_doc.close()
+                # Add the new duplicated page index
+                new_page_indices.add(page_index + 1)
 
+            # Select the newly duplicated pages
+            self.selected_pages = new_page_indices
+            
             # Odświeżenie GUI
-         #   self.selected_pages.clear()
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
             self.thumb_frames.clear()
             self._reconfigure_grid()
+            self.update_selection_display()
             self.update_tool_button_states()
             self.update_focus_display()
             
@@ -3944,12 +4014,16 @@ class SelectablePDFViewer:
             temp_doc1.close()
             temp_doc2.close()
             
+            # Keep the same pages selected (they've just swapped positions)
+            # No need to update selected_pages as the indices remain the same
+            
             # Refresh GUI
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
             self.thumb_frames.clear()
             self._reconfigure_grid()
+            self.update_selection_display()
             self.update_tool_button_states()
             self.update_focus_display()
             
@@ -4217,6 +4291,11 @@ class SelectablePDFViewer:
         return ImageTk.PhotoImage(resized_image)
 
     def update_selection_display(self):
+        # Clean up selected_pages to remove any invalid indices
+        if self.pdf_document:
+            valid_indices = set(range(len(self.pdf_document)))
+            self.selected_pages = self.selected_pages & valid_indices
+        
         num_selected = len(self.selected_pages)
         
         for frame_index, frame in self.thumb_frames.items():
