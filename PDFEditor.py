@@ -2897,7 +2897,7 @@ class SelectablePDFViewer:
 
     
     def import_pdf_after_active_page(self, event=None, filepath=None):
-        if not self.pdf_document:
+        if self.pdf_document is None:
             self._update_status("BŁĄD: Otwórz najpierw dokument PDF.")
             return
 
@@ -2968,8 +2968,8 @@ class SelectablePDFViewer:
                 imported_doc.close()
     
     def import_image_to_new_page(self, filepath=None):
-        if not self.pdf_document:
-            messagebox.showerror("Błąd", "Najpierw otwórz dokument PDF.")
+        if self.pdf_document is None:
+            self._update_status("Błąd", "Najpierw otwórz dokument PDF.")
             return
 
         # Jeśli przekazano filepath (np. przez drag&drop), pomiń dialog wyboru pliku
@@ -3203,8 +3203,9 @@ class SelectablePDFViewer:
             self.pdf_document.insert_pdf(temp_doc, start_at=target_index)
             num_inserted = len(temp_doc)
             temp_doc.close()
-            self.clipboard = None
-            self.pages_in_clipboard_count = 0
+          # czyszczenie schowka
+          #  self.clipboard = None
+          # self.pages_in_clipboard_count = 0
             self.selected_pages.clear()
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
