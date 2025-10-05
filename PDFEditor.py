@@ -8,7 +8,7 @@ import os
 import sys 
 import re 
 from typing import Optional, List, Set, Dict, Union
-from datetime import date 
+from datetime import date, datetime
 import pypdf
 from pypdf import PdfReader, PdfWriter, Transformation
 from pypdf.generic import RectangleObject, FloatObject, ArrayObject
@@ -85,6 +85,47 @@ def resource_path(relative_path):
         base_path = os.path.dirname(os.path.abspath(__file__))
         
     return os.path.join(base_path, relative_path)
+
+def generate_export_filename(source_filename, page_range, extension, output_dir):
+    """
+    Generuje nazwę pliku do eksportu według schematu:
+    "Eksport z pliku" + nazwa_źródłowa + zakres_stron + data + godzina + extension
+    
+    Jeśli plik istnieje, dodaje numer (1, 2, 3...) aby uniknąć nadpisania.
+    
+    Args:
+        source_filename: Nazwa pliku źródłowego (bez rozszerzenia)
+        page_range: Zakres stron, np. "1-5" lub "1,3,5"
+        extension: Rozszerzenie pliku z kropką, np. ".pdf" lub ".png"
+        output_dir: Folder docelowy
+    
+    Returns:
+        Pełna ścieżka do pliku
+    """
+    # Generuj timestamp
+    now = datetime.now()
+    date_str = now.strftime("%Y-%m-%d")
+    time_str = now.strftime("%H-%M-%S")
+    
+    # Buduj bazową nazwę pliku
+    base_name = f"Eksport z pliku {source_filename} strony {page_range} {date_str} {time_str}"
+    
+    # Sprawdź czy plik istnieje, jeśli tak - dodaj numer
+    counter = 0
+    while True:
+        if counter == 0:
+            filename = f"{base_name}{extension}"
+        else:
+            filename = f"{base_name} ({counter}){extension}"
+        
+        full_path = os.path.join(output_dir, filename)
+        if not os.path.exists(full_path):
+            return full_path
+        counter += 1
+        
+        # Bezpieczeństwo - nie próbuj w nieskończoność
+        if counter > 1000:
+            raise ValueError("Nie można wygenerować unikalnej nazwy pliku")
   
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -3269,12 +3310,17 @@ class SelectablePDFViewer:
             zoom = 300 / 72.0 
             matrix = fitz.Matrix(zoom, zoom)
             
-            # POPRAWKA BŁĘDU: Bezpieczne pobieranie nazwy bazowej
-            # Jeśli self.file_path istnieje, użyj jego nazwy. W przeciwnym razie, użyj "export".
+            # Pobierz nazwę pliku źródłowego
             if hasattr(self, 'file_path') and self.file_path:
-                base_filename = os.path.splitext(os.path.basename(self.file_path))[0]
+                source_filename = os.path.splitext(os.path.basename(self.file_path))[0]
             else:
-                base_filename = "export"
+                source_filename = "dokument"
+            
+            # Generuj zakres stron dla nazwy pliku
+            if len(selected_indices) == 1:
+                page_range = str(selected_indices[0] + 1)
+            else:
+                page_range = f"{selected_indices[0] + 1}-{selected_indices[-1] + 1}"
             
             exported_count = 0
             
@@ -3287,19 +3333,20 @@ class SelectablePDFViewer:
                     
                     pix = page.get_pixmap(matrix=matrix, alpha=False)
                     
-                    # Budowanie nazwy pliku: "nazwa_dokumentu_strona_X.png"
-                    output_filename = f"{base_filename}_strona_{index + 1}.png"
-                    output_path = os.path.join(output_dir, output_filename)
+                    # Generuj unikalną nazwę pliku dla każdej strony
+                    single_page_range = str(index + 1)
+                    output_path = generate_export_filename(
+                        source_filename, 
+                        single_page_range, 
+                        ".png", 
+                        output_dir
+                    )
                     
                     pix.save(output_path)
                     exported_count += 1
             
             self.master.config(cursor="")
             
-        #    messagebox.showinfo(
-        #        "Sukces Eksportu", 
-        #        f"Pomyślnie wyeksportowano {exported_count} stron do folderu:\n{output_dir}"
-        #    )
             self._update_status(f"Pomyślnie wyeksportowano {exported_count} stron do folderu: {output_dir}")   
         except Exception as e:
             self.master.config(cursor="")
@@ -4712,14 +4759,53 @@ class SelectablePDFViewer:
         if not self.pdf_document or not self.selected_pages:
             self._update_status("BŁĄD: Zaznacz strony, które chcesz wyodrębnić do nowego pliku.")
             return
+        
+        # Użyj domyślnej ścieżki zapisu z preferencji
+        default_save_path = self.prefs_manager.get('default_save_path', '')
+        if default_save_path:
+            initialdir = default_save_path
+        else:
+            initialdir = self.prefs_manager.get('last_save_path', '')
+        
+        # Generuj sugerowaną nazwę pliku
+        if hasattr(self, 'file_path') and self.file_path:
+            source_filename = os.path.splitext(os.path.basename(self.file_path))[0]
+        else:
+            source_filename = "dokument"
+        
+        selected_indices = sorted(list(self.selected_pages))
+        if len(selected_indices) == 1:
+            page_range = str(selected_indices[0] + 1)
+        else:
+            page_range = f"{selected_indices[0] + 1}-{selected_indices[-1] + 1}"
+        
+        now = datetime.now()
+        date_str = now.strftime("%Y-%m-%d")
+        time_str = now.strftime("%H-%M-%S")
+        suggested_filename = f"Eksport z pliku {source_filename} strony {page_range} {date_str} {time_str}.pdf"
+        
         filepath = filedialog.asksaveasfilename(
             defaultextension=".pdf",
             filetypes=[("Pliki PDF", "*.pdf")],
-            title="Zapisz wyodrębnione strony jako nowy PDF..."
+            title="Zapisz wyodrębnione strony jako nowy PDF...",
+            initialdir=initialdir if initialdir else None,
+            initialfile=suggested_filename
         )
         if not filepath:
             self._update_status("Anulowano ekstrakcję stron.")
             return
+        
+        # Jeśli plik istnieje, dodaj numer
+        original_filepath = filepath
+        counter = 1
+        while os.path.exists(filepath):
+            base, ext = os.path.splitext(original_filepath)
+            filepath = f"{base} ({counter}){ext}"
+            counter += 1
+            if counter > 1000:
+                self._update_status("BŁĄD: Nie można wygenerować unikalnej nazwy pliku.")
+                return
+        
         try:
             page_bytes = self._get_page_bytes(self.selected_pages)
             num_extracted = len(self.selected_pages)
