@@ -4813,7 +4813,17 @@ class SelectablePDFViewer:
             menus_to_update.append(self.context_menu)
         if hasattr(self, 'modifications_menu'):
             menus_to_update.append(self.modifications_menu)
-        
+                # --- DYNAMICZNIE: dezaktywuj CAŁE menu Makra jeśli nie ma pliku ---
+        if hasattr(self, 'macros_menu'):
+            doc_loaded = self.pdf_document is not None
+            for i in range(self.macros_menu.index("end") + 1):
+                try:
+                    # Pomijamy separator (separator nie ma state)
+                    if self.macros_menu.type(i) == "command":
+                        self.macros_menu.entryconfig(i, state=tk.NORMAL if doc_loaded else tk.DISABLED)
+                except Exception:
+                    continue
+                    
         menu_state_map = {
             "Importuj strony z PDF...": import_state, 
             "Importuj obraz na nową stronę...": import_state,
