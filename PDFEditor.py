@@ -191,8 +191,11 @@ class PreferencesManager:
         self.defaults = {
             # Preferencje globalne
             'default_save_path': '',
-            'language': 'pl',
-            'gui_scale': '100',
+            'default_read_path': '',
+            'last_open_path': '',
+            'last_save_path': '',
+            'thumbnail_quality': 'Średnia',
+            'confirm_delete': 'False',
             
             # PageCropResizeDialog
             'PageCropResizeDialog.crop_mode': 'nocrop',
@@ -342,25 +345,33 @@ class PreferencesDialog(tk.Toplevel):
         general_frame = ttk.LabelFrame(main_frame, text="Ustawienia ogólne", padding="8")
         general_frame.pack(fill="x", pady=(0, 8))
         
+        # Domyślna ścieżka odczytu
+        ttk.Label(general_frame, text="Domyślna ścieżka odczytu:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
+        self.default_read_path_var = tk.StringVar()
+        read_path_frame = ttk.Frame(general_frame)
+        read_path_frame.grid(row=0, column=1, sticky="ew", padx=4, pady=4)
+        ttk.Entry(read_path_frame, textvariable=self.default_read_path_var, width=30).pack(side="left", fill="x", expand=True)
+        ttk.Button(read_path_frame, text="...", width=3, command=self.browse_read_path).pack(side="left", padx=(4, 0))
+        
         # Domyślna ścieżka zapisu
-        ttk.Label(general_frame, text="Domyślna ścieżka zapisu:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
+        ttk.Label(general_frame, text="Domyślna ścieżka zapisu:").grid(row=1, column=0, sticky="w", padx=4, pady=4)
         self.default_path_var = tk.StringVar()
         path_frame = ttk.Frame(general_frame)
-        path_frame.grid(row=0, column=1, sticky="ew", padx=4, pady=4)
+        path_frame.grid(row=1, column=1, sticky="ew", padx=4, pady=4)
         ttk.Entry(path_frame, textvariable=self.default_path_var, width=30).pack(side="left", fill="x", expand=True)
         ttk.Button(path_frame, text="...", width=3, command=self.browse_path).pack(side="left", padx=(4, 0))
         
-        # Język
-        ttk.Label(general_frame, text="Język:").grid(row=1, column=0, sticky="w", padx=4, pady=4)
-        self.language_var = tk.StringVar()
-        lang_combo = ttk.Combobox(general_frame, textvariable=self.language_var, values=["pl", "en"], state="readonly", width=10)
-        lang_combo.grid(row=1, column=1, sticky="w", padx=4, pady=4)
+        # Jakość miniatur
+        ttk.Label(general_frame, text="Jakość miniatur:").grid(row=2, column=0, sticky="w", padx=4, pady=4)
+        self.thumbnail_quality_var = tk.StringVar()
+        quality_combo = ttk.Combobox(general_frame, textvariable=self.thumbnail_quality_var, values=["Niska", "Średnia", "Wysoka"], state="readonly", width=10)
+        quality_combo.grid(row=2, column=1, sticky="w", padx=4, pady=4)
         
-        # Skalowanie GUI
-        ttk.Label(general_frame, text="Skalowanie GUI (%):").grid(row=2, column=0, sticky="w", padx=4, pady=4)
-        self.gui_scale_var = tk.StringVar()
-        scale_combo = ttk.Combobox(general_frame, textvariable=self.gui_scale_var, values=["75", "100", "125", "150"], state="readonly", width=10)
-        scale_combo.grid(row=2, column=1, sticky="w", padx=4, pady=4)
+        # Potwierdzenie przed usunięciem
+        ttk.Label(general_frame, text="Potwierdzenie przed usunięciem:").grid(row=3, column=0, sticky="w", padx=4, pady=4)
+        self.confirm_delete_var = tk.BooleanVar()
+        confirm_check = ttk.Checkbutton(general_frame, variable=self.confirm_delete_var)
+        confirm_check.grid(row=3, column=1, sticky="w", padx=4, pady=4)
         
         general_frame.columnconfigure(1, weight=1)
         
@@ -370,13 +381,23 @@ class PreferencesDialog(tk.Toplevel):
         info_label = ttk.Label(info_frame, text="Program automatycznie zapamiętuje ostatnio użyte wartości\nw oknach dialogowych.", foreground="gray")
         info_label.pack()
         
+        # Ramka resetu
+        reset_frame = ttk.LabelFrame(main_frame, text="Reset do ustawień domyślnych", padding="8")
+        reset_frame.pack(fill="x", pady=(0, 8))
+        ttk.Button(reset_frame, text="Resetuj", command=self.reset_all_defaults).pack()
+        
         # Przyciski
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill="x", pady=(8, 0))
         
         ttk.Button(button_frame, text="Zapisz", command=self.ok).pack(side="left", padx=5)
-        ttk.Button(button_frame, text="Domyślne (wszystkie)", command=self.reset_all_defaults).pack(side="left", padx=5)
         ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side="right", padx=5)
+    
+    def browse_read_path(self):
+        from tkinter import filedialog
+        path = filedialog.askdirectory(title="Wybierz domyślną ścieżkę odczytu")
+        if path:
+            self.default_read_path_var.set(path)
     
     def browse_path(self):
         from tkinter import filedialog
@@ -386,9 +407,10 @@ class PreferencesDialog(tk.Toplevel):
     
     def load_current_values(self):
         """Wczytuje obecne wartości preferencji"""
+        self.default_read_path_var.set(self.prefs_manager.get('default_read_path'))
         self.default_path_var.set(self.prefs_manager.get('default_save_path'))
-        self.language_var.set(self.prefs_manager.get('language'))
-        self.gui_scale_var.set(self.prefs_manager.get('gui_scale'))
+        self.thumbnail_quality_var.set(self.prefs_manager.get('thumbnail_quality'))
+        self.confirm_delete_var.set(self.prefs_manager.get('confirm_delete') == 'True')
     
     def reset_all_defaults(self):
         """Przywraca domyślne wartości we wszystkich dialogach"""
@@ -417,9 +439,10 @@ class PreferencesDialog(tk.Toplevel):
     
     def ok(self, event=None):
         """Zapisuje preferencje"""
+        self.prefs_manager.set('default_read_path', self.default_read_path_var.get())
         self.prefs_manager.set('default_save_path', self.default_path_var.get())
-        self.prefs_manager.set('language', self.language_var.get())
-        self.prefs_manager.set('gui_scale', self.gui_scale_var.get())
+        self.prefs_manager.set('thumbnail_quality', self.thumbnail_quality_var.get())
+        self.prefs_manager.set('confirm_delete', 'True' if self.confirm_delete_var.get() else 'False')
         self.result = True
         self.destroy()
     
@@ -3122,7 +3145,7 @@ class SelectablePDFViewer:
         self.min_cols = 2               # Minimum columns (for safety)
         self.max_cols = 10              # Maximum columns (for safety)
         self.MIN_WINDOW_WIDTH = 950
-        self.render_dpi_factor = 0.5
+        self.render_dpi_factor = self._get_render_dpi_factor()
         
         self.undo_stack: List[bytes] = []
         self.redo_stack: List[bytes] = []
@@ -3297,6 +3320,16 @@ class SelectablePDFViewer:
         self._setup_drag_and_drop_file()
 
     # --- Metody obsługi GUI i zdarzeń (Bez zmian) ---
+    def _get_render_dpi_factor(self):
+        """Zwraca współczynnik DPI dla miniatur na podstawie ustawienia jakości"""
+        quality = self.prefs_manager.get('thumbnail_quality', 'Średnia')
+        quality_map = {
+            'Niska': 0.4,
+            'Średnia': 0.8,
+            'Wysoka': 1.2
+        }
+        return quality_map.get(quality, 0.8)
+    
     def on_close_window(self):
         # Sprawdź czy są niezapisane zmiany (niepusty stos undo)
         if self.pdf_document is not None and len(self.undo_stack) > 0:
@@ -3903,10 +3936,25 @@ class SelectablePDFViewer:
                     return  # Jeśli nie udało się zapisać, nie otwieraj nowego pliku
             # jeśli Nie - kontynuuj
         if not filepath:
-            filepath = filedialog.askopenfilename(filetypes=[("Pliki PDF", "*.pdf")])
+            # Użyj domyślnej ścieżki odczytu lub ostatniej użytej ścieżki
+            default_read_path = self.prefs_manager.get('default_read_path', '')
+            if default_read_path:
+                initialdir = default_read_path
+            else:
+                initialdir = self.prefs_manager.get('last_open_path', '')
+            
+            filepath = filedialog.askopenfilename(
+                filetypes=[("Pliki PDF", "*.pdf")],
+                initialdir=initialdir if initialdir else None
+            )
             if not filepath:  
                 self._update_status("Anulowano otwieranie pliku.")
                 return
+            
+            # Zapisz ostatnią ścieżkę tylko jeśli domyślna jest pusta
+            if not default_read_path:
+                import os
+                self.prefs_manager.set('last_open_path', os.path.dirname(filepath))
 
         try:
             if self.pdf_document: self.pdf_document.close()
@@ -4429,6 +4477,21 @@ class SelectablePDFViewer:
         if len(pages_to_delete) >= len(self.pdf_document):
             self._update_status("BŁĄD: Nie można usunąć wszystkich stron. PDF musi mieć przynajmniej jedną stronę.")
             return
+        
+        # Sprawdź czy wymagane jest potwierdzenie przed usunięciem
+        confirm_delete = self.prefs_manager.get('confirm_delete', 'False')
+        if confirm_delete == 'True':
+            page_count = len(pages_to_delete)
+            page_text = "stronę" if page_count == 1 else f"{page_count} stron"
+            response = custom_messagebox(
+                self.master, "Potwierdzenie usunięcia",
+                f"Czy na pewno chcesz usunąć {page_text}?",
+                typ="question"
+            )
+            if not response:
+                self._update_status("Anulowano usuwanie stron.")
+                return
+        
         deleted_count = 0
         try:
             if save_state:
@@ -4564,14 +4627,29 @@ class SelectablePDFViewer:
             
     def save_document(self):
         if not self.pdf_document: return
+        
+        # Użyj domyślnej ścieżki zapisu lub ostatniej użytej ścieżki
+        default_save_path = self.prefs_manager.get('default_save_path', '')
+        if default_save_path:
+            initialdir = default_save_path
+        else:
+            initialdir = self.prefs_manager.get('last_save_path', '')
+        
         filepath = filedialog.asksaveasfilename(
             defaultextension=".pdf",
             filetypes=[("Pliki PDF", "*.pdf")],
-            title="Zapisz zmodyfikowany PDF jako..."
+            title="Zapisz zmodyfikowany PDF jako...",
+            initialdir=initialdir if initialdir else None
         )
         if not filepath:  
             self._update_status("Anulowano zapisywanie.")
             return
+        
+        # Zapisz ostatnią ścieżkę tylko jeśli domyślna jest pusta
+        if not default_save_path:
+            import os
+            self.prefs_manager.set('last_save_path', os.path.dirname(filepath))
+        
         try:
             self.pdf_document.save(filepath, garbage=4, clean=True, pretty=True)  
             self._update_status(f"Dokument pomyślnie zapisany jako: {filepath}")
