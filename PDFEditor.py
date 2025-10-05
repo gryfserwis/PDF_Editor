@@ -72,22 +72,59 @@ def validate_float_range(value, minval, maxval):
     except Exception:
         return False
 
-def generate_unique_export_filename(directory, base_name, page_range, extension):
+def generate_unique_export_filename(directory, base_name, page_range, extension, pattern=None, page_number=None):
     """
-    Generuje unikalną nazwę pliku w formacie:
-    "Eksport z pliku [base_name]_[page_range]_[date]_[time].[extension]"
-    Jeśli plik istnieje, dodaje (1), (2), (3) itd.
+    Generuje unikalną nazwę pliku na podstawie wzorca.
+    Jeśli plik istnieje, dodaje _1, _2, _3 itd. na końcu nazwy (przed rozszerzeniem).
+    
+    Parametry:
+    - directory: folder docelowy
+    - base_name: nazwa bazowa pliku źródłowego
+    - page_range: zakres stron (np. "1-5" lub "3")
+    - extension: rozszerzenie pliku (bez kropki)
+    - pattern: wzorzec nazwy (opcjonalny, domyślnie "{base_name}_{range}_{data}_{czas}")
+    - page_number: numer strony dla wzorca {page} (opcjonalny)
+    
+    Zmienne we wzorcu:
+    - {base_name}: nazwa bazowa pliku źródłowego
+    - {range}: zakres stron
+    - {data}: data w formacie YYYY-MM-DD
+    - {czas}: czas w formacie HH-MM-SS
+    - {page}: numer strony (jeśli podany)
     """
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = f"Eksport_{page_range}_{timestamp}.{extension}"
+    if pattern is None:
+        pattern = "{base_name}_{range}_{data}_{czas}"
+    
+    # Przygotuj zmienne do podstawienia
+    now = datetime.now()
+    replacements = {
+        '{base_name}': base_name,
+        '{range}': page_range,
+        '{data}': now.strftime("%Y-%m-%d"),
+        '{czas}': now.strftime("%H-%M-%S"),
+    }
+    
+    # Dodaj {page} jeśli podany
+    if page_number is not None:
+        replacements['{page}'] = str(page_number)
+    
+    # Zastąp zmienne we wzorcu
+    filename_base = pattern
+    for key, value in replacements.items():
+        filename_base = filename_base.replace(key, value)
+    
+    # Usuń niedozwolone znaki w nazwie pliku
+    filename_base = re.sub(r'[<>:"/\\|?*]', '_', filename_base)
+    
+    # Stwórz pełną nazwę z rozszerzeniem
+    filename = f"{filename_base}.{extension}"
     filepath = os.path.join(directory, filename)
     
-    # Jeśli plik istnieje, dodaj numer
+    # Jeśli plik istnieje, dodaj numer na końcu
     if os.path.exists(filepath):
         counter = 1
-        base_without_ext = f"Eksport_{page_range}_{timestamp}"
         while True:
-            filename = f"{base_without_ext} ({counter}).{extension}"
+            filename = f"{filename_base}_{counter}.{extension}"
             filepath = os.path.join(directory, filename)
             if not os.path.exists(filepath):
                 break
@@ -285,15 +322,18 @@ class PreferencesManager:
             'ImageImportSettingsDialog.custom_height': '',
             'ImageImportSettingsDialog.keep_ratio': 'True',
             
+            # Save to File Settings
+            'save_file.pdfa_compliance': 'False',
+            
             # PDF Export Settings
             'pdf_export.version': '1.7',
-            'pdf_export.print_prep': 'brak',
-            'pdf_export.filename_pattern': 'Eksport_{range}_{data}_{czas}',
+            'pdf_export.flatten_forms': 'False',
+            'pdf_export.filename_pattern': '{base_name}_{range}_{data}_{czas}',
             
             # Image Export Settings
             'image_export.format': 'PNG',
-            'image_export.dpi': '300',
-            'image_export.filename_pattern': '{base_name}_strona_{page}_{data}_{czas}',
+            'image_export.dpi': '600',
+            'image_export.filename_pattern': '{base_name}_{range}_{data}_{czas}',
         }
         self.load_preferences()
     
@@ -422,6 +462,18 @@ class PreferencesDialog(tk.Toplevel):
         
         general_frame.columnconfigure(1, weight=1)
         
+        # Sekcja zapisu do pliku
+        save_frame = ttk.LabelFrame(main_frame, text="Zapis do pliku", padding="8")
+        save_frame.pack(fill="x", pady=(0, 8))
+        
+        # Zgodność z PDF/A
+        ttk.Label(save_frame, text="Zgodność z PDF/A:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
+        self.pdfa_compliance_var = tk.BooleanVar()
+        pdfa_check = ttk.Checkbutton(save_frame, variable=self.pdfa_compliance_var)
+        pdfa_check.grid(row=0, column=1, sticky="w", padx=4, pady=4)
+        
+        save_frame.columnconfigure(1, weight=1)
+        
         # Sekcja eksportu PDF
         pdf_export_frame = ttk.LabelFrame(main_frame, text="Eksport PDF", padding="8")
         pdf_export_frame.pack(fill="x", pady=(0, 8))
@@ -433,12 +485,11 @@ class PreferencesDialog(tk.Toplevel):
                                          values=["1.4", "1.5", "1.6", "1.7", "2.0"], state="readonly", width=10)
         pdf_version_combo.grid(row=0, column=1, sticky="w", padx=4, pady=4)
         
-        # Tryb drukarski
-        ttk.Label(pdf_export_frame, text="Tryb drukarski:").grid(row=1, column=0, sticky="w", padx=4, pady=4)
-        self.pdf_print_prep_var = tk.StringVar()
-        pdf_prep_combo = ttk.Combobox(pdf_export_frame, textvariable=self.pdf_print_prep_var,
-                                      values=["brak", "flatten", "metadata", "trimbox", "cropbox"], state="readonly", width=15)
-        pdf_prep_combo.grid(row=1, column=1, sticky="w", padx=4, pady=4)
+        # Spłaszczanie formularzy
+        ttk.Label(pdf_export_frame, text="Spłaszczanie formularzy:").grid(row=1, column=0, sticky="w", padx=4, pady=4)
+        self.pdf_flatten_forms_var = tk.BooleanVar()
+        flatten_check = ttk.Checkbutton(pdf_export_frame, variable=self.pdf_flatten_forms_var)
+        flatten_check.grid(row=1, column=1, sticky="w", padx=4, pady=4)
         
         # Wzorzec nazwy pliku PDF
         ttk.Label(pdf_export_frame, text="Wzorzec nazwy pliku:").grid(row=2, column=0, sticky="w", padx=4, pady=4)
@@ -457,14 +508,14 @@ class PreferencesDialog(tk.Toplevel):
         ttk.Label(image_export_frame, text="Domyślny format:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
         self.image_format_var = tk.StringVar()
         image_format_combo = ttk.Combobox(image_export_frame, textvariable=self.image_format_var,
-                                          values=["PNG", "TIFF", "JPG"], state="readonly", width=10)
+                                          values=["PNG", "JPEG"], state="readonly", width=10)
         image_format_combo.grid(row=0, column=1, sticky="w", padx=4, pady=4)
         
         # DPI
         ttk.Label(image_export_frame, text="DPI:").grid(row=1, column=0, sticky="w", padx=4, pady=4)
         self.image_dpi_var = tk.StringVar()
         image_dpi_combo = ttk.Combobox(image_export_frame, textvariable=self.image_dpi_var,
-                                       values=["150", "200", "300", "600"], state="readonly", width=10)
+                                       values=["150", "300", "600"], state="readonly", width=10)
         image_dpi_combo.grid(row=1, column=1, sticky="w", padx=4, pady=4)
         
         # Wzorzec nazwy pliku obrazów
@@ -513,9 +564,12 @@ class PreferencesDialog(tk.Toplevel):
         self.thumbnail_quality_var.set(self.prefs_manager.get('thumbnail_quality'))
         self.confirm_delete_var.set(self.prefs_manager.get('confirm_delete') == 'True')
         
+        # Save to file settings
+        self.pdfa_compliance_var.set(self.prefs_manager.get('save_file.pdfa_compliance') == 'True')
+        
         # PDF export settings
         self.pdf_version_var.set(self.prefs_manager.get('pdf_export.version'))
-        self.pdf_print_prep_var.set(self.prefs_manager.get('pdf_export.print_prep'))
+        self.pdf_flatten_forms_var.set(self.prefs_manager.get('pdf_export.flatten_forms') == 'True')
         self.pdf_filename_pattern_var.set(self.prefs_manager.get('pdf_export.filename_pattern'))
         
         # Image export settings
@@ -555,9 +609,12 @@ class PreferencesDialog(tk.Toplevel):
         self.prefs_manager.set('thumbnail_quality', self.thumbnail_quality_var.get())
         self.prefs_manager.set('confirm_delete', 'True' if self.confirm_delete_var.get() else 'False')
         
+        # Save to file settings
+        self.prefs_manager.set('save_file.pdfa_compliance', 'True' if self.pdfa_compliance_var.get() else 'False')
+        
         # PDF export settings
         self.prefs_manager.set('pdf_export.version', self.pdf_version_var.get())
-        self.prefs_manager.set('pdf_export.print_prep', self.pdf_print_prep_var.get())
+        self.prefs_manager.set('pdf_export.flatten_forms', 'True' if self.pdf_flatten_forms_var.get() else 'False')
         self.prefs_manager.set('pdf_export.filename_pattern', self.pdf_filename_pattern_var.get())
         
         # Image export settings
@@ -4039,7 +4096,7 @@ class SelectablePDFViewer:
         self._record_action('select_landscape')
 
     def export_selected_pages_to_image(self):
-        """Eksportuje wybrane strony do plików PNG o wysokiej rozdzielczości."""
+        """Eksportuje wybrane strony do plików obrazów."""
         
         selected_indices = sorted(list(self.selected_pages))
         
@@ -4047,7 +4104,7 @@ class SelectablePDFViewer:
             custom_messagebox(self.master, "Informacja", "Wybierz strony do eksportu.", typ="info")
             return
 
-        # Wybierz folder do zapisu (bez dialogu trybu - domyślnie każda strona osobno)
+        # Wybierz folder do zapisu
         output_dir = filedialog.askdirectory(
             title="Wybierz folder do zapisu wyeksportowanych obrazów"
         )
@@ -4056,9 +4113,20 @@ class SelectablePDFViewer:
             return
 
         try:
-            # Ustawienia eksportu
-            zoom = 300 / 72.0 
+            # Pobierz ustawienia z preferencji
+            image_format = self.prefs_manager.get('image_export.format', 'PNG')
+            image_dpi = int(self.prefs_manager.get('image_export.dpi', '600'))
+            filename_pattern = self.prefs_manager.get('image_export.filename_pattern', '{base_name}_{range}_{data}_{czas}')
+            
+            # Ustawienia eksportu - DPI do zoom
+            zoom = image_dpi / 72.0 
             matrix = fitz.Matrix(zoom, zoom)
+            
+            # Określ rozszerzenie pliku na podstawie formatu
+            if image_format.upper() == 'JPEG':
+                extension = 'jpg'
+            else:
+                extension = image_format.lower()
             
             # Pobierz nazwę bazową pliku źródłowego
             if hasattr(self, 'file_path') and self.file_path:
@@ -4083,10 +4151,11 @@ class SelectablePDFViewer:
                     
                     pix = page.get_pixmap(matrix=matrix, alpha=False)
                     
-                    # Generuj unikalną nazwę pliku
+                    # Generuj unikalną nazwę pliku używając wzorca
                     single_page_range = str(index + 1)
                     output_path = generate_unique_export_filename(
-                        output_dir, base_filename, single_page_range, "png"
+                        output_dir, base_filename, single_page_range, extension,
+                        pattern=filename_pattern, page_number=index + 1
                     )
                     
                     pix.save(output_path)
@@ -5403,14 +5472,56 @@ class SelectablePDFViewer:
             print("DEBUG: Czyszczenie historii _save_state_to_undo")
             self.update_tool_button_states()
             
-    def _get_page_bytes(self, page_indices: Set[int]) -> bytes:
-        temp_doc = fitz.open()
-        sorted_indices = sorted(list(page_indices))
-        for index in sorted_indices:
-            temp_doc.insert_pdf(self.pdf_document, from_page=index, to_page=index)
-        page_bytes = temp_doc.write()
-        temp_doc.close()
-        return page_bytes
+    def _get_page_bytes(self, page_indices: Set[int], use_pypdf_settings: bool = False) -> bytes:
+        """
+        Eksportuje wybrane strony do bytes.
+        
+        Parametry:
+        - page_indices: zestaw indeksów stron do wyeksportowania
+        - use_pypdf_settings: jeśli True, użyj pypdf z ustawieniami z preferencji (wersja PDF, flatten_forms)
+        """
+        if use_pypdf_settings:
+            # Użyj pypdf do eksportu z ustawieniami z preferencji
+            pdf_version = self.prefs_manager.get('pdf_export.version', '1.7')
+            flatten_forms = self.prefs_manager.get('pdf_export.flatten_forms', 'False') == 'True'
+            
+            # Konwertuj aktualny dokument PyMuPDF do bytes
+            pdf_bytes = self.pdf_document.tobytes()
+            
+            # Wczytaj używając pypdf
+            reader = PdfReader(io.BytesIO(pdf_bytes))
+            writer = PdfWriter()
+            
+            # Dodaj wybrane strony
+            sorted_indices = sorted(list(page_indices))
+            for index in sorted_indices:
+                if index < len(reader.pages):
+                    page = reader.pages[index]
+                    writer.add_page(page)
+            
+            # Ustaw wersję PDF jeśli została określona
+            if pdf_version:
+                writer._pdf_version = pdf_version
+            
+            # Zapisz do bufora
+            output_stream = io.BytesIO()
+            
+            # Użyj flatten_forms jeśli włączone
+            if flatten_forms:
+                writer.write(output_stream, flatten_form_fields=True)
+            else:
+                writer.write(output_stream)
+            
+            return output_stream.getvalue()
+        else:
+            # Standardowa metoda z PyMuPDF
+            temp_doc = fitz.open()
+            sorted_indices = sorted(list(page_indices))
+            for index in sorted_indices:
+                temp_doc.insert_pdf(self.pdf_document, from_page=index, to_page=index)
+            page_bytes = temp_doc.write()
+            temp_doc.close()
+            return page_bytes
     
     def copy_selected_pages(self):
         if not self.pdf_document or not self.selected_pages:
@@ -5687,12 +5798,16 @@ class SelectablePDFViewer:
                 else:
                     page_range = f"{selected_indices[0] + 1}-{selected_indices[-1] + 1}"
                 
-                # Generuj unikalną nazwę pliku
+                # Pobierz wzorzec nazwy pliku z preferencji
+                filename_pattern = self.prefs_manager.get('pdf_export.filename_pattern', '{base_name}_{range}_{data}_{czas}')
+                
+                # Generuj unikalną nazwę pliku używając wzorca
                 filepath = generate_unique_export_filename(
-                    output_dir, base_filename, page_range, "pdf"
+                    output_dir, base_filename, page_range, "pdf", pattern=filename_pattern
                 )
                 
-                page_bytes = self._get_page_bytes(self.selected_pages)
+                # Użyj pypdf z ustawieniami z preferencji
+                page_bytes = self._get_page_bytes(self.selected_pages, use_pypdf_settings=True)
                 num_extracted = len(self.selected_pages)
                 with open(filepath, "wb") as f:
                     f.write(page_bytes)
@@ -5715,15 +5830,18 @@ class SelectablePDFViewer:
                 else:
                     base_filename = "dokument"
                 
+                # Pobierz wzorzec nazwy pliku z preferencji
+                filename_pattern = self.prefs_manager.get('pdf_export.filename_pattern', '{base_name}_{range}_{data}_{czas}')
+                
                 exported_count = 0
                 for index in selected_indices:
-                    # Utwórz dokument z jedną stroną
-                    page_bytes = self._get_page_bytes({index})
+                    # Utwórz dokument z jedną stroną używając pypdf z ustawieniami
+                    page_bytes = self._get_page_bytes({index}, use_pypdf_settings=True)
                     
-                    # Generuj unikalną nazwę pliku
+                    # Generuj unikalną nazwę pliku używając wzorca
                     single_page_range = str(index + 1)
                     output_path = generate_unique_export_filename(
-                        output_dir, base_filename, single_page_range, "pdf"
+                        output_dir, base_filename, single_page_range, "pdf", pattern=filename_pattern
                     )
                     
                     with open(output_path, "wb") as f:
@@ -5848,7 +5966,15 @@ class SelectablePDFViewer:
             self.prefs_manager.set('last_save_path', os.path.dirname(filepath))
         
         try:
-            self.pdf_document.save(filepath, garbage=4, clean=True, pretty=True)  
+            # Sprawdź ustawienie PDF/A
+            pdfa_compliance = self.prefs_manager.get('save_file.pdfa_compliance', 'False') == 'True'
+            
+            # Zapisz z odpowiednimi ustawieniami
+            if pdfa_compliance:
+                self.pdf_document.save(filepath, garbage=4, clean=True, pretty=True, pdfa=True)
+            else:
+                self.pdf_document.save(filepath, garbage=4, clean=True, pretty=True)
+            
             self._update_status(f"Dokument pomyślnie zapisany jako: {filepath}")
             # Po zapisaniu czyścimy stosy undo/redo
             self.undo_stack.clear()
