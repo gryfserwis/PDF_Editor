@@ -72,50 +72,22 @@ def validate_float_range(value, minval, maxval):
     except Exception:
         return False
 
-def format_export_filename(pattern, base_name, page_range, page_number=None):
+def generate_unique_export_filename(directory, base_name, page_range, extension):
     """
-    Formatuje nazwę pliku wg wzorca z obsługą zmiennych:
-    {data} - data w formacie YYYY-MM-DD
-    {czas} - czas w formacie HH-MM-SS
-    {base_name} - nazwa bazowa pliku źródłowego
-    {range} - zakres stron
-    {page} - numer strony (tylko dla eksportu obrazów)
-    """
-    now = datetime.now()
-    replacements = {
-        '{data}': now.strftime("%Y-%m-%d"),
-        '{czas}': now.strftime("%H-%M-%S"),
-        '{base_name}': base_name,
-        '{range}': page_range,
-    }
-    if page_number is not None:
-        replacements['{page}'] = str(page_number)
-    
-    filename = pattern
-    for key, value in replacements.items():
-        filename = filename.replace(key, value)
-    
-    return filename
-
-def generate_unique_export_filename(directory, base_name, page_range, extension, pattern=None, page_number=None):
-    """
-    Generuje unikalną nazwę pliku wg wzorca lub domyślnego formatu.
+    Generuje unikalną nazwę pliku w formacie:
+    "Eksport z pliku [base_name]_[page_range]_[date]_[time].[extension]"
     Jeśli plik istnieje, dodaje (1), (2), (3) itd.
     """
-    if pattern:
-        filename_base = format_export_filename(pattern, base_name, page_range, page_number)
-    else:
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        filename_base = f"Eksport_{page_range}_{timestamp}"
-    
-    filename = f"{filename_base}.{extension}"
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"Eksport_{page_range}_{timestamp}.{extension}"
     filepath = os.path.join(directory, filename)
     
     # Jeśli plik istnieje, dodaj numer
     if os.path.exists(filepath):
         counter = 1
+        base_without_ext = f"Eksport_{page_range}_{timestamp}"
         while True:
-            filename = f"{filename_base} ({counter}).{extension}"
+            filename = f"{base_without_ext} ({counter}).{extension}"
             filepath = os.path.join(directory, filename)
             if not os.path.exists(filepath):
                 break
@@ -458,16 +430,15 @@ class PreferencesDialog(tk.Toplevel):
         ttk.Label(pdf_export_frame, text="Domyślna wersja PDF:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
         self.pdf_version_var = tk.StringVar()
         pdf_version_combo = ttk.Combobox(pdf_export_frame, textvariable=self.pdf_version_var, 
-                                         values=["1.4", "1.5", "1.7", "PDF/A"], state="readonly", width=10)
+                                         values=["1.4", "1.5", "1.6", "1.7", "2.0"], state="readonly", width=10)
         pdf_version_combo.grid(row=0, column=1, sticky="w", padx=4, pady=4)
         
-        # Przygotuj do druku
-        ttk.Label(pdf_export_frame, text="Przygotuj do druku:").grid(row=1, column=0, sticky="w", padx=4, pady=4)
+        # Tryb drukarski
+        ttk.Label(pdf_export_frame, text="Tryb drukarski:").grid(row=1, column=0, sticky="w", padx=4, pady=4)
         self.pdf_print_prep_var = tk.StringVar()
-        pdf_print_combo = ttk.Combobox(pdf_export_frame, textvariable=self.pdf_print_prep_var,
-                                       values=["brak", "tryb drukarski", "spłaszcz warstwy", "usuń metadane", "wstaw trimbox/cropbox"],
-                                       state="readonly", width=20)
-        pdf_print_combo.grid(row=1, column=1, sticky="w", padx=4, pady=4)
+        pdf_prep_combo = ttk.Combobox(pdf_export_frame, textvariable=self.pdf_print_prep_var,
+                                      values=["brak", "flatten", "metadata", "trimbox", "cropbox"], state="readonly", width=15)
+        pdf_prep_combo.grid(row=1, column=1, sticky="w", padx=4, pady=4)
         
         # Wzorzec nazwy pliku PDF
         ttk.Label(pdf_export_frame, text="Wzorzec nazwy pliku:").grid(row=2, column=0, sticky="w", padx=4, pady=4)
@@ -486,17 +457,17 @@ class PreferencesDialog(tk.Toplevel):
         ttk.Label(image_export_frame, text="Domyślny format:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
         self.image_format_var = tk.StringVar()
         image_format_combo = ttk.Combobox(image_export_frame, textvariable=self.image_format_var,
-                                          values=["PNG", "TIFF", "JPEG"], state="readonly", width=10)
+                                          values=["PNG", "TIFF", "JPG"], state="readonly", width=10)
         image_format_combo.grid(row=0, column=1, sticky="w", padx=4, pady=4)
         
         # DPI
-        ttk.Label(image_export_frame, text="Domyślne DPI:").grid(row=1, column=0, sticky="w", padx=4, pady=4)
+        ttk.Label(image_export_frame, text="DPI:").grid(row=1, column=0, sticky="w", padx=4, pady=4)
         self.image_dpi_var = tk.StringVar()
         image_dpi_combo = ttk.Combobox(image_export_frame, textvariable=self.image_dpi_var,
-                                       values=["150", "300", "600"], state="readonly", width=10)
+                                       values=["150", "200", "300", "600"], state="readonly", width=10)
         image_dpi_combo.grid(row=1, column=1, sticky="w", padx=4, pady=4)
         
-        # Wzorzec nazwy pliku obrazu
+        # Wzorzec nazwy pliku obrazów
         ttk.Label(image_export_frame, text="Wzorzec nazwy pliku:").grid(row=2, column=0, sticky="w", padx=4, pady=4)
         self.image_filename_pattern_var = tk.StringVar()
         ttk.Entry(image_export_frame, textvariable=self.image_filename_pattern_var, width=35).grid(row=2, column=1, sticky="ew", padx=4, pady=4)
@@ -4068,7 +4039,7 @@ class SelectablePDFViewer:
         self._record_action('select_landscape')
 
     def export_selected_pages_to_image(self):
-        """Eksportuje wybrane strony do plików obrazów wg ustawień z preferencji."""
+        """Eksportuje wybrane strony do plików PNG o wysokiej rozdzielczości."""
         
         selected_indices = sorted(list(self.selected_pages))
         
@@ -4076,7 +4047,7 @@ class SelectablePDFViewer:
             custom_messagebox(self.master, "Informacja", "Wybierz strony do eksportu.", typ="info")
             return
 
-        # Wybierz folder do zapisu
+        # Wybierz folder do zapisu (bez dialogu trybu - domyślnie każda strona osobno)
         output_dir = filedialog.askdirectory(
             title="Wybierz folder do zapisu wyeksportowanych obrazów"
         )
@@ -4085,13 +4056,8 @@ class SelectablePDFViewer:
             return
 
         try:
-            # Pobierz ustawienia z preferencji
-            image_format = self.prefs_manager.get('image_export.format', 'PNG').upper()
-            dpi = int(self.prefs_manager.get('image_export.dpi', '300'))
-            filename_pattern = self.prefs_manager.get('image_export.filename_pattern', '{base_name}_strona_{page}_{data}_{czas}')
-            
             # Ustawienia eksportu
-            zoom = dpi / 72.0 
+            zoom = 300 / 72.0 
             matrix = fitz.Matrix(zoom, zoom)
             
             # Pobierz nazwę bazową pliku źródłowego
@@ -4106,14 +4072,6 @@ class SelectablePDFViewer:
             else:
                 page_range = f"{selected_indices[0] + 1}-{selected_indices[-1] + 1}"
             
-            # Mapowanie formatów dla PyMuPDF
-            format_ext_map = {
-                'PNG': 'png',
-                'JPEG': 'jpg',
-                'TIFF': 'tiff'
-            }
-            extension = format_ext_map.get(image_format, 'png')
-            
             exported_count = 0
             
             self.master.config(cursor="wait")
@@ -4125,11 +4083,10 @@ class SelectablePDFViewer:
                     
                     pix = page.get_pixmap(matrix=matrix, alpha=False)
                     
-                    # Generuj unikalną nazwę pliku z wzorca
-                    page_number = index + 1
+                    # Generuj unikalną nazwę pliku
+                    single_page_range = str(index + 1)
                     output_path = generate_unique_export_filename(
-                        output_dir, base_filename, page_range, extension, 
-                        pattern=filename_pattern, page_number=page_number
+                        output_dir, base_filename, single_page_range, "png"
                     )
                     
                     pix.save(output_path)
@@ -5646,50 +5603,136 @@ class SelectablePDFViewer:
             self._update_status(f"BŁĄD: Wystąpił błąd podczas usuwania: {e}")
 
     def extract_selected_pages(self):
-        """Eksportuje wybrane strony do pliku PDF wg ustawień z preferencji."""
         if not self.pdf_document or not self.selected_pages:
-            custom_messagebox(self.master, "Informacja", "Zaznacz strony, które chcesz wyodrębnić do nowego pliku.", typ="info")
+            self._update_status("BŁĄD: Zaznacz strony, które chcesz wyodrębnić do nowego pliku.")
             return
         
         selected_indices = sorted(list(self.selected_pages))
         
-        # Pobierz ustawienia z preferencji
-        filename_pattern = self.prefs_manager.get('pdf_export.filename_pattern', 'Eksport_{range}_{data}_{czas}')
-        
-        # Wybierz folder
-        output_dir = filedialog.askdirectory(
-            title="Wybierz folder do zapisu PDF"
-        )
-        if not output_dir:
-            self._update_status("Anulowano ekstrakcję stron.")
-            return
-        
-        try:
-            # Pobierz nazwę bazową
-            if hasattr(self, 'file_path') and self.file_path:
-                base_filename = os.path.splitext(os.path.basename(self.file_path))[0]
-            else:
-                base_filename = "dokument"
+        # Jeśli więcej niż jedna strona, zapytaj o tryb eksportu
+        export_mode = "single"  # domyślnie wszystkie do jednego pliku
+        if len(selected_indices) > 1:
+            # Dialog wyboru trybu
+            dialog = tk.Toplevel(self.master)
+            dialog.title("Tryb eksportu")
+            dialog.transient(self.master)
+            dialog.grab_set()
+            dialog.resizable(False, False)
             
-            # Utwórz zakres stron
-            if len(selected_indices) == 1:
-                page_range = str(selected_indices[0] + 1)
-            else:
-                page_range = f"{selected_indices[0] + 1}-{selected_indices[-1] + 1}"
+            main_frame = ttk.Frame(dialog, padding="12")
+            main_frame.pack(fill="both", expand=True)
             
-            # Eksportuj wszystkie zaznaczone strony do jednego pliku
-            # Generuj unikalną nazwę pliku z wzorca
-            filepath = generate_unique_export_filename(
-                output_dir, base_filename, page_range, "pdf", pattern=filename_pattern
+            ttk.Label(main_frame, text="Wybierz tryb eksportu:").pack(anchor="w", pady=(0, 8))
+            
+            mode_var = tk.StringVar(value="single")
+            ttk.Radiobutton(main_frame, text="Wszystkie strony do jednego pliku PDF", variable=mode_var, value="single").pack(anchor="w", pady=2)
+            ttk.Radiobutton(main_frame, text="Każda strona do osobnego pliku PDF", variable=mode_var, value="separate").pack(anchor="w", pady=2)
+            
+            result = [None]
+            
+            def on_ok():
+                result[0] = mode_var.get()
+                dialog.destroy()
+            
+            def on_cancel():
+                dialog.destroy()
+            
+            button_frame = ttk.Frame(main_frame)
+            button_frame.pack(pady=(12, 0))
+            ttk.Button(button_frame, text="OK", command=on_ok, width=10).pack(side="left", padx=4)
+            ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10).pack(side="left", padx=4)
+            
+            dialog.bind("<Return>", lambda e: on_ok())
+            dialog.bind("<Escape>", lambda e: on_cancel())
+            
+            # Wyśrodkuj
+            dialog.update_idletasks()
+            dialog_w = dialog.winfo_width()
+            dialog_h = dialog.winfo_height()
+            parent_x = self.master.winfo_rootx()
+            parent_y = self.master.winfo_rooty()
+            parent_w = self.master.winfo_width()
+            parent_h = self.master.winfo_height()
+            x = parent_x + (parent_w - dialog_w) // 2
+            y = parent_y + (parent_h - dialog_h) // 2
+            dialog.geometry(f"+{x}+{y}")
+            
+            dialog.wait_window()
+            
+            if result[0] is None:
+                self._update_status("Anulowano ekstrakcję stron.")
+                return
+            export_mode = result[0]
+        
+        if export_mode == "single":
+            # Wszystkie strony do jednego pliku
+            # Wybierz folder
+            output_dir = filedialog.askdirectory(
+                title="Wybierz folder do zapisu PDF"
             )
+            if not output_dir:
+                self._update_status("Anulowano ekstrakcję stron.")
+                return
             
-            page_bytes = self._get_page_bytes(self.selected_pages)
-            num_extracted = len(self.selected_pages)
-            with open(filepath, "wb") as f:
-                f.write(page_bytes)
-            self._update_status(f"Pomyślnie wyodrębniono {num_extracted} stron do: {filepath}")
-        except Exception as e:
-            custom_messagebox(self.master, "Błąd Eksportu", f"Nie udało się zapisać pliku PDF:\n{e}", typ="error")
+            try:
+                # Pobierz nazwę bazową
+                if hasattr(self, 'file_path') and self.file_path:
+                    base_filename = os.path.splitext(os.path.basename(self.file_path))[0]
+                else:
+                    base_filename = "dokument"
+                
+                # Utwórz zakres stron
+                if len(selected_indices) == 1:
+                    page_range = str(selected_indices[0] + 1)
+                else:
+                    page_range = f"{selected_indices[0] + 1}-{selected_indices[-1] + 1}"
+                
+                # Generuj unikalną nazwę pliku
+                filepath = generate_unique_export_filename(
+                    output_dir, base_filename, page_range, "pdf"
+                )
+                
+                page_bytes = self._get_page_bytes(self.selected_pages)
+                num_extracted = len(self.selected_pages)
+                with open(filepath, "wb") as f:
+                    f.write(page_bytes)
+                self._update_status(f"Pomyślnie wyodrębniono {num_extracted} stron do: {filepath}")
+            except Exception as e:
+                self._update_status(f"BŁĄD Eksportu: Nie udało się zapisać nowego pliku: {e}")
+        else:
+            # Każda strona do osobnego pliku
+            output_dir = filedialog.askdirectory(
+                title="Wybierz folder do zapisu plików PDF"
+            )
+            if not output_dir:
+                self._update_status("Anulowano ekstrakcję stron.")
+                return
+            
+            try:
+                # Pobierz nazwę bazową
+                if hasattr(self, 'file_path') and self.file_path:
+                    base_filename = os.path.splitext(os.path.basename(self.file_path))[0]
+                else:
+                    base_filename = "dokument"
+                
+                exported_count = 0
+                for index in selected_indices:
+                    # Utwórz dokument z jedną stroną
+                    page_bytes = self._get_page_bytes({index})
+                    
+                    # Generuj unikalną nazwę pliku
+                    single_page_range = str(index + 1)
+                    output_path = generate_unique_export_filename(
+                        output_dir, base_filename, single_page_range, "pdf"
+                    )
+                    
+                    with open(output_path, "wb") as f:
+                        f.write(page_bytes)
+                    exported_count += 1
+                
+                self._update_status(f"Pomyślnie wyodrębniono {exported_count} stron do folderu: {output_dir}")
+            except Exception as e:
+                self._update_status(f"BŁĄD Eksportu: Nie udało się zapisać plików: {e}")
 
     def undo(self):
         """Cofnij ostatnią operację - przywraca stan ze stosu undo."""
