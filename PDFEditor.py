@@ -89,6 +89,98 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 
+import tkinter as tk
+from tkinter import ttk
+
+def custom_messagebox(parent, title, message, typ="info"):
+    """
+    Wyświetla niestandardowe okno dialogowe wyśrodkowane na oknie aplikacji (nie na środku ekranu).
+    Brak obsługi ikon PNG, okno jest nieco mniejsze.
+    """
+    import tkinter as tk
+    from tkinter import ttk
+
+    dialog = tk.Toplevel(parent)
+    dialog.title(title)
+    dialog.transient(parent)
+    dialog.grab_set()
+    dialog.resizable(False, False)
+
+    # Kolory dla różnych typów (opcjonalnie)
+    colors = {
+        "info": "#d1ecf1",
+        "error": "#f8d7da",
+        "warning": "#fff3cd",
+        "question": "#d1ecf1",
+        "yesnocancel": "#d1ecf1"
+    }
+    bg_color = colors.get(typ, "#f0f0f0")
+
+    main_frame = ttk.Frame(dialog, padding="12")
+    main_frame.pack(fill="both", expand=True)
+    content_frame = ttk.Frame(main_frame)
+    content_frame.pack(fill="both", expand=True, pady=(0, 12))
+
+    # Tylko tekst komunikatu, bez ikony
+    msg_label = tk.Label(content_frame, text=message, justify="left", wraplength=310, font=("Arial", 10))
+    msg_label.pack(fill="both", expand=True, pady=6)
+
+    result = [None]
+
+    def on_yes():
+        result[0] = True
+        dialog.destroy()
+    def on_no():
+        result[0] = False
+        dialog.destroy()
+    def on_cancel():
+        result[0] = None
+        dialog.destroy()
+    def on_ok():
+        dialog.destroy()
+
+    button_frame = ttk.Frame(main_frame)
+    button_frame.pack()
+    if typ == "question":
+        yes_btn = ttk.Button(button_frame, text="Tak", command=on_yes, width=10)
+        yes_btn.pack(side="left", padx=4)
+        no_btn = ttk.Button(button_frame, text="Nie", command=on_no, width=10)
+        no_btn.pack(side="left", padx=4)
+        dialog.bind("<Return>", lambda e: on_yes())
+        dialog.bind("<Escape>", lambda e: on_no())
+        yes_btn.focus_set()
+    elif typ == "yesnocancel":
+        yes_btn = ttk.Button(button_frame, text="Tak", command=on_yes, width=10)
+        yes_btn.pack(side="left", padx=4)
+        no_btn = ttk.Button(button_frame, text="Nie", command=on_no, width=10)
+        no_btn.pack(side="left", padx=4)
+        cancel_btn = ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10)
+        cancel_btn.pack(side="left", padx=4)
+        dialog.bind("<Return>", lambda e: on_yes())
+        dialog.bind("<Escape>", lambda e: on_cancel())
+        dialog.protocol("WM_DELETE_WINDOW", on_cancel)
+        yes_btn.focus_set()
+    else:
+        ok_btn = ttk.Button(button_frame, text="OK", command=on_ok, width=10)
+        ok_btn.pack(padx=4)
+        dialog.bind("<Return>", lambda e: on_ok())
+        dialog.bind("<Escape>", lambda e: on_ok())
+        ok_btn.focus_set()
+
+    # Wyśrodkuj na rodzicu
+    dialog.update_idletasks()
+    dialog_w = dialog.winfo_width()
+    dialog_h = dialog.winfo_height()
+    parent_x = parent.winfo_rootx()
+    parent_y = parent.winfo_rooty()
+    parent_w = parent.winfo_width()
+    parent_h = parent.winfo_height()
+    x = parent_x + (parent_w - dialog_w) // 2
+    y = parent_y + (parent_h - dialog_h) // 2
+    dialog.geometry(f"+{x}+{y}")
+    dialog.wait_window()
+    return result[0]
+
 class PageCropResizeDialog(tk.Toplevel):
     PAPER_FORMATS = {
         'A0': (841, 1189),
@@ -352,7 +444,7 @@ class PageCropResizeDialog(tk.Toplevel):
             }
             self.destroy()
         except Exception as e:
-            messagebox.showerror("Błąd", f"Nieprawidłowe dane: {e}", parent=self)
+            custom_messagebox(self, "Błąd", f"Nieprawidłowe dane: {e}", typ="error")
 
     def cancel(self, event=None):
         self.result = None
@@ -592,7 +684,7 @@ class PageNumberingDialog(tk.Toplevel):
             self.result = result
             self.destroy()
         except Exception as e:
-            messagebox.showerror("Błąd wprowadzania", f"Sprawdź wprowadzone wartości: {e}", parent=self)
+            custom_messagebox(self, "Błąd wprowadzania", f"Sprawdź wprowadzone wartości: {e}", typ="error")
 
     def cancel(self, event=None):
         self.result = None
@@ -690,24 +782,7 @@ class PageNumberMarginDialog(tk.Toplevel):
             self.result = {'top_mm': top_mm, 'bottom_mm': bottom_mm}
             self.destroy()
         except ValueError:
-            messagebox.showerror("Błąd Wprowadzania", "Wprowadź prawidłowe, nieujemne liczby [w mm, max 200].")
-
-    def cancel(self, event=None):
-        self.result = None
-        self.destroy()
-
-    def ok(self, event=None):
-        try:
-            top_mm = float(self.top_margin_entry.get().replace(',', '.'))
-            bottom_mm = float(self.bottom_margin_entry.get().replace(',', '.'))
-
-            if not (0 <= top_mm <= 200 and 0 <= bottom_mm <= 200):
-                raise ValueError("Wartości marginesów muszą być z zakresu 0–200 mm.")
-
-            self.result = {'top_mm': top_mm, 'bottom_mm': bottom_mm}
-            self.destroy()
-        except ValueError:
-            messagebox.showerror("Błąd Wprowadzania", "Wprowadź prawidłowe, nieujemne liczby [w mm, max 200].")
+            custom_messagebox(self, "Błąd Wprowadzania", "Wprowadź prawidłowe, nieujemne liczby [w mm, max 200].", typ="error")
 
     def cancel(self, event=None):
         self.result = None
@@ -810,9 +885,10 @@ class ShiftContentDialog(tk.Toplevel):
             }
             self.destroy()
         except ValueError as e:
-            messagebox.showerror(
-                "Błąd Wprowadzania", 
-                f"Nieprawidłowa wartość: {e}. Użyj cyfr, kropki lub przecinka."
+            custom_messagebox(
+                self, "Błąd Wprowadzania", 
+                f"Nieprawidłowa wartość: {e}. Użyj cyfr, kropki lub przecinka.",
+                typ="error"
             )
 
     def cancel(self, event=None):
@@ -1028,7 +1104,7 @@ class ImageImportSettingsDialog(tk.Toplevel):
                 if not (1 <= scale_val <= 500):
                     raise ValueError
             except Exception:
-                messagebox.showerror("Błąd", "Skala musi być wartością liczbową od 1 do 500%.", parent=self)
+                custom_messagebox(self, "Błąd", "Skala musi być wartością liczbową od 1 do 500%.", typ="error")
                 self.scale_entry.focus_set()
                 return
         if self.scaling_mode.get() == "CUSTOM_SIZE":
@@ -1038,7 +1114,7 @@ class ImageImportSettingsDialog(tk.Toplevel):
                 if not (1 <= custom_width <= 4000 and 1 <= custom_height <= 4000):
                     raise ValueError
             except Exception:
-                messagebox.showerror("Błąd", "Podaj prawidłowe wymiary strony [1–4000 mm] dla opcji 'Dokładny wymiar strony'.", parent=self)
+                custom_messagebox(self, "Błąd", "Podaj prawidłowe wymiary strony [1–4000 mm] dla opcji 'Dokładny wymiar strony'.", typ="error")
                 return
 
         self.result = {
@@ -1079,7 +1155,7 @@ class EnhancedPageRangeDialog(tk.Toplevel):
             self.max_pages = len(imported_doc)
         except ValueError:
             self.max_pages = 0
-            messagebox.showerror("Błąd", "Dokument PDF został zamknięty przed otwarciem dialogu.")
+            custom_messagebox(self.master, "Błąd", "Dokument PDF został zamknięty przed otwarciem dialogu.", typ="error")
             self.destroy()
             self.result = None
             return
@@ -1148,7 +1224,7 @@ class EnhancedPageRangeDialog(tk.Toplevel):
     def ok(self, event=None):
         raw_range = self.entry.get().strip()
         if not raw_range:
-            messagebox.showerror("Błąd", "Wprowadź zakres stron.", parent=self)
+            custom_messagebox(self, "Błąd", "Wprowadź zakres stron.", typ="error")
             self.entry.focus_set()
             return
 
@@ -1167,10 +1243,10 @@ class EnhancedPageRangeDialog(tk.Toplevel):
                         continue
                     # NOWOŚĆ: sprawdź długość zakresu
                     if end - start + 1 > MAX_RANGE_LEN:
-                        messagebox.showerror(
-                            "Błąd zakresu",
+                        custom_messagebox(
+                            self, "Błąd zakresu",
                             f"Zakres {start}-{end} jest zbyt szeroki (max {MAX_RANGE_LEN} stron w jednym zakresie).",
-                            parent=self
+                            typ="error"
                         )
                         self.entry.focus_set()
                         return
@@ -1185,17 +1261,17 @@ class EnhancedPageRangeDialog(tk.Toplevel):
                     continue
         too_large = [n for n in nums if n < 1 or n > self.max_pages]
         if too_large:
-            messagebox.showerror(
-                "Błąd zakresu",
+            custom_messagebox(
+                self, "Błąd zakresu",
                 f"Podano numery spoza zakresu 1-{self.max_pages}: {', '.join(map(str, too_large))}",
-                parent=self
+                typ="error"
             )
             self.entry.focus_set()
             return
 
         page_indices = self._parse_range(raw_range)
         if page_indices is None or len(page_indices) == 0:
-            messagebox.showerror("Błąd formatu", "Niepoprawny format zakresu. Użyj np. 1, 3-5, 7.", parent=self)
+            custom_messagebox(self, "Błąd formatu", "Niepoprawny format zakresu. Użyj np. 1, 3-5, 7.", typ="error")
             self.entry.focus_set()
             return
 
@@ -1450,6 +1526,14 @@ class MergePageGridDialog(tk.Toplevel):
         self.cols_combo.bind("<Key>", lambda e: self._combo_key_num(self.cols_combo, self.cols_var, e))
         self.rows_var.trace_add("write", lambda *a: self._update_grid_preview())
         self.cols_var.trace_add("write", lambda *a: self._update_grid_preview())
+        
+        # Dodaj trace dla marginesów i odstępów, aby podgląd aktualizował się natychmiast
+        self.margin_top_mm.trace_add("write", lambda *a: self._update_grid_preview())
+        self.margin_bottom_mm.trace_add("write", lambda *a: self._update_grid_preview())
+        self.margin_left_mm.trace_add("write", lambda *a: self._update_grid_preview())
+        self.margin_right_mm.trace_add("write", lambda *a: self._update_grid_preview())
+        self.spacing_x_mm.trace_add("write", lambda *a: self._update_grid_preview())
+        self.spacing_y_mm.trace_add("write", lambda *a: self._update_grid_preview())
 
         preview_frame = ttk.LabelFrame(right_frame, text="Podgląd rozkładu stron")
         preview_frame.pack(fill="both", expand=True)
@@ -1596,7 +1680,7 @@ class MergePageGridDialog(tk.Toplevel):
             }
             self.destroy()
         except Exception as e:
-            messagebox.showerror("Błąd", f"Nieprawidłowe dane: {e}", parent=self)
+            custom_messagebox(self, "Błąd", f"Nieprawidłowe dane: {e}", typ="error")
 
     def cancel(self, event=None):
         self.result = None
@@ -2032,7 +2116,7 @@ class SelectablePDFViewer:
 
         except Exception as e:
             self._update_status(f"BŁĄD przy dodawaniu numeracji: {e}")
-            messagebox.showerror("Błąd Numeracji", str(e))
+            custom_messagebox(self.master, "Błąd Numeracji", str(e), typ="error")
     def remove_page_numbers(self):
         """
         Usuwa numery stron z marginesów określonych przez użytkownika.
@@ -2322,7 +2406,7 @@ class SelectablePDFViewer:
     def _reverse_pages(self):
         """Odwraca kolejność wszystkich stron w bieżącym dokumencie PDF."""
         if not self.pdf_document:
-            messagebox.showinfo("Informacja", "Najpierw otwórz plik PDF.")
+            custom_messagebox(self.master, "Informacja", "Najpierw otwórz plik PDF.", typ="info")
             return
 
         # 1. Zapisz obecny stan do historii przed zmianą
@@ -2360,7 +2444,7 @@ class SelectablePDFViewer:
             self._update_status(f"Pomyślnie odwrócono kolejność {page_count} stron.")
             
         except Exception as e:
-            messagebox.showerror("Błąd", f"Wystąpił błąd podczas odwracania stron: {e}")
+            custom_messagebox(self.master, "Błąd", f"Wystąpił błąd podczas odwracania stron: {e}", typ="error")
             # W przypadku błędu użytkownik może użyć przycisku Cofnij aby przywrócić stan
     
     def _apply_selection_by_indices(self, indices_to_select):
@@ -2431,7 +2515,7 @@ class SelectablePDFViewer:
         selected_indices = sorted(list(self.selected_pages))
         
         if not selected_indices:
-            messagebox.showinfo("Informacja", "Wybierz strony do eksportu.")
+            custom_messagebox(self.master, "Informacja", "Wybierz strony do eksportu.", typ="info")
             return
 
         output_dir = filedialog.askdirectory(
@@ -2480,7 +2564,7 @@ class SelectablePDFViewer:
             self._update_status(f"Pomyślnie wyeksportowano {exported_count} stron do folderu: {output_dir}")   
         except Exception as e:
             self.master.config(cursor="")
-            messagebox.showerror("Błąd Eksportu", f"Wystąpił błąd podczas eksportowania stron:\n{e}")
+            custom_messagebox(self.master, "Błąd Eksportu", f"Wystąpił błąd podczas eksportowania stron:\n{e}", typ="error")
             
             
     
@@ -2689,12 +2773,12 @@ class SelectablePDFViewer:
     def on_close_window(self):
         # Sprawdź czy są niezapisane zmiany (niepusty stos undo)
         if self.pdf_document is not None and len(self.undo_stack) > 0:
-            response = messagebox.askyesnocancel(
-                "Niezapisane zmiany",
+            response = custom_messagebox(
+                self.master, "Niezapisane zmiany",
                 "Czy chcesz zapisać zmiany w dokumencie przed zamknięciem programu?",
-                parent=self.master
+                typ="yesnocancel"
             )
-            if response is None: 
+            if response is None:
                 return
             elif response is True: 
                 self.save_document() 
@@ -3192,6 +3276,7 @@ class SelectablePDFViewer:
         two_pages_state = tk.NORMAL if doc_loaded and len(self.selected_pages) == 2 else tk.DISABLED,
          
         # 1. Aktualizacja przycisków w panelu głównym
+        self.save_button_icon.config(state=import_state)
         self.undo_button.config(state=undo_state)
         self.redo_button.config(state=redo_state)
         self.delete_button.config(state=delete_state)
@@ -3272,10 +3357,10 @@ class SelectablePDFViewer:
        # --- Metody obsługi plików i edycji (Ze zmianami w import_image_to_new_page) ---
     def open_pdf(self, event=None, filepath=None):
         if self.pdf_document is not None and len(self.undo_stack) > 0:
-            response = messagebox.askyesnocancel(
-                "Niezapisane zmiany",
+            response = custom_messagebox(
+                self.master, "Niezapisane zmiany",
                 "Dokument został zmodyfikowany. Czy chcesz zapisać zmiany przed otwarciem nowego pliku?",
-                parent=self.master
+                typ="yesnocancel"
             )
             if response is None:
                 return  # Anuluj
@@ -3325,10 +3410,10 @@ class SelectablePDFViewer:
 
     def close_pdf(self):
         if self.pdf_document is not None and len(self.undo_stack) > 0:
-            response = messagebox.askyesnocancel(
-                "Niezapisane zmiany",
+            response = custom_messagebox(
+                self.master, "Niezapisane zmiany",
                 "Dokument został zmodyfikowany. Czy chcesz zapisać zmiany przed zamknięciem pliku?",
-                parent=self.master
+                typ="yesnocancel"
             )
             if response is None:
                 return  # Anuluj zamykanie pliku
@@ -3376,7 +3461,7 @@ class SelectablePDFViewer:
             image_dpi = img.info.get('dpi', (96, 96))[0] if isinstance(img.info.get('dpi'), tuple) else 96
             img.close()
         except Exception as e:
-            messagebox.showerror("Błąd", f"Nie można wczytać obrazu: {e}")
+            custom_messagebox(self.master, "Błąd", f"Nie można wczytać obrazu: {e}", typ="error")
             return
 
         # Przelicz piksele na punkty PDF (1 cal = 72 punkty)
@@ -3532,7 +3617,7 @@ class SelectablePDFViewer:
             image_height_points = (image_height_px / image_dpi) * 72
             img.close()
         except Exception as e:
-            messagebox.showerror("Błąd", f"Nie można wczytać obrazu: {e}")
+            custom_messagebox(self.master, "Błąd", f"Nie można wczytać obrazu: {e}", typ="error")
             return
 
         MM_TO_POINTS = 72 / 25.4
@@ -3591,7 +3676,7 @@ class SelectablePDFViewer:
         try:
             imported_page = imported_doc.new_page(-1, width=page_w, height=page_h)
         except Exception as e:
-            messagebox.showerror("Błąd inicjalizacji fitz", f"Nie udało się utworzyć tymczasowej strony PDF: {e}")
+            custom_messagebox(self.master, "Błąd inicjalizacji fitz", f"Nie udało się utworzyć tymczasowej strony PDF: {e}", typ="error")
             return
 
         # 5. Wklejenie obrazu do tymczasowej strony fitz
@@ -3628,7 +3713,7 @@ class SelectablePDFViewer:
             self.status_bar.config(text=f"Zaimportowano obraz jako stronę na pozycji {insert_index + 1}. Aktualna liczba stron: {len(self.pdf_document)}.")
 
         except Exception as e:
-            messagebox.showerror("Błąd Wklejania", f"Nie udało się wkleić obrazu: {e}")
+            custom_messagebox(self.master, "Błąd Wklejania", f"Nie udało się wkleić obrazu: {e}", typ="error")
         finally:
             if imported_doc and not imported_doc.is_closed:
                 imported_doc.close()
@@ -3726,10 +3811,10 @@ class SelectablePDFViewer:
         # Confirmation dialog for multiple pages
         if num_selected > 1:
             direction = "przed" if before else "po"
-            result = messagebox.askyesno(
-                "Potwierdzenie",
+            result = custom_messagebox(
+                self.master, "Potwierdzenie",
                 f"Czy na pewno chcesz wkleić {pages_per_paste} stron {direction} {num_selected} stronach?",
-                parent=self.master
+                typ="question"
             )
             if not result:
                 self._update_status("Anulowano wklejanie stron.")
@@ -4003,10 +4088,10 @@ class SelectablePDFViewer:
         num_selected = len(self.selected_pages)
         if num_selected > 1:
             direction = "przed" if before else "po"
-            result = messagebox.askyesno(
-                "Potwierdzenie",
+            result = custom_messagebox(
+                self.master, "Potwierdzenie",
                 f"Czy na pewno chcesz wstawić pustą stronę {direction} {num_selected} stronach?",
-                parent=self.master
+                typ="question"
             )
             if not result:
                 self._update_status("Anulowano wstawianie pustych stron.")
@@ -4070,10 +4155,10 @@ class SelectablePDFViewer:
 
         # Confirmation dialog for multiple pages
         if num_selected > 1:
-            result = messagebox.askyesno(
-                "Potwierdzenie",
+            result = custom_messagebox(
+                self.master, "Potwierdzenie",
                 f"Czy na pewno zduplikować {num_selected} stron?",
-                parent=self.master
+                typ="question"
             )
             if not result:
                 self._update_status("Anulowano duplikowanie stron.")
