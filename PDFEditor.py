@@ -19,7 +19,7 @@ import json
 
 # Definicja BASE_DIR i inne stałe
 if getattr(sys, 'frozen', False):
-    BASE_DIR = sys._MEIPASS
+    BASE_DIR = os.path.dirname(sys.executable)
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -30,7 +30,7 @@ FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
 
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
-PROGRAM_VERSION = "4.2.0"
+PROGRAM_VERSION = "5.0.0"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
 # === STAŁE DLA A4 [w punktach PDF i mm] ===
@@ -430,7 +430,7 @@ class PreferencesDialog(tk.Toplevel):
         """Przywraca domyślne wartości we wszystkich dialogach"""
         response = custom_messagebox(
             self, "Przywracanie domyślnych",
-            "Czy na pewno chcesz przywrócić wszystkie domyślne wartości we wszystkich\noknach dialogowych?",
+            "Czy na pewno chcesz przywrócić wszystkie domyślne wartości we wszystkich\noknach dialogowych i skasować wszytkie profile?",
             typ="question"
         )
         if response:
@@ -1067,9 +1067,10 @@ class PageNumberingDialog(tk.Toplevel):
         scrollbar = ttk.Scrollbar(listbox_frame)
         scrollbar.pack(side="right", fill="y")
         
-        self.profile_listbox = tk.Listbox(listbox_frame, yscrollcommand=scrollbar.set, width=25, height=15)
+        self.profile_listbox = tk.Listbox(listbox_frame, yscrollcommand=scrollbar.set, width=20, height=15)
         self.profile_listbox.pack(side="left", fill="both", expand=True)
         scrollbar.config(command=self.profile_listbox.yview)
+        self.profile_listbox.bind('<Double-Button-1>', lambda event: self.load_profile())
         
         # Profile buttons
         profile_btn_frame = ttk.Frame(profile_frame)
@@ -1190,16 +1191,14 @@ class PageNumberingDialog(tk.Toplevel):
         def save():
             name = name_var.get().strip()
             if not name:
-                messagebox.showwarning("Błąd", "Nazwa profilu nie może być pusta", parent=dialog)
+                custom_messagebox(dialog, "Błąd", "Nazwa profilu nie może być pusta", typ="warning")
                 return
             
             profiles = self.prefs_manager.get_profiles('PageNumberingDialogProfiles')
             
             # Sprawdź czy profil już istnieje
             if name in profiles:
-                if not messagebox.askyesno("Potwierdzenie", 
-                                          f"Profil '{name}' już istnieje. Czy chcesz go nadpisać?", 
-                                          parent=dialog):
+                if not custom_messagebox(dialog, "Potwierdzenie", f"Profil '{name}' już istnieje. Czy chcesz go nadpisać?", typ="question"):
                     return
             
             # Zapisz profil
@@ -1239,7 +1238,7 @@ class PageNumberingDialog(tk.Toplevel):
         
         selection = self.profile_listbox.curselection()
         if not selection:
-            messagebox.showinfo("Informacja", "Wybierz profil z listy", parent=self)
+            custom_messagebox(self, "Informacja", "Wybierz profil z listy", typ="info")
             return
         
         profile_name = self.profile_listbox.get(selection[0])
@@ -1248,7 +1247,7 @@ class PageNumberingDialog(tk.Toplevel):
         if profile_name in profiles:
             self.apply_settings(profiles[profile_name])
         else:
-            messagebox.showerror("Błąd", "Profil nie istnieje", parent=self)
+            custom_messagebox(self, "Błąd", "Profil nie istnieje", typ="error")
             self.refresh_profile_list()
     
     def delete_profile(self):
@@ -1258,14 +1257,12 @@ class PageNumberingDialog(tk.Toplevel):
         
         selection = self.profile_listbox.curselection()
         if not selection:
-            messagebox.showinfo("Informacja", "Wybierz profil do usunięcia", parent=self)
+            custom_messagebox(self, "Informacja", "Wybierz profil do usunięcia", typ="info")
             return
         
         profile_name = self.profile_listbox.get(selection[0])
         
-        if custom_messagebox.askyesno("Potwierdzenie", 
-                              f"Czy na pewno chcesz usunąć profil '{profile_name}'?", 
-                              parent=self):
+        if custom_messagebox(self, "Potwierdzenie", f"Czy na pewno chcesz usunąć profil '{profile_name}'?", typ="question"):
             profiles = self.prefs_manager.get_profiles('PageNumberingDialogProfiles')
             if profile_name in profiles:
                 del profiles[profile_name]
