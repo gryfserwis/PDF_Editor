@@ -4685,9 +4685,6 @@ class SelectablePDFViewer:
         # F12 - Open Macros List
         self.master.bind('<F12>', lambda e: self.show_macros_list())
         
-        # Numpad key bindings reserved for macros
-        self._setup_numpad_macro_bindings()
-        
     def _setup_focus_logic(self):
         self.master.bind('<Escape>', lambda e: self._clear_all_selection())
         self.master.bind('<space>', lambda e: self._toggle_selection_space())
@@ -6670,20 +6667,7 @@ class SelectablePDFViewer:
         self.current_macro_actions = []
         self.macro_recording_name = None
     
-    def _setup_numpad_macro_bindings(self):
-        """Set up Ctrl+1..9 key bindings for macros (now only main keyboard, not numpad)"""
-        for i in range(1, 10):
-            self.master.bind(f"<Control-{i}>", lambda e, k=f"Ctrl+{i}": self._handle_ctrl_macro_key(k))
 
-    def _handle_ctrl_macro_key(self, keysym):
-        """Handle Ctrl+1..9 key press for macro execution"""
-        macros = self.prefs_manager.get_profiles('macros')
-        for macro_name, macro_data in macros.items():
-            shortcut = macro_data.get('shortcut', '')
-            if shortcut == keysym:
-                self.run_macro(macro_name)
-                return
-    
     def record_macro(self):
         """Opens non-blocking macro recording dialog"""
         MacroRecordingDialog(self.master, self)
