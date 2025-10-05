@@ -181,6 +181,247 @@ def custom_messagebox(parent, title, message, typ="info"):
     dialog.wait_window()
     return result[0]
 
+# === SYSTEM ZARZĄDZANIA PREFERENCJAMI ===
+class PreferencesManager:
+    """Zarządza preferencjami programu i dialogów, zapisuje/odczytuje z pliku preferences.txt"""
+    
+    def __init__(self, filepath="preferences.txt"):
+        self.filepath = os.path.join(BASE_DIR, filepath)
+        self.preferences = {}
+        self.defaults = {
+            # Preferencje globalne
+            'default_save_path': '',
+            'language': 'pl',
+            'gui_scale': '100',
+            
+            # PageCropResizeDialog
+            'PageCropResizeDialog.crop_mode': 'nocrop',
+            'PageCropResizeDialog.margin_top': '10',
+            'PageCropResizeDialog.margin_bottom': '10',
+            'PageCropResizeDialog.margin_left': '10',
+            'PageCropResizeDialog.margin_right': '10',
+            'PageCropResizeDialog.resize_mode': 'noresize',
+            'PageCropResizeDialog.target_format': 'A4',
+            'PageCropResizeDialog.custom_width': '',
+            'PageCropResizeDialog.custom_height': '',
+            'PageCropResizeDialog.position_mode': 'center',
+            'PageCropResizeDialog.offset_x': '0',
+            'PageCropResizeDialog.offset_y': '0',
+            
+            # PageNumberingDialog
+            'PageNumberingDialog.margin_left': '35',
+            'PageNumberingDialog.margin_right': '25',
+            'PageNumberingDialog.margin_vertical_mm': '15',
+            'PageNumberingDialog.vertical_pos': 'dol',
+            'PageNumberingDialog.alignment': 'prawa',
+            'PageNumberingDialog.mode': 'normalna',
+            'PageNumberingDialog.start_page': '1',
+            'PageNumberingDialog.start_number': '1',
+            'PageNumberingDialog.font_name': 'Times-Roman',
+            'PageNumberingDialog.font_size': '12',
+            'PageNumberingDialog.mirror_margins': 'False',
+            'PageNumberingDialog.format_type': 'simple',
+            
+            # ShiftContentDialog
+            'ShiftContentDialog.x_direction': 'P',
+            'ShiftContentDialog.y_direction': 'G',
+            'ShiftContentDialog.x_value': '0',
+            'ShiftContentDialog.y_value': '0',
+            
+            # PageNumberMarginDialog
+            'PageNumberMarginDialog.top_margin': '20',
+            'PageNumberMarginDialog.bottom_margin': '20',
+            
+            # MergePageGridDialog
+            'MergePageGridDialog.sheet_format': 'A4',
+            'MergePageGridDialog.orientation': 'Pionowa',
+            'MergePageGridDialog.margin_top_mm': '5',
+            'MergePageGridDialog.margin_bottom_mm': '5',
+            'MergePageGridDialog.margin_left_mm': '5',
+            'MergePageGridDialog.margin_right_mm': '5',
+            'MergePageGridDialog.spacing_x_mm': '10',
+            'MergePageGridDialog.spacing_y_mm': '10',
+            'MergePageGridDialog.dpi_var': '300',
+            
+            # EnhancedPageRangeDialog
+            'EnhancedPageRangeDialog.last_range': '',
+            
+            # ImageImportSettingsDialog
+            'ImageImportSettingsDialog.target_format': 'A4',
+            'ImageImportSettingsDialog.orientation': 'auto',
+            'ImageImportSettingsDialog.margin_mm': '10',
+        }
+        self.load_preferences()
+    
+    def load_preferences(self):
+        """Wczytuje preferencje z pliku"""
+        if os.path.exists(self.filepath):
+            try:
+                with open(self.filepath, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and '=' in line:
+                            key, value = line.split('=', 1)
+                            self.preferences[key.strip()] = value.strip()
+            except Exception as e:
+                print(f"Błąd wczytywania preferencji: {e}")
+        # Wypełnij brakujące wartości domyślnymi
+        for key, value in self.defaults.items():
+            if key not in self.preferences:
+                self.preferences[key] = value
+    
+    def save_preferences(self):
+        """Zapisuje preferencje do pliku"""
+        try:
+            with open(self.filepath, 'w', encoding='utf-8') as f:
+                for key, value in sorted(self.preferences.items()):
+                    f.write(f"{key}={value}\n")
+        except Exception as e:
+            print(f"Błąd zapisywania preferencji: {e}")
+    
+    def get(self, key, default=None):
+        """Pobiera wartość preferencji"""
+        return self.preferences.get(key, default if default is not None else self.defaults.get(key, ''))
+    
+    def set(self, key, value):
+        """Ustawia wartość preferencji"""
+        self.preferences[key] = str(value)
+        self.save_preferences()
+    
+    def reset_to_defaults(self):
+        """Przywraca wszystkie preferencje do wartości domyślnych"""
+        self.preferences = self.defaults.copy()
+        self.save_preferences()
+    
+    def reset_dialog_defaults(self, dialog_name):
+        """Przywraca wartości domyślne dla konkretnego dialogu"""
+        for key in list(self.preferences.keys()):
+            if key.startswith(f"{dialog_name}."):
+                if key in self.defaults:
+                    self.preferences[key] = self.defaults[key]
+        self.save_preferences()
+
+
+class PreferencesDialog(tk.Toplevel):
+    """Okno dialogowe preferencji programu"""
+    
+    def __init__(self, parent, prefs_manager):
+        super().__init__(parent)
+        self.parent = parent
+        self.prefs_manager = prefs_manager
+        self.title("Preferencje programu")
+        self.transient(parent)
+        self.result = None
+        
+        # Pozycjonuj poza ekranem, aby uniknąć migotania
+        self.geometry("+10000+10000")
+        
+        self.build_ui()
+        self.load_current_values()
+        
+        self.center_dialog(parent)
+        self.grab_set()
+        self.focus_force()
+        self.protocol("WM_DELETE_WINDOW", self.cancel)
+        self.resizable(False, False)
+        self.bind("<Escape>", lambda e: self.cancel())
+        self.wait_window(self)
+    
+    def build_ui(self):
+        main_frame = ttk.Frame(self, padding="12")
+        main_frame.pack(fill="both", expand=True)
+        
+        # Sekcja ogólna
+        general_frame = ttk.LabelFrame(main_frame, text="Ustawienia ogólne", padding="8")
+        general_frame.pack(fill="x", pady=(0, 8))
+        
+        # Domyślna ścieżka zapisu
+        ttk.Label(general_frame, text="Domyślna ścieżka zapisu:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
+        self.default_path_var = tk.StringVar()
+        path_frame = ttk.Frame(general_frame)
+        path_frame.grid(row=0, column=1, sticky="ew", padx=4, pady=4)
+        ttk.Entry(path_frame, textvariable=self.default_path_var, width=30).pack(side="left", fill="x", expand=True)
+        ttk.Button(path_frame, text="...", width=3, command=self.browse_path).pack(side="left", padx=(4, 0))
+        
+        # Język
+        ttk.Label(general_frame, text="Język:").grid(row=1, column=0, sticky="w", padx=4, pady=4)
+        self.language_var = tk.StringVar()
+        lang_combo = ttk.Combobox(general_frame, textvariable=self.language_var, values=["pl", "en"], state="readonly", width=10)
+        lang_combo.grid(row=1, column=1, sticky="w", padx=4, pady=4)
+        
+        # Skalowanie GUI
+        ttk.Label(general_frame, text="Skalowanie GUI (%):").grid(row=2, column=0, sticky="w", padx=4, pady=4)
+        self.gui_scale_var = tk.StringVar()
+        scale_combo = ttk.Combobox(general_frame, textvariable=self.gui_scale_var, values=["75", "100", "125", "150"], state="readonly", width=10)
+        scale_combo.grid(row=2, column=1, sticky="w", padx=4, pady=4)
+        
+        general_frame.columnconfigure(1, weight=1)
+        
+        # Informacja
+        info_frame = ttk.Frame(main_frame)
+        info_frame.pack(fill="x", pady=8)
+        info_label = ttk.Label(info_frame, text="Program automatycznie zapamiętuje ostatnio użyte wartości\nw oknach dialogowych.", foreground="gray")
+        info_label.pack()
+        
+        # Przyciski
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x", pady=(8, 0))
+        
+        ttk.Button(button_frame, text="Zapisz", command=self.ok).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Przywróć domyślne (wszystkie)", command=self.reset_all_defaults).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side="right", padx=5)
+    
+    def browse_path(self):
+        from tkinter import filedialog
+        path = filedialog.askdirectory(title="Wybierz domyślną ścieżkę zapisu")
+        if path:
+            self.default_path_var.set(path)
+    
+    def load_current_values(self):
+        """Wczytuje obecne wartości preferencji"""
+        self.default_path_var.set(self.prefs_manager.get('default_save_path'))
+        self.language_var.set(self.prefs_manager.get('language'))
+        self.gui_scale_var.set(self.prefs_manager.get('gui_scale'))
+    
+    def reset_all_defaults(self):
+        """Przywraca domyślne wartości we wszystkich dialogach"""
+        response = custom_messagebox(
+            self, "Przywracanie domyślnych",
+            "Czy na pewno chcesz przywrócić wszystkie domyślne wartości\nwe wszystkich oknach dialogowych?",
+            typ="question"
+        )
+        if response:
+            self.prefs_manager.reset_to_defaults()
+            self.load_current_values()
+            custom_messagebox(self, "Informacja", "Przywrócono wszystkie domyślne wartości.", typ="info")
+    
+    def center_dialog(self, parent):
+        """Wyśrodkowuje dialog względem rodzica"""
+        self.update_idletasks()
+        dialog_w = self.winfo_width()
+        dialog_h = self.winfo_height()
+        parent_x = parent.winfo_rootx()
+        parent_y = parent.winfo_rooty()
+        parent_w = parent.winfo_width()
+        parent_h = parent.winfo_height()
+        x = parent_x + (parent_w - dialog_w) // 2
+        y = parent_y + (parent_h - dialog_h) // 2
+        self.geometry(f"+{x}+{y}")
+    
+    def ok(self, event=None):
+        """Zapisuje preferencje"""
+        self.prefs_manager.set('default_save_path', self.default_path_var.get())
+        self.prefs_manager.set('language', self.language_var.get())
+        self.prefs_manager.set('gui_scale', self.gui_scale_var.get())
+        self.result = True
+        self.destroy()
+    
+    def cancel(self, event=None):
+        """Anuluje zmiany"""
+        self.result = None
+        self.destroy()
+
+
 class PageCropResizeDialog(tk.Toplevel):
     PAPER_FORMATS = {
         'A0': (841, 1189),
@@ -192,29 +433,46 @@ class PageCropResizeDialog(tk.Toplevel):
         'A6': (105, 148),
         'Niestandardowy': (0, 0)
     }
+    
+    DEFAULTS = {
+        'crop_mode': 'nocrop',
+        'margin_top': '10',
+        'margin_bottom': '10',
+        'margin_left': '10',
+        'margin_right': '10',
+        'resize_mode': 'noresize',
+        'target_format': 'A4',
+        'custom_width': '',
+        'custom_height': '',
+        'position_mode': 'center',
+        'offset_x': '0',
+        'offset_y': '0',
+    }
 
-    def __init__(self, parent):
+    def __init__(self, parent, prefs_manager=None):
         super().__init__(parent)
         self.title("Kadrowanie i zmiana rozmiaru stron")
         self.transient(parent)
         self.result = None
+        self.prefs_manager = prefs_manager
         
         # Pozycjonuj poza ekranem, aby uniknąć migotania
         self.geometry("+10000+10000")
 
-        self.crop_mode = tk.StringVar(value="nocrop")
-        self.margin_top = tk.StringVar(value="10")
-        self.margin_bottom = tk.StringVar(value="10")
-        self.margin_left = tk.StringVar(value="10")
-        self.margin_right = tk.StringVar(value="10")
+        # Wczytaj ostatnie wartości lub użyj domyślnych
+        self.crop_mode = tk.StringVar(value=self._get_pref('crop_mode'))
+        self.margin_top = tk.StringVar(value=self._get_pref('margin_top'))
+        self.margin_bottom = tk.StringVar(value=self._get_pref('margin_bottom'))
+        self.margin_left = tk.StringVar(value=self._get_pref('margin_left'))
+        self.margin_right = tk.StringVar(value=self._get_pref('margin_right'))
 
-        self.resize_mode = tk.StringVar(value="noresize")
-        self.target_format = tk.StringVar(value="A4")
-        self.custom_width = tk.StringVar(value="")
-        self.custom_height = tk.StringVar(value="")
-        self.position_mode = tk.StringVar(value="center")
-        self.offset_x = tk.StringVar(value="0")
-        self.offset_y = tk.StringVar(value="0")
+        self.resize_mode = tk.StringVar(value=self._get_pref('resize_mode'))
+        self.target_format = tk.StringVar(value=self._get_pref('target_format'))
+        self.custom_width = tk.StringVar(value=self._get_pref('custom_width'))
+        self.custom_height = tk.StringVar(value=self._get_pref('custom_height'))
+        self.position_mode = tk.StringVar(value=self._get_pref('position_mode'))
+        self.offset_x = tk.StringVar(value=self._get_pref('offset_x'))
+        self.offset_y = tk.StringVar(value=self._get_pref('offset_y'))
 
         # Walidatory dla marginesów, rozmiarów i położenia
         self.vcmd_margin = (self.register(lambda v: validate_float_range(v, 0, 200)), "%P")
@@ -232,6 +490,46 @@ class PageCropResizeDialog(tk.Toplevel):
         self.bind("<Return>", lambda e: self.ok())
         self.bind("<KP_Enter>", lambda e: self.ok())
         self.bind("<Escape>", lambda e: self.cancel())
+
+        self.wait_window(self)
+    
+    def _get_pref(self, key):
+        """Pobiera preferencję dla tego dialogu"""
+        if self.prefs_manager:
+            return self.prefs_manager.get(f'PageCropResizeDialog.{key}', self.DEFAULTS.get(key, ''))
+        return self.DEFAULTS.get(key, '')
+    
+    def _save_prefs(self):
+        """Zapisuje obecne wartości do preferencji"""
+        if self.prefs_manager:
+            self.prefs_manager.set('PageCropResizeDialog.crop_mode', self.crop_mode.get())
+            self.prefs_manager.set('PageCropResizeDialog.margin_top', self.margin_top.get())
+            self.prefs_manager.set('PageCropResizeDialog.margin_bottom', self.margin_bottom.get())
+            self.prefs_manager.set('PageCropResizeDialog.margin_left', self.margin_left.get())
+            self.prefs_manager.set('PageCropResizeDialog.margin_right', self.margin_right.get())
+            self.prefs_manager.set('PageCropResizeDialog.resize_mode', self.resize_mode.get())
+            self.prefs_manager.set('PageCropResizeDialog.target_format', self.target_format.get())
+            self.prefs_manager.set('PageCropResizeDialog.custom_width', self.custom_width.get())
+            self.prefs_manager.set('PageCropResizeDialog.custom_height', self.custom_height.get())
+            self.prefs_manager.set('PageCropResizeDialog.position_mode', self.position_mode.get())
+            self.prefs_manager.set('PageCropResizeDialog.offset_x', self.offset_x.get())
+            self.prefs_manager.set('PageCropResizeDialog.offset_y', self.offset_y.get())
+    
+    def restore_defaults(self):
+        """Przywraca wartości domyślne"""
+        self.crop_mode.set(self.DEFAULTS['crop_mode'])
+        self.margin_top.set(self.DEFAULTS['margin_top'])
+        self.margin_bottom.set(self.DEFAULTS['margin_bottom'])
+        self.margin_left.set(self.DEFAULTS['margin_left'])
+        self.margin_right.set(self.DEFAULTS['margin_right'])
+        self.resize_mode.set(self.DEFAULTS['resize_mode'])
+        self.target_format.set(self.DEFAULTS['target_format'])
+        self.custom_width.set(self.DEFAULTS['custom_width'])
+        self.custom_height.set(self.DEFAULTS['custom_height'])
+        self.position_mode.set(self.DEFAULTS['position_mode'])
+        self.offset_x.set(self.DEFAULTS['offset_x'])
+        self.offset_y.set(self.DEFAULTS['offset_y'])
+        self.update_field_states()
 
         self.wait_window(self)
 
@@ -336,6 +634,7 @@ class PageCropResizeDialog(tk.Toplevel):
         button_frame = ttk.Frame(self)
         button_frame.pack(fill="x", padx=12, pady=(12,10))
         ttk.Button(button_frame, text="Zastosuj", command=self.ok).pack(side="left", expand=True, padx=5)
+        ttk.Button(button_frame, text="Przywróć domyślne", command=self.restore_defaults).pack(side="left", expand=True, padx=5)
         ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side="right", expand=True, padx=5)
 
     def update_field_states(self):
@@ -442,6 +741,8 @@ class PageCropResizeDialog(tk.Toplevel):
                 "offset_x_mm": offset_x if enable_position else None,
                 "offset_y_mm": offset_y if enable_position else None,
             }
+            # Zapisz preferencje przed zamknięciem
+            self._save_prefs()
             self.destroy()
         except Exception as e:
             custom_messagebox(self, "Błąd", f"Nieprawidłowe dane: {e}", typ="error")
@@ -513,9 +814,25 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 class PageNumberingDialog(tk.Toplevel):
-    def __init__(self, parent):
+    DEFAULTS = {
+        'margin_left': '35',
+        'margin_right': '25',
+        'margin_vertical_mm': '15',
+        'vertical_pos': 'dol',
+        'alignment': 'prawa',
+        'mode': 'normalna',
+        'start_page': '1',
+        'start_number': '1',
+        'font_name': 'Times-Roman',
+        'font_size': '12',
+        'mirror_margins': 'False',
+        'format_type': 'simple',
+    }
+    
+    def __init__(self, parent, prefs_manager=None):
         super().__init__(parent)
         self.parent = parent
+        self.prefs_manager = prefs_manager
         self.transient(parent)
         self.title("Dodawanie numeracji stron")
         self.result = None
@@ -540,20 +857,57 @@ class PageNumberingDialog(tk.Toplevel):
         self.wait_window(self)
 
     def create_variables(self):
-        self.v_margin_left = tk.StringVar(value="35")
-        self.v_margin_right = tk.StringVar(value="25")
-        self.v_margin_vertical_mm = tk.StringVar(value="15")
-        self.v_vertical_pos = tk.StringVar(value='dol')
-        self.v_alignment = tk.StringVar(value='prawa')
-        self.v_mode = tk.StringVar(value='normalna')
-        self.v_start_page = tk.StringVar(value="1")
-        self.v_start_number = tk.StringVar(value="1")
+        self.v_margin_left = tk.StringVar(value=self._get_pref('margin_left'))
+        self.v_margin_right = tk.StringVar(value=self._get_pref('margin_right'))
+        self.v_margin_vertical_mm = tk.StringVar(value=self._get_pref('margin_vertical_mm'))
+        self.v_vertical_pos = tk.StringVar(value=self._get_pref('vertical_pos'))
+        self.v_alignment = tk.StringVar(value=self._get_pref('alignment'))
+        self.v_mode = tk.StringVar(value=self._get_pref('mode'))
+        self.v_start_page = tk.StringVar(value=self._get_pref('start_page'))
+        self.v_start_number = tk.StringVar(value=self._get_pref('start_number'))
         self.font_options = ["Helvetica", "Times-Roman", "Courier", "Arial"]
         self.size_options = ["6", "8", "10", "11", "12", "13", "14"]
-        self.v_font_name = tk.StringVar(value=self.font_options[1])
-        self.v_font_size = tk.StringVar(value="12")
-        self.v_mirror_margins = tk.BooleanVar(value=False)
-        self.v_format_type = tk.StringVar(value='simple')
+        self.v_font_name = tk.StringVar(value=self._get_pref('font_name'))
+        self.v_font_size = tk.StringVar(value=self._get_pref('font_size'))
+        self.v_mirror_margins = tk.BooleanVar(value=self._get_pref('mirror_margins') == 'True')
+        self.v_format_type = tk.StringVar(value=self._get_pref('format_type'))
+    
+    def _get_pref(self, key):
+        """Pobiera preferencję dla tego dialogu"""
+        if self.prefs_manager:
+            return self.prefs_manager.get(f'PageNumberingDialog.{key}', self.DEFAULTS.get(key, ''))
+        return self.DEFAULTS.get(key, '')
+    
+    def _save_prefs(self):
+        """Zapisuje obecne wartości do preferencji"""
+        if self.prefs_manager:
+            self.prefs_manager.set('PageNumberingDialog.margin_left', self.v_margin_left.get())
+            self.prefs_manager.set('PageNumberingDialog.margin_right', self.v_margin_right.get())
+            self.prefs_manager.set('PageNumberingDialog.margin_vertical_mm', self.v_margin_vertical_mm.get())
+            self.prefs_manager.set('PageNumberingDialog.vertical_pos', self.v_vertical_pos.get())
+            self.prefs_manager.set('PageNumberingDialog.alignment', self.v_alignment.get())
+            self.prefs_manager.set('PageNumberingDialog.mode', self.v_mode.get())
+            self.prefs_manager.set('PageNumberingDialog.start_page', self.v_start_page.get())
+            self.prefs_manager.set('PageNumberingDialog.start_number', self.v_start_number.get())
+            self.prefs_manager.set('PageNumberingDialog.font_name', self.v_font_name.get())
+            self.prefs_manager.set('PageNumberingDialog.font_size', self.v_font_size.get())
+            self.prefs_manager.set('PageNumberingDialog.mirror_margins', str(self.v_mirror_margins.get()))
+            self.prefs_manager.set('PageNumberingDialog.format_type', self.v_format_type.get())
+    
+    def restore_defaults(self):
+        """Przywraca wartości domyślne"""
+        self.v_margin_left.set(self.DEFAULTS['margin_left'])
+        self.v_margin_right.set(self.DEFAULTS['margin_right'])
+        self.v_margin_vertical_mm.set(self.DEFAULTS['margin_vertical_mm'])
+        self.v_vertical_pos.set(self.DEFAULTS['vertical_pos'])
+        self.v_alignment.set(self.DEFAULTS['alignment'])
+        self.v_mode.set(self.DEFAULTS['mode'])
+        self.v_start_page.set(self.DEFAULTS['start_page'])
+        self.v_start_number.set(self.DEFAULTS['start_number'])
+        self.v_font_name.set(self.DEFAULTS['font_name'])
+        self.v_font_size.set(self.DEFAULTS['font_size'])
+        self.v_mirror_margins.set(self.DEFAULTS['mirror_margins'] == 'True')
+        self.v_format_type.set(self.DEFAULTS['format_type'])
 
     def center_window(self):
         self.update_idletasks()
@@ -648,6 +1002,7 @@ class PageNumberingDialog(tk.Toplevel):
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill='x', pady=(8,6))
         ttk.Button(button_frame, text="Wstaw", command=self.ok).pack(side='left', expand=True, padx=5)
+        ttk.Button(button_frame, text="Przywróć domyślne", command=self.restore_defaults).pack(side='left', expand=True, padx=5)
         ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side='right', expand=True, padx=5)
 
     def ok(self, event=None):
@@ -682,6 +1037,8 @@ class PageNumberingDialog(tk.Toplevel):
                 'format_type': self.v_format_type.get()
             }
             self.result = result
+            # Zapisz preferencje przed zamknięciem
+            self._save_prefs()
             self.destroy()
         except Exception as e:
             custom_messagebox(self, "Błąd wprowadzania", f"Sprawdź wprowadzone wartości: {e}", typ="error")
@@ -695,8 +1052,14 @@ from tkinter import ttk, messagebox
 
 class PageNumberMarginDialog(tk.Toplevel):
     """Okno dialogowe do określania wysokości marginesów (górnego i dolnego) do skanowania."""
-    def __init__(self, parent, initial_margin_mm=20):
+    DEFAULTS = {
+        'top_margin': '20',
+        'bottom_margin': '20',
+    }
+    
+    def __init__(self, parent, initial_margin_mm=20, prefs_manager=None):
         super().__init__(parent)
+        self.prefs_manager = prefs_manager
         self.parent = parent
         self.transient(parent)
         self.title("Usuwanie numeracji stron")
@@ -706,7 +1069,16 @@ class PageNumberMarginDialog(tk.Toplevel):
         self.geometry("+10000+10000")
 
         self.vcmd_margin = (self.register(lambda v: validate_float_range(v, 0, 200)), "%P")
-        self.create_widgets(initial_margin_mm)
+        
+        # Wczytaj ostatnie wartości lub użyj przekazanych/domyślnych
+        if prefs_manager:
+            initial_top = self._get_pref('top_margin')
+            initial_bottom = self._get_pref('bottom_margin')
+        else:
+            initial_top = str(initial_margin_mm)
+            initial_bottom = str(initial_margin_mm)
+        
+        self.create_widgets(initial_top, initial_bottom)
         self.resizable(False, False)
         self.protocol("WM_DELETE_WINDOW", self.cancel)
 
@@ -718,6 +1090,25 @@ class PageNumberMarginDialog(tk.Toplevel):
 
         self.center_window()
         self.wait_window(self)
+    
+    def _get_pref(self, key):
+        """Pobiera preferencję dla tego dialogu"""
+        if self.prefs_manager:
+            return self.prefs_manager.get(f'PageNumberMarginDialog.{key}', self.DEFAULTS.get(key, ''))
+        return self.DEFAULTS.get(key, '')
+    
+    def _save_prefs(self):
+        """Zapisuje obecne wartości do preferencji"""
+        if self.prefs_manager:
+            self.prefs_manager.set('PageNumberMarginDialog.top_margin', self.top_margin_entry.get())
+            self.prefs_manager.set('PageNumberMarginDialog.bottom_margin', self.bottom_margin_entry.get())
+    
+    def restore_defaults(self):
+        """Przywraca wartości domyślne"""
+        self.top_margin_entry.delete(0, tk.END)
+        self.top_margin_entry.insert(0, self.DEFAULTS['top_margin'])
+        self.bottom_margin_entry.delete(0, tk.END)
+        self.bottom_margin_entry.insert(0, self.DEFAULTS['bottom_margin'])
 
     def center_window(self):
         self.update_idletasks()
@@ -728,7 +1119,7 @@ class PageNumberMarginDialog(tk.Toplevel):
         y = self.parent.winfo_y() + (self.parent.winfo_height() - h) // 2
         self.geometry(f'{w}x{h}+{x}+{y}')
 
-    def create_widgets(self, initial_margin_mm):
+    def create_widgets(self, initial_top, initial_bottom):
         main_frame = ttk.Frame(self, padding="6")
         main_frame.pack(fill="both", expand=True)
 
@@ -744,14 +1135,14 @@ class PageNumberMarginDialog(tk.Toplevel):
             row=0, column=0, sticky="e", padx=(2, 6), pady=(2, 2)
         )
         self.top_margin_entry = ttk.Entry(margin_frame, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_margin)
-        self.top_margin_entry.insert(0, str(initial_margin_mm))
+        self.top_margin_entry.insert(0, initial_top)
         self.top_margin_entry.grid(row=0, column=1, sticky="w", padx=(0, 12), pady=(2, 2))
 
         ttk.Label(margin_frame, text="Od dołu (stopka):").grid(
             row=0, column=2, sticky="e", padx=(2, 6), pady=(2, 2)
         )
         self.bottom_margin_entry = ttk.Entry(margin_frame, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_margin)
-        self.bottom_margin_entry.insert(0, str(initial_margin_mm))
+        self.bottom_margin_entry.insert(0, initial_bottom)
         self.bottom_margin_entry.grid(row=0, column=3, sticky="w", padx=(0, 2), pady=(2, 2))
 
         # Komunikat pod polami
@@ -769,6 +1160,7 @@ class PageNumberMarginDialog(tk.Toplevel):
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill='x', side='bottom', pady=(8, 4))
         ttk.Button(button_frame, text="Usuń", command=self.ok).pack(side='left', expand=True, padx=5)
+        ttk.Button(button_frame, text="Przywróć domyślne", command=self.restore_defaults).pack(side='left', expand=True, padx=5)
         ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side='right', expand=True, padx=5)
 
     def ok(self, event=None):
@@ -780,6 +1172,8 @@ class PageNumberMarginDialog(tk.Toplevel):
                 raise ValueError("Wartości marginesów muszą być z zakresu 0–200 mm.")
 
             self.result = {'top_mm': top_mm, 'bottom_mm': bottom_mm}
+            # Zapisz preferencje przed zamknięciem
+            self._save_prefs()
             self.destroy()
         except ValueError:
             custom_messagebox(self, "Błąd Wprowadzania", "Wprowadź prawidłowe, nieujemne liczby [w mm, max 200].", typ="error")
@@ -790,9 +1184,17 @@ class PageNumberMarginDialog(tk.Toplevel):
 
 class ShiftContentDialog(tk.Toplevel):
     """Okno dialogowe do określania przesunięcia zawartości strony, wyśrodkowane i modalne."""
-    def __init__(self, parent):
+    DEFAULTS = {
+        'x_direction': 'P',
+        'y_direction': 'G',
+        'x_value': '0',
+        'y_value': '0',
+    }
+    
+    def __init__(self, parent, prefs_manager=None):
         super().__init__(parent)
         self.parent = parent
+        self.prefs_manager = prefs_manager
         self.transient(parent)
         self.title("Przesuwanie zawartości stron")
         self.result = None
@@ -814,6 +1216,29 @@ class ShiftContentDialog(tk.Toplevel):
 
         self.center_window()
         self.wait_window(self)
+    
+    def _get_pref(self, key):
+        """Pobiera preferencję dla tego dialogu"""
+        if self.prefs_manager:
+            return self.prefs_manager.get(f'ShiftContentDialog.{key}', self.DEFAULTS.get(key, ''))
+        return self.DEFAULTS.get(key, '')
+    
+    def _save_prefs(self):
+        """Zapisuje obecne wartości do preferencji"""
+        if self.prefs_manager:
+            self.prefs_manager.set('ShiftContentDialog.x_direction', self.x_direction.get())
+            self.prefs_manager.set('ShiftContentDialog.y_direction', self.y_direction.get())
+            self.prefs_manager.set('ShiftContentDialog.x_value', self.x_value.get())
+            self.prefs_manager.set('ShiftContentDialog.y_value', self.y_value.get())
+    
+    def restore_defaults(self):
+        """Przywraca wartości domyślne"""
+        self.x_direction.set(self.DEFAULTS['x_direction'])
+        self.y_direction.set(self.DEFAULTS['y_direction'])
+        self.x_value.delete(0, tk.END)
+        self.x_value.insert(0, self.DEFAULTS['x_value'])
+        self.y_value.delete(0, tk.END)
+        self.y_value.insert(0, self.DEFAULTS['y_value'])
 
     def center_window(self):
         self.update_idletasks()
@@ -839,18 +1264,18 @@ class ShiftContentDialog(tk.Toplevel):
         # Przesunięcie X (poziome)
         ttk.Label(xy_frame, text="Poziome:").grid(row=0, column=0, sticky="w", padx=(2, 8), pady=(4,2))
         self.x_value = ttk.Entry(xy_frame, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_shift)
-        self.x_value.insert(0, "0")
+        self.x_value.insert(0, self._get_pref('x_value'))
         self.x_value.grid(row=0, column=1, sticky="w", padx=(0,2), pady=(4,2))
-        self.x_direction = tk.StringVar(value='P')
+        self.x_direction = tk.StringVar(value=self._get_pref('x_direction'))
         ttk.Radiobutton(xy_frame, text="Lewo", variable=self.x_direction, value='L').grid(row=0, column=2, sticky="w", padx=(8, 4))
         ttk.Radiobutton(xy_frame, text="Prawo", variable=self.x_direction, value='P').grid(row=0, column=3, sticky="w", padx=(0,2))
 
         # Przesunięcie Y (pionowe)
         ttk.Label(xy_frame, text="Pionowe:").grid(row=1, column=0, sticky="w", padx=(2, 8), pady=(8,2))
         self.y_value = ttk.Entry(xy_frame, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_shift)
-        self.y_value.insert(0, "0")
+        self.y_value.insert(0, self._get_pref('y_value'))
         self.y_value.grid(row=1, column=1, sticky="w", padx=(0,2), pady=(8,2))
-        self.y_direction = tk.StringVar(value='G')
+        self.y_direction = tk.StringVar(value=self._get_pref('y_direction'))
         ttk.Radiobutton(xy_frame, text="Dół", variable=self.y_direction, value='D').grid(row=1, column=2, sticky="w", padx=(8, 4))
         ttk.Radiobutton(xy_frame, text="Góra", variable=self.y_direction, value='G').grid(row=1, column=3, sticky="w", padx=(0,2))
 
@@ -869,6 +1294,7 @@ class ShiftContentDialog(tk.Toplevel):
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill='x', side='bottom', pady=(10, 4))
         ttk.Button(button_frame, text="Przesuń", command=self.ok).pack(side='left', expand=True, padx=5)
+        ttk.Button(button_frame, text="Przywróć domyślne", command=self.restore_defaults).pack(side='left', expand=True, padx=5)
         ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side='right', expand=True, padx=5)
 
     def ok(self, event=None):
@@ -883,6 +1309,8 @@ class ShiftContentDialog(tk.Toplevel):
                 'x_mm': x_mm,
                 'y_mm': y_mm
             }
+            # Zapisz preferencje przed zamknięciem
+            self._save_prefs()
             self.destroy()
         except ValueError as e:
             custom_messagebox(
@@ -1390,29 +1818,42 @@ class MergePageGridDialog(tk.Toplevel):
         'A5': (148, 210),
         'A6': (105, 148),
     }
+    
+    DEFAULTS = {
+        'sheet_format': 'A4',
+        'orientation': 'Pionowa',
+        'margin_top_mm': '5',
+        'margin_bottom_mm': '5',
+        'margin_left_mm': '5',
+        'margin_right_mm': '5',
+        'spacing_x_mm': '10',
+        'spacing_y_mm': '10',
+        'dpi_var': '300',
+    }
 
-    def __init__(self, parent, page_count):
+    def __init__(self, parent, page_count, prefs_manager=None):
         super().__init__(parent)
         self.title("Scalanie strony na arkuszu")
         self.transient(parent)
         self.result = None
+        self.prefs_manager = prefs_manager
         
         # Pozycjonuj poza ekranem, aby uniknąć migotania
         self.geometry("+10000+10000")
 
         self.configure(bg=parent.cget('bg'))
 
-        self.sheet_format = tk.StringVar(value="A4")
-        self.orientation = tk.StringVar(value="Pionowa")
-        self.margin_top_mm = tk.StringVar(value="5")
-        self.margin_bottom_mm = tk.StringVar(value="5")
-        self.margin_left_mm = tk.StringVar(value="5")
-        self.margin_right_mm = tk.StringVar(value="5")
-        self.spacing_x_mm = tk.StringVar(value="10")
-        self.spacing_y_mm = tk.StringVar(value="10")
+        self.sheet_format = tk.StringVar(value=self._get_pref('sheet_format'))
+        self.orientation = tk.StringVar(value=self._get_pref('orientation'))
+        self.margin_top_mm = tk.StringVar(value=self._get_pref('margin_top_mm'))
+        self.margin_bottom_mm = tk.StringVar(value=self._get_pref('margin_bottom_mm'))
+        self.margin_left_mm = tk.StringVar(value=self._get_pref('margin_left_mm'))
+        self.margin_right_mm = tk.StringVar(value=self._get_pref('margin_right_mm'))
+        self.spacing_x_mm = tk.StringVar(value=self._get_pref('spacing_x_mm'))
+        self.spacing_y_mm = tk.StringVar(value=self._get_pref('spacing_y_mm'))
         self.rows_var = tk.StringVar()
         self.cols_var = tk.StringVar()
-        self.dpi_var = tk.StringVar(value="300")
+        self.dpi_var = tk.StringVar(value=self._get_pref('dpi_var'))
         self.page_count = page_count
 
         self.vcmd_200 = (self.register(lambda v: validate_float_range(v, 0, 200)), "%P")
@@ -1552,7 +1993,40 @@ class MergePageGridDialog(tk.Toplevel):
         button_frame = ttk.Frame(self)
         button_frame.pack(fill="x", padx=16, pady=(0, 12), side="bottom")
         ttk.Button(button_frame, text="Zastosuj", command=self.ok).pack(side="left", expand=True, padx=5)
+        ttk.Button(button_frame, text="Przywróć domyślne", command=self.restore_defaults).pack(side="left", expand=True, padx=5)
         ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side="right", expand=True, padx=5)
+    
+    def _get_pref(self, key):
+        """Pobiera preferencję dla tego dialogu"""
+        if self.prefs_manager:
+            return self.prefs_manager.get(f'MergePageGridDialog.{key}', self.DEFAULTS.get(key, ''))
+        return self.DEFAULTS.get(key, '')
+    
+    def _save_prefs(self):
+        """Zapisuje obecne wartości do preferencji"""
+        if self.prefs_manager:
+            self.prefs_manager.set('MergePageGridDialog.sheet_format', self.sheet_format.get())
+            self.prefs_manager.set('MergePageGridDialog.orientation', self.orientation.get())
+            self.prefs_manager.set('MergePageGridDialog.margin_top_mm', self.margin_top_mm.get())
+            self.prefs_manager.set('MergePageGridDialog.margin_bottom_mm', self.margin_bottom_mm.get())
+            self.prefs_manager.set('MergePageGridDialog.margin_left_mm', self.margin_left_mm.get())
+            self.prefs_manager.set('MergePageGridDialog.margin_right_mm', self.margin_right_mm.get())
+            self.prefs_manager.set('MergePageGridDialog.spacing_x_mm', self.spacing_x_mm.get())
+            self.prefs_manager.set('MergePageGridDialog.spacing_y_mm', self.spacing_y_mm.get())
+            self.prefs_manager.set('MergePageGridDialog.dpi_var', self.dpi_var.get())
+    
+    def restore_defaults(self):
+        """Przywraca wartości domyślne"""
+        self.sheet_format.set(self.DEFAULTS['sheet_format'])
+        self.orientation.set(self.DEFAULTS['orientation'])
+        self.margin_top_mm.set(self.DEFAULTS['margin_top_mm'])
+        self.margin_bottom_mm.set(self.DEFAULTS['margin_bottom_mm'])
+        self.margin_left_mm.set(self.DEFAULTS['margin_left_mm'])
+        self.margin_right_mm.set(self.DEFAULTS['margin_right_mm'])
+        self.spacing_x_mm.set(self.DEFAULTS['spacing_x_mm'])
+        self.spacing_y_mm.set(self.DEFAULTS['spacing_y_mm'])
+        self.dpi_var.set(self.DEFAULTS['dpi_var'])
+        self._update_grid_preview()
 
     def _get_sheet_dimensions(self):
         sf = self.sheet_format.get()
@@ -1678,6 +2152,8 @@ class MergePageGridDialog(tk.Toplevel):
                 "orientation": orientation,
                 "dpi": int(self.dpi_var.get())
             }
+            # Zapisz preferencje przed zamknięciem
+            self._save_prefs()
             self.destroy()
         except Exception as e:
             custom_messagebox(self, "Błąd", f"Nieprawidłowe dane: {e}", typ="error")
@@ -1869,7 +2345,7 @@ class SelectablePDFViewer:
             self._update_status("Musisz zaznaczyć przynajmniej jedną stronę PDF.")
             return
 
-        dialog = PageCropResizeDialog(self.master)
+        dialog = PageCropResizeDialog(self.master, self.prefs_manager)
         result = dialog.result
         if not result:
             self._update_status("Anulowano operację.")
@@ -1953,7 +2429,7 @@ class SelectablePDFViewer:
              return
         
         # 1. Wywołanie dialogu i pobranie ustawień
-        dialog = PageNumberingDialog(self.master)
+        dialog = PageNumberingDialog(self.master, self.prefs_manager)
         settings = dialog.result
 
         if settings is None:
@@ -2126,7 +2602,7 @@ class SelectablePDFViewer:
             return
 
         # 1. Otwarcie dialogu i pobranie wartości od użytkownika
-        dialog = PageNumberMarginDialog(self.master, initial_margin_mm=20) # Zakładam, że root to główne okno
+        dialog = PageNumberMarginDialog(self.master, initial_margin_mm=20, prefs_manager=self.prefs_manager) # Zakładam, że root to główne okno
         margins = dialog.result
 
         if margins is None:
@@ -2346,7 +2822,7 @@ class SelectablePDFViewer:
             return
 
         # 1. Uruchomienie okna dialogowego i pobranie wyników
-        dialog = ShiftContentDialog(self.master)
+        dialog = ShiftContentDialog(self.master, self.prefs_manager)
         result = dialog.result
 
         if not result or (result['x_mm'] == 0 and result['y_mm'] == 0):
@@ -2575,6 +3051,9 @@ class SelectablePDFViewer:
         
         master.protocol("WM_DELETE_WINDOW", self.on_close_window) 
 
+        # Inicjalizacja managera preferencji
+        self.prefs_manager = PreferencesManager()
+
         self.pdf_document = None
         self.selected_pages: Set[int] = set()
         self.tk_images: Dict[int, ImageTk.PhotoImage] = {}
@@ -2601,7 +3080,7 @@ class SelectablePDFViewer:
         self.redo_stack: List[bytes] = []
         self.max_stack_size = 50
         
-        self._set_initial_geometry() 
+        self._set_initial_geometry()
         self._load_icons_or_fallback(size=28) 
         self._create_menu() 
         self._setup_context_menu() 
@@ -2852,7 +3331,9 @@ class SelectablePDFViewer:
         self.file_menu.add_separator()
         self.file_menu.add_command(label="Zamknij plik", command=self.close_pdf, accelerator="Ctrl+Q")
         self.file_menu.add_separator()
-        self.file_menu.add_command(label="Zamknij program", command=self.on_close_window)  
+        self.file_menu.add_command(label="Preferencje...", command=self.show_preferences_dialog)
+        self.file_menu.add_separator()
+        self.file_menu.add_command(label="Zamknij program", command=self.on_close_window)
 
         select_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Zaznacz", menu=select_menu)
@@ -2878,6 +3359,10 @@ class SelectablePDFViewer:
         self.help_menu.add_command(label="Skróty klawiszowe...", command=self.show_shortcuts_dialog)
         self.help_menu.add_command(label="O programie", command=self.show_about_dialog)
         
+    def show_preferences_dialog(self):
+        """Wyświetla okno dialogowe preferencji"""
+        PreferencesDialog(self.master, self.prefs_manager)
+    
     def show_about_dialog(self):
         PROGRAM_LOGO_PATH = resource_path(os.path.join('icons', 'logo.png'))
         # STAŁE WYMIARY OKNA
@@ -4276,7 +4761,7 @@ class SelectablePDFViewer:
         selected_indices = sorted(list(self.selected_pages))
         num_pages = len(selected_indices)
 
-        dialog = MergePageGridDialog(self.master, page_count=num_pages)
+        dialog = MergePageGridDialog(self.master, page_count=num_pages, prefs_manager=self.prefs_manager)
         params = dialog.result
         if params is None:
             self._update_status("Anulowano scalanie stron.")
