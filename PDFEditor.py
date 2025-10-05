@@ -220,6 +220,7 @@ class PreferencesManager:
             'last_save_path': '',
             'thumbnail_quality': 'Średnia',
             'confirm_delete': 'False',
+            'export_image_dpi': '600',  # DPI dla eksportu obrazów (150, 300, 600)
             
             # PageCropResizeDialog
             'PageCropResizeDialog.crop_mode': 'nocrop',
@@ -2867,6 +2868,9 @@ class MacrosListDialog(tk.Toplevel):
         self.viewer.refresh_macros_menu()
     def close(self):
         """Zamknij okno"""
+        # Wyczyść referencję w viewerze przed zamknięciem
+        if self.viewer.macros_list_dialog == self:
+            self.viewer.macros_list_dialog = None
         self.destroy()
 
 
@@ -3971,8 +3975,9 @@ class SelectablePDFViewer:
             return
 
         try:
-            # Ustawienia eksportu
-            zoom = 300 / 72.0 
+            # Ustawienia eksportu - pobierz DPI z preferencji
+            export_dpi = int(self.prefs_manager.get('export_image_dpi', '600'))
+            zoom = export_dpi / 72.0 
             matrix = fitz.Matrix(zoom, zoom)
             
             # Pobierz nazwę bazową pliku źródłowego
@@ -4589,8 +4594,8 @@ class SelectablePDFViewer:
         self.master.bind('<Control-i>', lambda e: self._check_action_allowed('import') and self.import_pdf_after_active_page()) # Ctrl+I dla PDF
         self.master.bind('<Control-I>', lambda e: self._check_action_allowed('import') and self.import_pdf_after_active_page()) # Ctrl+I dla PDF
         
-        # F12 - Open Macros List
-        self.master.bind('<F12>', lambda e: self.show_macros_list())
+        # F12 - Open Macros List (tylko gdy PDF załadowany)
+        self.master.bind('<F12>', lambda e: self.pdf_document is not None and self.show_macros_list())
         
     def _setup_focus_logic(self):
         self.master.bind('<Escape>', lambda e: self._clear_all_selection())
@@ -6589,6 +6594,7 @@ class SelectablePDFViewer:
         self.macro_recording = False
         self.current_macro_actions = []
         self.macro_recording_name = None
+        self.macros_list_dialog = None  # Track the MacrosListDialog instance
     
 
     def record_macro(self):
@@ -6605,7 +6611,13 @@ class SelectablePDFViewer:
     
     def show_macros_list(self):
         """Wyświetla listę makr użytkownika"""
-        MacrosListDialog(self.master, self.prefs_manager, self)
+        # Jeśli okno już istnieje, sprowadź je na wierzch
+        if self.macros_list_dialog and self.macros_list_dialog.winfo_exists():
+            self.macros_list_dialog.lift()
+            self.macros_list_dialog.focus_force()
+        else:
+            # Utwórz nowe okno i zapisz referencję
+            self.macros_list_dialog = MacrosListDialog(self.master, self.prefs_manager, self)
     
     def run_macro(self, macro_name):
         """Uruchamia makro o podanej nazwie"""
