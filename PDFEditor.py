@@ -2430,6 +2430,181 @@ class MergePageGridDialog(tk.Toplevel):
 # DIALOG SCALANIA PLIKÓW PDF
 # ====================================================================
 
+class MacrosListDialog(tk.Toplevel):
+    """Okno dialogowe listy makr użytkownika"""
+    
+    def __init__(self, parent, prefs_manager, viewer):
+        super().__init__(parent)
+        self.parent = parent
+        self.prefs_manager = prefs_manager
+        self.viewer = viewer
+        self.title("Lista makr użytkownika")
+        self.transient(parent)
+        self.grab_set()
+        self.resizable(True, True)
+        self.geometry("500x400")
+        
+        self.build_ui()
+        self.center_dialog(parent)
+        self.protocol("WM_DELETE_WINDOW", self.close)
+        self.load_macros()
+    
+    def center_dialog(self, parent):
+        """Wyśrodkuj okno względem rodzica"""
+        self.update_idletasks()
+        dialog_w = self.winfo_width()
+        dialog_h = self.winfo_height()
+        parent_x = parent.winfo_rootx()
+        parent_y = parent.winfo_rooty()
+        parent_w = parent.winfo_width()
+        parent_h = parent.winfo_height()
+        x = parent_x + (parent_w - dialog_w) // 2
+        y = parent_y + (parent_h - dialog_h) // 2
+        self.geometry(f"+{x}+{y}")
+    
+    def build_ui(self):
+        main_frame = ttk.Frame(self, padding="12")
+        main_frame.pack(fill="both", expand=True)
+        
+        # Lista makr
+        list_frame = ttk.Frame(main_frame)
+        list_frame.pack(fill="both", expand=True, pady=(0, 8))
+        
+        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar.pack(side="right", fill="y")
+        
+        self.macros_listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar.set, height=15)
+        self.macros_listbox.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=self.macros_listbox.yview)
+        
+        # Przyciski akcji
+        buttons_frame = ttk.Frame(main_frame)
+        buttons_frame.pack(fill="x")
+        
+        ttk.Button(buttons_frame, text="Uruchom", command=self.run_selected, width=15).pack(side="left", padx=(0, 4))
+        ttk.Button(buttons_frame, text="Usuń", command=self.delete_selected, width=15).pack(side="left", padx=4)
+        ttk.Button(buttons_frame, text="Ustaw skrót...", command=self.set_shortcut, width=15).pack(side="left", padx=4)
+        ttk.Button(buttons_frame, text="Zamknij", command=self.close, width=15).pack(side="left", padx=4)
+    
+    def load_macros(self):
+        """Wczytaj listę makr"""
+        self.macros_listbox.delete(0, tk.END)
+        macros = self.prefs_manager.get_profiles('macros')
+        for name, data in macros.items():
+            shortcut = data.get('shortcut', '')
+            if shortcut:
+                display_name = f"{name} ({shortcut})"
+            else:
+                display_name = name
+            self.macros_listbox.insert(tk.END, display_name)
+    
+    def run_selected(self):
+        """Uruchom wybrane makro"""
+        selection = self.macros_listbox.curselection()
+        if not selection:
+            custom_messagebox(self, "Informacja", "Wybierz makro do uruchomienia.", typ="info")
+            return
+        
+        index = selection[0]
+        macros = self.prefs_manager.get_profiles('macros')
+        macro_name = list(macros.keys())[index]
+        
+        self.viewer.run_macro(macro_name)
+    
+    def delete_selected(self):
+        """Usuń wybrane makro"""
+        selection = self.macros_listbox.curselection()
+        if not selection:
+            custom_messagebox(self, "Informacja", "Wybierz makro do usunięcia.", typ="info")
+            return
+        
+        index = selection[0]
+        macros = self.prefs_manager.get_profiles('macros')
+        macro_name = list(macros.keys())[index]
+        
+        answer = custom_messagebox(
+            self,
+            "Potwierdzenie",
+            f"Czy na pewno usunąć makro '{macro_name}'?",
+            typ="question"
+        )
+        
+        if answer:
+            del macros[macro_name]
+            self.prefs_manager.save_profiles('macros', macros)
+            self.load_macros()
+    
+    def set_shortcut(self):
+        """Ustaw skrót klawiszowy dla makra"""
+        selection = self.macros_listbox.curselection()
+        if not selection:
+            custom_messagebox(self, "Informacja", "Wybierz makro.", typ="info")
+            return
+        
+        index = selection[0]
+        macros = self.prefs_manager.get_profiles('macros')
+        macro_name = list(macros.keys())[index]
+        
+        # Dialog do wprowadzenia skrótu
+        dialog = tk.Toplevel(self)
+        dialog.title("Ustaw skrót klawiszowy")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        
+        main_frame = ttk.Frame(dialog, padding="12")
+        main_frame.pack(fill="both", expand=True)
+        
+        ttk.Label(main_frame, text=f"Makro: {macro_name}").pack(anchor="w", pady=(0, 8))
+        ttk.Label(main_frame, text="Skrót klawiszowy (np. Ctrl+Shift+M):").pack(anchor="w", pady=2)
+        
+        shortcut_var = tk.StringVar(value=macros[macro_name].get('shortcut', ''))
+        shortcut_entry = ttk.Entry(main_frame, textvariable=shortcut_var, width=30)
+        shortcut_entry.pack(fill="x", pady=2)
+        
+        result = [None]
+        
+        def on_ok():
+            result[0] = shortcut_var.get().strip()
+            dialog.destroy()
+        
+        def on_cancel():
+            dialog.destroy()
+        
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(pady=(12, 0))
+        ttk.Button(button_frame, text="OK", command=on_ok, width=10).pack(side="left", padx=4)
+        ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10).pack(side="left", padx=4)
+        
+        shortcut_entry.focus_set()
+        dialog.bind("<Return>", lambda e: on_ok())
+        dialog.bind("<Escape>", lambda e: on_cancel())
+        
+        # Wyśrodkuj
+        dialog.update_idletasks()
+        dialog_w = dialog.winfo_width()
+        dialog_h = dialog.winfo_height()
+        parent_x = self.winfo_rootx()
+        parent_y = self.winfo_rooty()
+        parent_w = self.winfo_width()
+        parent_h = self.winfo_height()
+        x = parent_x + (parent_w - dialog_w) // 2
+        y = parent_y + (parent_h - dialog_h) // 2
+        dialog.geometry(f"+{x}+{y}")
+        
+        dialog.wait_window()
+        
+        if result[0] is not None:
+            macros[macro_name]['shortcut'] = result[0]
+            self.prefs_manager.save_profiles('macros', macros)
+            self.load_macros()
+            custom_messagebox(self, "Sukces", f"Skrót '{result[0]}' przypisany do makra '{macro_name}'.", typ="info")
+    
+    def close(self):
+        """Zamknij okno"""
+        self.destroy()
+
+
 class MergePDFDialog(tk.Toplevel):
     """Okno dialogowe do scalania wielu plików PDF"""
     
@@ -3369,6 +3544,9 @@ class SelectablePDFViewer:
         """Zaznacza strony nieparzyste (indeksy 0, 2, 4...)."""
         if not self.pdf_document: return
         
+        # Nagraj akcję
+        self._record_action('select_odd')
+        
         # W Pythonie indeksy są od 0, więc strony nieparzyste mają indeksy parzyste (0, 2, 4...)
         indices = [i for i in range(len(self.pdf_document)) if i % 2 == 0]
         self._apply_selection_by_indices(indices)
@@ -3376,6 +3554,9 @@ class SelectablePDFViewer:
     def _select_even_pages(self):
         """Zaznacza strony parzyste (indeksy 1, 3, 5...)."""
         if not self.pdf_document: return
+        
+        # Nagraj akcję
+        self._record_action('select_even')
 
         # Strony parzyste mają indeksy nieparzyste (1, 3, 5...)
         indices = [i for i in range(len(self.pdf_document)) if i % 2 != 0]
@@ -3524,11 +3705,14 @@ class SelectablePDFViewer:
 
         # Inicjalizacja managera preferencji
         self.prefs_manager = PreferencesManager()
+        
+        # Inicjalizacja systemu makr
+        self._init_macro_system()
 
         self.pdf_document = None
         self.selected_pages: Set[int] = set()
         self.tk_images: Dict[int, ImageTk.PhotoImage] = {}
-        self.icons: Dict[str, Union[ImageTk.PhotoImage, str]] = {} 
+        self.icons: Dict[str, Union[ImageTk.PhotoImage, str]] = {}
         
         self.thumb_frames: Dict[int, 'ThumbnailFrame'] = {}
         self.active_page_index = 0 
@@ -4097,6 +4281,8 @@ class SelectablePDFViewer:
                 self.selected_pages.clear()
                 self._update_status("Anulowano zaznaczenie wszystkich stron (Ctrl+A).")
             else:
+                # Nagraj akcję
+                self._record_action('select_all')
                 self.selected_pages = all_pages
                 self._update_status(f"Zaznaczono wszystkie strony ({len(self.pdf_document)}).")
             if self.pdf_document.page_count > 0:
@@ -4889,6 +5075,10 @@ class SelectablePDFViewer:
         if not self.pdf_document or not self.selected_pages:
             self._update_status("BŁĄD: Brak zaznaczonych stron do usunięcia.")
             return
+        
+        # Nagraj akcję
+        self._record_action('delete')
+        
         pages_to_delete = sorted(list(self.selected_pages), reverse=True)
         # --- BLOKADA: NIE USUWAJ OSTATNIEJ STRONY ---
         if len(pages_to_delete) >= len(self.pdf_document):
@@ -5172,6 +5362,13 @@ class SelectablePDFViewer:
         if not self.pdf_document or not self.selected_pages: 
             self._update_status("BŁĄD: Zaznacz strony do obrotu.")
             return
+        
+        # Nagraj akcję
+        if angle == -90:
+            self._record_action('rotate_left')
+        elif angle == 90:
+            self._record_action('rotate_right')
+        
         pages_to_rotate = sorted(list(self.selected_pages))
         try:
             self._save_state_to_undo()
@@ -5268,6 +5465,9 @@ class SelectablePDFViewer:
         if not self.pdf_document or len(self.selected_pages) < 1:
             self._update_status("BŁĄD: Zaznacz przynajmniej jedną stronę, aby ją zduplikować.")
             return
+        
+        # Nagraj akcję
+        self._record_action('duplicate')
 
         num_selected = len(self.selected_pages)
 
@@ -5918,15 +6118,152 @@ class SelectablePDFViewer:
     # FUNKCJE MAKR
     # ===================================================================
     
+    def _init_macro_system(self):
+        """Inicjalizuje system makr"""
+        self.macro_recording = False
+        self.current_macro_actions = []
+        self.macro_recording_name = None
+    
     def record_macro(self):
-        """Rozpoczyna nagrywanie makra"""
-        # TODO: Implementacja nagrywania makra
-        custom_messagebox(self.master, "Informacja", "Funkcja nagrywania makr będzie dostępna wkrótce.", typ="info")
+        """Rozpoczyna lub kończy nagrywanie makra"""
+        if not self.macro_recording:
+            # Rozpocznij nagrywanie
+            dialog = tk.Toplevel(self.master)
+            dialog.title("Nagrywanie makra")
+            dialog.transient(self.master)
+            dialog.grab_set()
+            dialog.resizable(False, False)
+            
+            main_frame = ttk.Frame(dialog, padding="12")
+            main_frame.pack(fill="both", expand=True)
+            
+            ttk.Label(main_frame, text="Nazwa makra:").grid(row=0, column=0, sticky="w", pady=2)
+            name_var = tk.StringVar()
+            name_entry = ttk.Entry(main_frame, textvariable=name_var, width=30)
+            name_entry.grid(row=0, column=1, sticky="ew", pady=2, padx=(8, 0))
+            
+            result = [None]
+            
+            def on_ok():
+                name = name_var.get().strip()
+                if not name:
+                    custom_messagebox(dialog, "Błąd", "Nazwa makra nie może być pusta.", typ="error")
+                    return
+                result[0] = name
+                dialog.destroy()
+            
+            def on_cancel():
+                dialog.destroy()
+            
+            button_frame = ttk.Frame(main_frame)
+            button_frame.grid(row=1, column=0, columnspan=2, pady=(12, 0))
+            ttk.Button(button_frame, text="Rozpocznij", command=on_ok, width=10).pack(side="left", padx=4)
+            ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10).pack(side="left", padx=4)
+            
+            name_entry.focus_set()
+            dialog.bind("<Return>", lambda e: on_ok())
+            dialog.bind("<Escape>", lambda e: on_cancel())
+            
+            # Wyśrodkuj
+            dialog.update_idletasks()
+            dialog_w = dialog.winfo_width()
+            dialog_h = dialog.winfo_height()
+            parent_x = self.master.winfo_rootx()
+            parent_y = self.master.winfo_rooty()
+            parent_w = self.master.winfo_width()
+            parent_h = self.master.winfo_height()
+            x = parent_x + (parent_w - dialog_w) // 2
+            y = parent_y + (parent_h - dialog_h) // 2
+            dialog.geometry(f"+{x}+{y}")
+            
+            dialog.wait_window()
+            
+            if result[0]:
+                self.macro_recording = True
+                self.current_macro_actions = []
+                self.macro_recording_name = result[0]
+                self._update_status(f"Nagrywanie makra '{result[0]}'... Wybierz 'Nagraj makro' ponownie aby zakończyć.")
+        else:
+            # Zakończ nagrywanie
+            if not self.current_macro_actions:
+                custom_messagebox(self.master, "Informacja", "Makro nie zawiera żadnych akcji.", typ="info")
+                self.macro_recording = False
+                self.macro_recording_name = None
+                return
+            
+            # Zapisz makro
+            macros = self.prefs_manager.get_profiles('macros')
+            macros[self.macro_recording_name] = {
+                'actions': self.current_macro_actions,
+                'shortcut': ''
+            }
+            self.prefs_manager.save_profiles('macros', macros)
+            
+            custom_messagebox(
+                self.master,
+                "Sukces",
+                f"Makro '{self.macro_recording_name}' zostało zapisane z {len(self.current_macro_actions)} akcjami.",
+                typ="info"
+            )
+            self._update_status(f"Makro '{self.macro_recording_name}' zapisane.")
+            self.macro_recording = False
+            self.macro_recording_name = None
+            self.current_macro_actions = []
+    
+    def _record_action(self, action_name, **kwargs):
+        """Nagrywa akcję do bieżącego makra"""
+        if self.macro_recording:
+            self.current_macro_actions.append({
+                'action': action_name,
+                'params': kwargs
+            })
     
     def show_macros_list(self):
         """Wyświetla listę makr użytkownika"""
-        # TODO: Implementacja listy makr
-        custom_messagebox(self.master, "Informacja", "Lista makr będzie dostępna wkrótce.", typ="info")
+        MacrosListDialog(self.master, self.prefs_manager, self)
+    
+    def run_macro(self, macro_name):
+        """Uruchamia makro o podanej nazwie"""
+        macros = self.prefs_manager.get_profiles('macros')
+        if macro_name not in macros:
+            custom_messagebox(self.master, "Błąd", f"Makro '{macro_name}' nie istnieje.", typ="error")
+            return
+        
+        macro = macros[macro_name]
+        actions = macro.get('actions', [])
+        
+        if not actions:
+            custom_messagebox(self.master, "Informacja", "Makro nie zawiera żadnych akcji.", typ="info")
+            return
+        
+        # Wyłącz nagrywanie podczas wykonywania makra
+        was_recording = self.macro_recording
+        self.macro_recording = False
+        
+        try:
+            for action_data in actions:
+                action = action_data.get('action')
+                params = action_data.get('params', {})
+                
+                # Mapowanie akcji na metody
+                action_map = {
+                    'rotate_left': lambda: self.rotate_selected_page(-90),
+                    'rotate_right': lambda: self.rotate_selected_page(90),
+                    'delete': self.delete_selected_pages,
+                    'duplicate': self.duplicate_selected_page,
+                    'select_all': self._select_all,
+                    'select_odd': self._select_odd_pages,
+                    'select_even': self._select_even_pages,
+                }
+                
+                if action in action_map:
+                    action_map[action]()
+            
+            self._update_status(f"Wykonano makro '{macro_name}' ({len(actions)} akcji).")
+        except Exception as e:
+            custom_messagebox(self.master, "Błąd", f"Błąd podczas wykonywania makra:\n{e}", typ="error")
+        finally:
+            self.macro_recording = was_recording
 
     def update_focus_display(self, hide_mouse_focus: bool = False):
         if not self.pdf_document: return
