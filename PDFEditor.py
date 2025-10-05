@@ -2495,29 +2495,25 @@ class MacroEditDialog(tk.Toplevel):
         main_frame = ttk.Frame(self, padding="12")
         main_frame.pack(fill="both", expand=True)
         
-        # Actions list
-        list_frame = ttk.Frame(main_frame)
-        list_frame.pack(fill="both", expand=True, pady=(0, 8))
+        # Info label
+        ttk.Label(main_frame, text="Edytuj makro jako tekst JSON:", 
+                 font=('TkDefaultFont', 9, 'bold')).pack(anchor="w", pady=(0, 4))
         
-        ttk.Label(list_frame, text="Akcje makra:").pack(anchor="w", pady=(0, 4))
+        info_label = ttk.Label(main_frame, text="Format: [{\"action\": \"nazwa_akcji\", \"params\": {\"parametr\": \"wartość\"}}, ...]", 
+                              foreground="gray")
+        info_label.pack(anchor="w", pady=(0, 8))
         
-        scrollbar = ttk.Scrollbar(list_frame)
+        # Text editor for manual editing
+        text_frame = ttk.Frame(main_frame)
+        text_frame.pack(fill="both", expand=True, pady=(0, 8))
+        
+        scrollbar = ttk.Scrollbar(text_frame)
         scrollbar.pack(side="right", fill="y")
         
-        self.actions_listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar.set, height=15)
-        self.actions_listbox.pack(side="left", fill="both", expand=True)
-        scrollbar.config(command=self.actions_listbox.yview)
-        
-        # Action buttons
-        action_buttons_frame = ttk.Frame(main_frame)
-        action_buttons_frame.pack(fill="x", pady=(0, 8))
-        
-        ttk.Button(action_buttons_frame, text="↑ W górę", 
-                  command=self.move_up, width=12).pack(side="left", padx=(0, 4))
-        ttk.Button(action_buttons_frame, text="↓ W dół", 
-                  command=self.move_down, width=12).pack(side="left", padx=4)
-        ttk.Button(action_buttons_frame, text="Usuń akcję", 
-                  command=self.delete_action, width=12).pack(side="left", padx=4)
+        self.actions_text = tk.Text(text_frame, yscrollcommand=scrollbar.set, 
+                                    wrap="none", font=('Courier', 9))
+        self.actions_text.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=self.actions_text.yview)
         
         # Save/Cancel buttons
         buttons_frame = ttk.Frame(main_frame)
@@ -2527,85 +2523,58 @@ class MacroEditDialog(tk.Toplevel):
         ttk.Button(buttons_frame, text="Anuluj", command=self.close, width=15).pack(side="left", padx=4)
     
     def load_actions(self):
-        """Load actions into listbox"""
-        self.actions_listbox.delete(0, tk.END)
-        for i, action_data in enumerate(self.actions):
-            action = action_data.get('action', 'unknown')
-            params = action_data.get('params', {})
-            
-            # Format action display
-            if params:
-                params_str = ', '.join(f"{k}={v}" for k, v in params.items())
-                display = f"{i+1}. {action} ({params_str})"
-            else:
-                display = f"{i+1}. {action}"
-            
-            self.actions_listbox.insert(tk.END, display)
-    
-    def move_up(self):
-        """Move selected action up"""
-        selection = self.actions_listbox.curselection()
-        if not selection:
-            return
-        
-        index = selection[0]
-        if index == 0:
-            return  # Already at top
-        
-        # Swap actions
-        self.actions[index], self.actions[index-1] = self.actions[index-1], self.actions[index]
-        self.load_actions()
-        self.actions_listbox.selection_set(index-1)
-    
-    def move_down(self):
-        """Move selected action down"""
-        selection = self.actions_listbox.curselection()
-        if not selection:
-            return
-        
-        index = selection[0]
-        if index >= len(self.actions) - 1:
-            return  # Already at bottom
-        
-        # Swap actions
-        self.actions[index], self.actions[index+1] = self.actions[index+1], self.actions[index]
-        self.load_actions()
-        self.actions_listbox.selection_set(index+1)
-    
-    def delete_action(self):
-        """Delete selected action"""
-        selection = self.actions_listbox.curselection()
-        if not selection:
-            return
-        
-        index = selection[0]
-        answer = custom_messagebox(
-            self,
-            "Potwierdzenie",
-            f"Czy na pewno usunąć akcję #{index+1}?",
-            typ="question"
-        )
-        
-        if answer:
-            del self.actions[index]
-            self.load_actions()
+        """Load actions into text editor as JSON"""
+        import json
+        self.actions_text.delete("1.0", tk.END)
+        # Pretty print JSON for readability
+        json_str = json.dumps(self.actions, indent=2, ensure_ascii=False)
+        self.actions_text.insert("1.0", json_str)
     
     def save(self):
         """Save modified macro"""
-        if not self.actions:
-            custom_messagebox(self, "Błąd", "Makro musi zawierać przynajmniej jedną akcję.", typ="error")
-            return
+        import json
         
-        macros = self.prefs_manager.get_profiles('macros')
-        macros[self.macro_name]['actions'] = self.actions
-        self.prefs_manager.save_profiles('macros', macros)
+        # Get text from editor and parse as JSON
+        json_str = self.actions_text.get("1.0", tk.END).strip()
         
-        custom_messagebox(self, "Sukces", "Makro zostało zaktualizowane.", typ="info")
-        
-        if self.refresh_callback:
-            self.refresh_callback()
-        
-        self.destroy()
+        try:
+            actions = json.loads(json_str)
+            
+            # Validate that it's a list
+            if not isinstance(actions, list):
+                custom_messagebox(self, "Błąd", "Makro musi być listą akcji (JSON array).", typ="error")
+                return
+            
+            # Validate that it has at least one action
+            if not actions:
+                custom_messagebox(self, "Błąd", "Makro musi zawierać przynajmniej jedną akcję.", typ="error")
+                return
+            
+            # Validate each action has required structure
+            for i, action in enumerate(actions):
+                if not isinstance(action, dict):
+                    custom_messagebox(self, "Błąd", f"Akcja #{i+1} musi być obiektem JSON.", typ="error")
+                    return
+                if 'action' not in action:
+                    custom_messagebox(self, "Błąd", f"Akcja #{i+1} musi mieć pole 'action'.", typ="error")
+                    return
+            
+            # Save the validated actions
+            macros = self.prefs_manager.get_profiles('macros')
+            macros[self.macro_name]['actions'] = actions
+            self.prefs_manager.save_profiles('macros', macros)
+            
+            custom_messagebox(self, "Sukces", "Makro zostało zaktualizowane.", typ="info")
+            
+            if self.refresh_callback:
+                self.refresh_callback()
+            
+            self.destroy()
+            
+        except json.JSONDecodeError as e:
+            custom_messagebox(self, "Błąd", f"Nieprawidłowy format JSON:\n{str(e)}", typ="error")
+        except Exception as e:
+            custom_messagebox(self, "Błąd", f"Błąd podczas zapisywania:\n{str(e)}", typ="error")
     
     def close(self):
         """Close without saving"""
@@ -2654,13 +2623,35 @@ class MacroRecordingDialog(tk.Toplevel):
         self.name_entry = ttk.Entry(main_frame, textvariable=self.name_var, width=30)
         self.name_entry.grid(row=0, column=1, sticky="ew", pady=2, padx=(8, 0))
         
+        # List of recordable functions
+        ttk.Label(main_frame, text="Funkcje które mogą zostać nagrane:", 
+                 font=('TkDefaultFont', 9, 'bold')).grid(row=1, column=0, columnspan=2, sticky="w", pady=(12, 4))
+        
+        functions_frame = ttk.Frame(main_frame, relief="sunken", borderwidth=1)
+        functions_frame.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
+        
+        functions_text = tk.Text(functions_frame, height=8, width=50, wrap="word", 
+                                font=('TkDefaultFont', 8), state=tk.DISABLED)
+        functions_text.pack(fill="both", expand=True, padx=2, pady=2)
+        
+        recordable_functions = """• Obróć w lewo / w prawo
+• Zaznacz wszystkie / nieparzyste / parzyste / pionowe / poziome
+• Przesuń zawartość strony
+• Dodaj numerację stron
+• Usuń numerację stron
+• Kadruj / Zmień rozmiar strony"""
+        
+        functions_text.config(state=tk.NORMAL)
+        functions_text.insert("1.0", recordable_functions)
+        functions_text.config(state=tk.DISABLED)
+        
         # Status label
         self.status_label = ttk.Label(main_frame, text="", foreground="blue")
-        self.status_label.grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        self.status_label.grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
         
         # Buttons
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=2, column=0, columnspan=2, pady=(12, 0))
+        button_frame.grid(row=4, column=0, columnspan=2, pady=(12, 0))
         
         self.start_button = ttk.Button(button_frame, text="Rozpocznij nagrywanie", 
                                        command=self.on_start, width=20)
@@ -2673,6 +2664,10 @@ class MacroRecordingDialog(tk.Toplevel):
         self.cancel_button = ttk.Button(button_frame, text="Anuluj", 
                                         command=self.on_cancel, width=10)
         self.cancel_button.pack(side="left", padx=4)
+        
+        # Configure grid weights for proper resizing
+        main_frame.grid_rowconfigure(2, weight=1)
+        main_frame.grid_columnconfigure(1, weight=1)
         
         self.name_entry.focus_set()
     
@@ -2774,9 +2769,13 @@ class MacrosListDialog(tk.Toplevel):
         main_frame = ttk.Frame(self, padding="12")
         main_frame.pack(fill="both", expand=True)
         
-        # Lista makr
-        list_frame = ttk.Frame(main_frame)
-        list_frame.pack(fill="both", expand=True, pady=(0, 8))
+        # Horizontal layout: list on left, buttons on right
+        content_frame = ttk.Frame(main_frame)
+        content_frame.pack(fill="both", expand=True, pady=(0, 8))
+        
+        # Lista makr (left side)
+        list_frame = ttk.Frame(content_frame)
+        list_frame.pack(side="left", fill="both", expand=True, padx=(0, 8))
         
         scrollbar = ttk.Scrollbar(list_frame)
         scrollbar.pack(side="right", fill="y")
@@ -2785,15 +2784,16 @@ class MacrosListDialog(tk.Toplevel):
         self.macros_listbox.pack(side="left", fill="both", expand=True)
         scrollbar.config(command=self.macros_listbox.yview)
         
-        # Przyciski akcji
-        buttons_frame = ttk.Frame(main_frame)
-        buttons_frame.pack(fill="x")
+        # Przyciski akcji (right side, vertical layout)
+        buttons_frame = ttk.Frame(content_frame)
+        buttons_frame.pack(side="right", fill="y")
         
-        ttk.Button(buttons_frame, text="Uruchom", command=self.run_selected, width=15).pack(side="left", padx=(0, 4))
-        ttk.Button(buttons_frame, text="Edytuj...", command=self.edit_selected, width=15).pack(side="left", padx=4)
-        ttk.Button(buttons_frame, text="Usuń", command=self.delete_selected, width=15).pack(side="left", padx=4)
-        ttk.Button(buttons_frame, text="Ustaw skrót...", command=self.set_shortcut, width=15).pack(side="left", padx=4)
-        ttk.Button(buttons_frame, text="Zamknij", command=self.close, width=15).pack(side="left", padx=4)
+        ttk.Button(buttons_frame, text="Nagraj makro...", command=self.record_macro, width=15).pack(pady=(0, 4))
+        ttk.Button(buttons_frame, text="Uruchom", command=self.run_selected, width=15).pack(pady=4)
+        ttk.Button(buttons_frame, text="Edytuj...", command=self.edit_selected, width=15).pack(pady=4)
+        ttk.Button(buttons_frame, text="Usuń", command=self.delete_selected, width=15).pack(pady=4)
+        ttk.Button(buttons_frame, text="Ustaw skrót...", command=self.set_shortcut, width=15).pack(pady=4)
+        ttk.Button(buttons_frame, text="Zamknij", command=self.close, width=15).pack(pady=(4, 0))
     
     def load_macros(self):
         """Wczytaj listę makr"""
@@ -2806,6 +2806,12 @@ class MacrosListDialog(tk.Toplevel):
             else:
                 display_name = name
             self.macros_listbox.insert(tk.END, display_name)
+    
+    def record_macro(self):
+        """Otwórz okno nagrywania makra"""
+        MacroRecordingDialog(self, self.viewer)
+        # Refresh list after recording might be complete
+        self.load_macros()
     
     def run_selected(self):
         """Uruchom wybrane makro"""
@@ -4482,7 +4488,6 @@ class SelectablePDFViewer:
         # === MENU MAKRA ===
         self.macros_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Makra", menu=self.macros_menu)
-        self.macros_menu.add_command(label="Nagraj makro...", command=self.record_macro)
         self.macros_menu.add_command(label="Lista makr użytkownika...", command=self.show_macros_list)
         
         self.help_menu = tk.Menu(menu_bar, tearoff=0)
@@ -5445,7 +5450,6 @@ class SelectablePDFViewer:
             self.selected_pages.clear()
             self.update_selection_display()
             self._update_status(f"Skopiowano {self.pages_in_clipboard_count} stron do schowka.")
-            self._record_action('copy')
         except Exception as e:
             self._update_status(f"BŁĄD Kopiowania: {e}")
             
@@ -5477,7 +5481,6 @@ class SelectablePDFViewer:
             self.update_tool_button_states()
             self.update_focus_display()
             self._update_status(f"Wycięto {deleted_count} stron i skopiowano do schowka.")
-            self._record_action('cut')
         except Exception as e:
             self._update_status(f"BŁĄD Wycinania: {e}")
             
@@ -5552,7 +5555,6 @@ class SelectablePDFViewer:
                     self._update_status(f"Wklejono {pages_per_paste} stron.")
                 else:
                     self._update_status(f"Wklejono {num_inserted} stron razem.")
-                self._record_action('paste_before' if before else 'paste_after')
             except Exception as e:
                 self._update_status(f"BŁĄD Wklejania: {e}")
 
@@ -5583,9 +5585,6 @@ class SelectablePDFViewer:
         if not self.pdf_document or not self.selected_pages:
             self._update_status("BŁĄD: Brak zaznaczonych stron do usunięcia.")
             return
-        
-        # Nagraj akcję
-        self._record_action('delete')
         
         pages_to_delete = sorted(list(self.selected_pages), reverse=True)
         # --- BLOKADA: NIE USUWAJ OSTATNIEJ STRONY ---
@@ -5986,7 +5985,6 @@ class SelectablePDFViewer:
                 self._update_status(f"Wstawiono nową, pustą stronę. Aktualna liczba stron: {len(self.pdf_document)}.")
             else:
                 self._update_status(f"Wstawiono {num_selected} nowych, pustych stron. Aktualna liczba stron: {len(self.pdf_document)}.")
-            self._record_action('insert_blank_before' if before else 'insert_blank_after')
         except Exception as e:
             self._update_status(f"BŁĄD: Wystąpił błąd podczas wstawiania: {e}")
     
@@ -5995,9 +5993,6 @@ class SelectablePDFViewer:
         if not self.pdf_document or len(self.selected_pages) < 1:
             self._update_status("BŁĄD: Zaznacz przynajmniej jedną stronę, aby ją zduplikować.")
             return
-        
-        # Nagraj akcję
-        self._record_action('duplicate')
 
         num_selected = len(self.selected_pages)
 
@@ -6102,7 +6097,6 @@ class SelectablePDFViewer:
             self.update_focus_display()
             
             self._update_status(f"Zamieniono strony {page1_idx + 1} i {page2_idx + 1} miejscami.")
-            self._record_action('swap')
         except Exception as e:
             self._update_status(f"BŁĄD: Wystąpił błąd podczas zamiany stron: {e}")
   
@@ -6753,10 +6747,6 @@ class SelectablePDFViewer:
                     self.rotate_selected_page(-90)
                 elif action == 'rotate_right':
                     self.rotate_selected_page(90)
-                elif action == 'delete':
-                    self.delete_selected_pages()
-                elif action == 'duplicate':
-                    self.duplicate_selected_page()
                 elif action == 'select_all':
                     self._select_all()
                 elif action == 'select_odd':
@@ -6767,20 +6757,6 @@ class SelectablePDFViewer:
                     self._select_portrait_pages()
                 elif action == 'select_landscape':
                     self._select_landscape_pages()
-                elif action == 'copy':
-                    self.copy_selected_pages()
-                elif action == 'cut':
-                    self.cut_selected_pages()
-                elif action == 'paste_before':
-                    self.paste_pages_before()
-                elif action == 'paste_after':
-                    self.paste_pages_after()
-                elif action == 'swap':
-                    self.swap_pages()
-                elif action == 'insert_blank_before':
-                    self.insert_blank_page_before()
-                elif action == 'insert_blank_after':
-                    self.insert_blank_page_after()
                 # Parameterized actions - replay with saved parameters
                 elif action == 'shift_page_content' and params:
                     self._replay_shift_page_content(params)
@@ -6837,17 +6813,273 @@ class SelectablePDFViewer:
             self._update_status(f"BŁĄD podczas odtwarzania shift_page_content: {e}")
     
     def _replay_insert_page_numbers(self, params):
-        """Replay insert_page_numbers with saved parameters - simplified version"""
-        # For now, just log that this action needs manual re-execution
-        self._update_status("Akcja 'insert_page_numbers' wymaga ręcznej parametryzacji - pominięto.")
+        """Replay insert_page_numbers with saved parameters"""
+        if not self.pdf_document or not self.selected_pages:
+            self._update_status("Makro: Brak zaznaczonych stron dla numeracji.")
+            return
+        
+        doc = self.pdf_document
+        MM_PT = self.MM_TO_POINTS
+        
+        try:
+            self._save_state_to_undo()
+            
+            # Extract parameters
+            start_number = params.get('start_num', 1)
+            mode = params.get('mode', 'zwykla')
+            direction = params.get('alignment', 'prawa')
+            position = params.get('vertical_pos', 'dol')
+            mirror_margins = params.get('mirror_margins', False)
+            format_mode = params.get('format_type', 'simple')
+            left_mm = params.get('margin_left_mm', 10)
+            right_mm = params.get('margin_right_mm', 10)
+            margin_v_mm = params.get('margin_vertical_mm', 10)
+            font_size = params.get('font_size', 10)
+            font = params.get('font_name', 'helv')
+            
+            left_pt_base = left_mm * MM_PT
+            right_pt_base = right_mm * MM_PT
+            margin_v = margin_v_mm * MM_PT
+            
+            selected_indices = sorted(self.selected_pages)
+            current_number = start_number
+            total_counted_pages = len(selected_indices) + start_number - 1
+            
+            for i in selected_indices:
+                page = doc.load_page(i)
+                rect = page.rect
+                rotation = page.rotation
+                
+                # Create numbering text
+                if format_mode == 'full':
+                    text = f"Strona {current_number} z {total_counted_pages}"
+                else:
+                    text = str(current_number)
+                
+                text_width = fitz.get_text_length(text, fontname=font, fontsize=font_size)
+                
+                # Determine alignment
+                is_even_counted_page = (current_number - start_number) % 2 == 0
+                
+                if mode == "lustrzana":
+                    if direction == "srodek":
+                        align = "srodek"
+                    elif direction == "lewa":
+                        align = "lewa" if is_even_counted_page else "prawa"
+                    else:
+                        align = "prawa" if is_even_counted_page else "lewa"
+                else:
+                    align = direction
+                
+                # Mirror margins for physical pages
+                is_physical_odd = (i + 1) % 2 == 1
+                
+                if mirror_margins:
+                    if is_physical_odd:
+                        left_pt, right_pt = left_pt_base, right_pt_base
+                    else:
+                        left_pt, right_pt = right_pt_base, left_pt_base
+                else:
+                    left_pt, right_pt = left_pt_base, right_pt_base
+                
+                # Calculate position based on rotation
+                if rotation == 0:
+                    if align == "lewa":
+                        x = rect.x0 + left_pt
+                    elif align == "prawa":
+                        x = rect.x1 - right_pt - text_width
+                    else:  # srodek
+                        total_width = rect.width
+                        margin_diff = left_pt - right_pt
+                        x = rect.x0 + (total_width / 2) - (text_width / 2) + (margin_diff / 2)
+                    y = rect.y0 + margin_v + font_size if position == "gora" else rect.y1 - margin_v
+                    angle = 0
+                elif rotation == 90:
+                    if align == "lewa":
+                        y = rect.y0 + left_pt
+                    elif align == "prawa":
+                        y = rect.y1 - right_pt - text_width
+                    else:
+                        total_height = rect.height
+                        margin_diff = left_pt - right_pt
+                        y = rect.y0 + (total_height / 2) - (text_width / 2) + (margin_diff / 2)
+                    x = rect.x0 + margin_v + font_size if position == "gora" else rect.x1 - margin_v
+                    angle = 90
+                elif rotation == 180:
+                    if align == "lewa":
+                        x = rect.x1 - right_pt - text_width
+                    elif align == "prawa":
+                        x = rect.x0 + left_pt
+                    else:
+                        total_width = rect.width
+                        margin_diff = left_pt - right_pt
+                        x = rect.x0 + (total_width / 2) - (text_width / 2) + (margin_diff / 2)
+                    y = rect.y1 - margin_v - font_size if position == "gora" else rect.y0 + margin_v
+                    angle = 180
+                elif rotation == 270:
+                    if align == "lewa":
+                        y = rect.y1 - right_pt - text_width
+                    elif align == "prawa":
+                        y = rect.y0 + left_pt
+                    else:
+                        total_height = rect.height
+                        margin_diff = left_pt - right_pt
+                        y = rect.y0 + (total_height / 2) - (text_width / 2) + (margin_diff / 2)
+                    x = rect.x1 - margin_v - font_size if position == "gora" else rect.x0 + margin_v
+                    angle = 270
+                else:
+                    x = rect.x0 + left_pt
+                    y = rect.y1 - margin_v
+                    angle = 0
+                
+                page.insert_text(
+                    fitz.Point(x, y),
+                    text,
+                    fontsize=font_size,
+                    fontname=font,
+                    color=(0, 0, 0),
+                    rotate=angle
+                )
+                
+                current_number += 1
+            
+            self._reconfigure_grid()
+            self._update_status(f"Makro: Numeracja wstawiona na {len(selected_indices)} stronach.")
+            
+        except Exception as e:
+            self._update_status(f"Makro: Błąd przy dodawaniu numeracji: {e}")
     
     def _replay_remove_page_numbers(self, params):
-        """Replay remove_page_numbers with saved parameters - simplified version"""
-        self._update_status("Akcja 'remove_page_numbers' wymaga ręcznej parametryzacji - pominięto.")
+        """Replay remove_page_numbers with saved parameters"""
+        if not self.pdf_document or not self.selected_pages:
+            self._update_status("Makro: Brak zaznaczonych stron do usunięcia numeracji.")
+            return
+        
+        top_mm = params.get('top_mm', 20)
+        bottom_mm = params.get('bottom_mm', 20)
+        
+        mm_to_points = self.MM_TO_POINTS
+        top_pt = top_mm * mm_to_points
+        bottom_pt = bottom_mm * mm_to_points
+        
+        page_number_patterns = [
+            r'^\s*[-–]?\s*\d+\s*[-–]?\s*$',
+            r'^\s*(?:Strona|Page)\s+\d+\s+(?:z|of)\s+\d+\s*$',
+            r'^\s*\d+\s*(?:/|-|\s+)\s*\d+\s*$',
+            r'^\s*\(\s*\d+\s*\)\s*$'
+        ]
+        compiled_patterns = [re.compile(p, re.IGNORECASE) for p in page_number_patterns]
+        
+        try:
+            pages_to_process = sorted(list(self.selected_pages))
+            if pages_to_process:
+                self._save_state_to_undo()
+            modified_count = 0
+            
+            for page_index in pages_to_process:
+                page = self.pdf_document.load_page(page_index)
+                rect = page.rect
+                
+                top_margin_rect = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y0 + top_pt)
+                bottom_margin_rect = fitz.Rect(rect.x0, rect.y1 - bottom_pt, rect.x1, rect.y1)
+                scan_rects = [top_margin_rect, bottom_margin_rect]
+                
+                found_and_removed = False
+                
+                for scan_rect in scan_rects:
+                    text_blocks = page.get_text("blocks", clip=scan_rect)
+                    
+                    for block in text_blocks:
+                        block_text = block[4]
+                        lines = block_text.strip().split('\n')
+                        
+                        for line in lines:
+                            cleaned_line = line.strip()
+                            for pattern in compiled_patterns:
+                                if pattern.fullmatch(cleaned_line):
+                                    text_instances = page.search_for(cleaned_line, clip=scan_rect)
+                                    
+                                    for inst in text_instances:
+                                        page.add_redact_annot(inst)
+                                        found_and_removed = True
+                
+                if found_and_removed:
+                    page.apply_redactions()
+                    modified_count += 1
+            
+            if modified_count > 0:
+                self._reconfigure_grid()
+                self._update_status(f"Makro: Usunięto numery stron na {modified_count} stronach.")
+            else:
+                self._update_status("Makro: Nie znaleziono numerów stron do usunięcia.")
+                
+        except Exception as e:
+            self._update_status(f"Makro: Błąd przy usuwaniu numeracji: {e}")
     
     def _replay_apply_page_crop_resize(self, params):
-        """Replay apply_page_crop_resize with saved parameters - simplified version"""
-        self._update_status("Akcja 'apply_page_crop_resize' wymaga ręcznej parametryzacji - pominięto.")
+        """Replay apply_page_crop_resize with saved parameters"""
+        if not self.pdf_document or not self.selected_pages:
+            self._update_status("Makro: Brak zaznaczonych stron do kadrowania/zmiany rozmiaru.")
+            return
+        
+        try:
+            pdf_bytes_export = io.BytesIO()
+            self.pdf_document.save(pdf_bytes_export)
+            pdf_bytes_export.seek(0)
+            pdf_bytes_val = pdf_bytes_export.read()
+            indices = sorted(list(self.selected_pages))
+            
+            crop_mode = params.get("crop_mode", "nocrop")
+            resize_mode = params.get("resize_mode", "noresize")
+            
+            if crop_mode == "crop_only" and resize_mode == "noresize":
+                new_pdf_bytes = self._mask_crop_pages(
+                    pdf_bytes_val, indices,
+                    params.get("crop_top_mm", 0), params.get("crop_bottom_mm", 0),
+                    params.get("crop_left_mm", 0), params.get("crop_right_mm", 0),
+                )
+                msg = "Makro: Dodano białe maski."
+            elif crop_mode == "crop_resize" and resize_mode == "noresize":
+                new_pdf_bytes = self._crop_pages(
+                    pdf_bytes_val, indices,
+                    params.get("crop_top_mm", 0), params.get("crop_bottom_mm", 0),
+                    params.get("crop_left_mm", 0), params.get("crop_right_mm", 0),
+                    reposition=False
+                )
+                msg = "Makro: Zastosowano przycięcie."
+            elif resize_mode == "resize_scale":
+                new_pdf_bytes = self._resize_scale(
+                    pdf_bytes_val, indices,
+                    params.get("target_width_mm", 210), params.get("target_height_mm", 297)
+                )
+                msg = "Makro: Zmieniono rozmiar ze skalowaniem."
+            elif resize_mode == "resize_noscale":
+                new_pdf_bytes = self._resize_noscale(
+                    pdf_bytes_val, indices,
+                    params.get("target_width_mm", 210), params.get("target_height_mm", 297),
+                    pos_mode=params.get("position_mode", "center"),
+                    offset_x_mm=params.get("offset_x_mm", 0),
+                    offset_y_mm=params.get("offset_y_mm", 0),
+                )
+                msg = "Makro: Zmieniono rozmiar bez skalowania."
+            else:
+                self._update_status("Makro: Brak operacji do wykonania.")
+                return
+            
+            self._save_state_to_undo()
+            self.pdf_document.close()
+            self.pdf_document = fitz.open("pdf", new_pdf_bytes)
+            self._update_status(msg)
+            
+            if hasattr(self, "_reconfigure_grid"):
+                self._reconfigure_grid()
+            if hasattr(self, "update_selection_display"):
+                self.update_selection_display()
+            if hasattr(self, "update_focus_display"):
+                self.update_focus_display()
+                
+        except Exception as e:
+            self._update_status(f"Makro: Błąd podczas przetwarzania PDF: {e}")
 
     def update_focus_display(self, hide_mouse_focus: bool = False):
         if not self.pdf_document: return
