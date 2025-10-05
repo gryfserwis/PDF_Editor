@@ -2468,7 +2468,7 @@ class MacroEditDialog(tk.Toplevel):
         self.grab_set()
         self.resizable(True, True)
         self.geometry("600x500")
-        
+        self.minsize(600, 500)
         # Load macro data
         macros = self.prefs_manager.get_profiles('macros')
         self.actions = macros[macro_name].get('actions', []).copy()
@@ -2565,7 +2565,8 @@ class MacroEditDialog(tk.Toplevel):
             self.prefs_manager.save_profiles('macros', macros)
             
             custom_messagebox(self, "Sukces", "Makro zostało zaktualizowane.", typ="info")
-            
+
+
             if self.refresh_callback:
                 self.refresh_callback()
             
@@ -2626,19 +2627,20 @@ class MacroRecordingDialog(tk.Toplevel):
         
         # List of recordable functions
         ttk.Label(main_frame, text="Funkcje które mogą zostać nagrane:", 
-                 font=('TkDefaultFont', 9, 'bold')).grid(row=1, column=0, columnspan=2, sticky="w", pady=(12, 4))
+                 font=('TkDefaultFont', 9)).grid(row=1, column=0, columnspan=2, sticky="w", pady=(12, 4))
         
-        functions_text = tk.Text(main_frame, height=8, width=50, wrap="word", 
-                                font=('TkDefaultFont', 8), state=tk.DISABLED, 
+        functions_text = tk.Text(main_frame, height=9, width=50, wrap="word", 
+                                font=('TkDefaultFont', 9), state=tk.DISABLED, 
                                 relief="flat", borderwidth=0, background="SystemButtonFace")
         functions_text.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
         
-        recordable_functions = """• Obróć w lewo / w prawo
+        recordable_functions = """• Zaznaczanie konkretnych stron
 • Zaznacz wszystkie / nieparzyste / parzyste / pionowe / poziome
-• Przesuń zawartość strony
-• Dodaj numerację stron
-• Usuń numerację stron
-• Kadruj / Zmień rozmiar strony"""
+• Obróć w lewo / w prawo
+• Przesuń zawartość strony (F5)
+• Usuń numerację stron (F6)
+• Dodaj numerację stron (F7)
+• Kadruj / Zmień rozmiar strony (F8)"""
         
         functions_text.config(state=tk.NORMAL)
         functions_text.insert("1.0", recordable_functions)
@@ -2719,6 +2721,7 @@ class MacroRecordingDialog(tk.Toplevel):
         self.viewer.macro_recording_name = None
         self.viewer.current_macro_actions = []
         self.viewer._update_status(f"Makro '{self.macro_name}' zapisane.")
+        self.viewer.refresh_macros_menu()
         
         # Call refresh callback if provided
         if self.refresh_callback:
@@ -2748,24 +2751,28 @@ class MacrosListDialog(tk.Toplevel):
         self.transient(parent)
         # Don't grab_set() - we want non-blocking dialog
         self.resizable(True, True)
-        self.geometry("500x400")
-        
+        self.geometry("300x400")
+        self.minsize(300, 400)
         self.build_ui()
         self.center_dialog(parent)
         self.protocol("WM_DELETE_WINDOW", self.close)
         self.load_macros()
     
     def center_dialog(self, parent):
-        """Wyśrodkuj okno względem rodzica"""
+        """Ustaw okno obok okna głównego (np. po prawej stronie)"""
         self.update_idletasks()
         dialog_w = self.winfo_width()
         dialog_h = self.winfo_height()
         parent_x = parent.winfo_rootx()
         parent_y = parent.winfo_rooty()
         parent_w = parent.winfo_width()
-        parent_h = parent.winfo_height()
-        x = parent_x + (parent_w - dialog_w) // 2
-        y = parent_y + (parent_h - dialog_h) // 2
+        # Ustaw po prawej stronie z odstępem 30 pikseli
+        x = parent_x + parent_w + 30
+        y = parent_y
+        # Jeśli nie mieści się na ekranie, przenieś po lewej
+        screen_w = self.winfo_screenwidth()
+        if x + dialog_w > screen_w:
+            x = max(0, parent_x - dialog_w - 30)
         self.geometry(f"+{x}+{y}")
     
     def build_ui(self):
@@ -2857,7 +2864,7 @@ class MacrosListDialog(tk.Toplevel):
             del macros[macro_name]
             self.prefs_manager.save_profiles('macros', macros)
             self.load_macros()
-    
+        self.viewer.refresh_macros_menu()
     def close(self):
         """Zamknij okno"""
         self.destroy()
@@ -3660,7 +3667,7 @@ class SelectablePDFViewer:
             ("Przesuń zawartość", "F5"),
             ("Usuń numery", "F6"),
             ("Wstaw numery", "F7"),
-            ("Przytnij/zmień rozmiar", "F8"),
+            ("Kadruj/zmień rozmiar", "F8"),
             ("Zoom +", "+"),
             ("Zoom -", "-"),
             ("Pierwsza strona", "Home"),
@@ -4290,6 +4297,18 @@ class SelectablePDFViewer:
                 self.icons[key] = ImageTk.PhotoImage(img.resize((size, size), Image.LANCZOS))
             except Exception:
                 self.icons[key] = emoji
+    def refresh_macros_menu(self):
+        """Odświeża menu główne Makra – dynamicznie dodaje wszystkie makra użytkownika."""
+        self.macros_menu.delete(0, "end")  # Wyczyść stare wpisy
+        self.macros_menu.add_command(label="Lista makr użytkownika...", command=self.show_macros_list)
+        macros = self.prefs_manager.get_profiles('macros')
+        if macros:  # separator tylko jeśli jest przynajmniej jedno makro
+            self.macros_menu.add_separator()
+            for macro_name in macros:
+                self.macros_menu.add_command(
+                    label=f"Uruchom: {macro_name}",
+                    command=lambda name=macro_name: self.run_macro(name)
+                )
 
     def _create_menu(self):
         menu_bar = tk.Menu(self.master)
@@ -4337,7 +4356,7 @@ class SelectablePDFViewer:
         # === MENU MAKRA ===
         self.macros_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Makra", menu=self.macros_menu)
-        self.macros_menu.add_command(label="Lista makr użytkownika...", command=self.show_macros_list)
+        self.refresh_macros_menu()  # dodaj to tu!
         
         self.help_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Pomoc", menu=self.help_menu)
@@ -4460,7 +4479,7 @@ class SelectablePDFViewer:
         menu_obj.add_separator()
     
         # === NOWA OPCJA: USUWANIE NUMERÓW STRON ===
-        menu_obj.add_command(label="Przesuń zawartość zaznaczonych stron...",command=self.shift_page_content, state=tk.DISABLED, accelerator="F5")
+        menu_obj.add_command(label="Przesuń zawartość stron...",command=self.shift_page_content, state=tk.DISABLED, accelerator="F5")
         menu_obj.add_command(label="Usuń numery stron...", command=self.remove_page_numbers, state=tk.DISABLED, accelerator="F6")
         menu_obj.add_command(label="Wstaw numery stron...", command=self.insert_page_numbers, state=tk.DISABLED, accelerator="F7")
      
@@ -4468,7 +4487,7 @@ class SelectablePDFViewer:
     
         # ODRACANIE KOLEJNOŚCI
 
-        menu_obj.add_command(label="Przytnij / zmień rozmiar...", command=self.apply_page_crop_resize_dialog, state=tk.DISABLED, accelerator="F8")
+        menu_obj.add_command(label="Kadruj / zmień rozmiar...", command=self.apply_page_crop_resize_dialog, state=tk.DISABLED, accelerator="F8")
         menu_obj.add_separator()
         menu_obj.add_command(label="Scal strony na arkuszu...", command=self.merge_pages_to_grid, state=tk.DISABLED)
         menu_obj.add_separator()
@@ -4711,7 +4730,7 @@ class SelectablePDFViewer:
         # Validate page_index before using it
         if not self.pdf_document or page_index < 0 or page_index >= len(self.pdf_document):
             return
-        
+
         is_shift_pressed = (event.state & 0x1) != 0 
         if is_shift_pressed and self.selected_pages:
             last_active = self.active_page_index
@@ -4720,6 +4739,12 @@ class SelectablePDFViewer:
             self._toggle_selection_lpm(page_index)
         self.active_page_index = page_index
         self.update_focus_display(hide_mouse_focus=True)
+
+        # --- Dodaj to poniżej! ---
+        if getattr(self, "macro_recording", False):
+            # Po kliknięciu, nagraj aktualne zaznaczenie
+            indices = sorted(self.selected_pages)
+            self._record_action('select_custom', indices=indices)
         
     def _toggle_selection_lpm(self, page_index):
         # Validate page_index before using it
@@ -4814,8 +4839,8 @@ class SelectablePDFViewer:
             "Odwróć kolejność wszystkich stron": reverse_state,
             "Usuń numery stron...": delete_state, 
             "Wstaw numery stron...": delete_state, 
-            "Przesuń zawartość zaznaczonych stron...": delete_state,
-            "Przytnij / zmień rozmiar...": delete_state,
+            "Przesuń zawartość stron...": delete_state,
+            "Kadruj / zmień rozmiar...": delete_state,
             "Scal strony na arkuszu...": delete_state,
             "Zamknij plik": import_state, 
             "Zapisz jako...": import_state,
@@ -6610,6 +6635,11 @@ class SelectablePDFViewer:
                     self._select_portrait_pages()
                 elif action == 'select_landscape':
                     self._select_landscape_pages()
+                elif action == 'select_custom' and params:
+                    indices = params.get('indices', [])
+                    if isinstance(indices, int):
+                        indices = [indices]
+                    self._apply_selection_by_indices(indices)
                 # Parameterized actions - replay with saved parameters
                 elif action == 'shift_page_content' and params:
                     self._replay_shift_page_content(params)
