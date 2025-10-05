@@ -3401,6 +3401,13 @@ class SelectablePDFViewer:
         self.redo_stack: List[bytes] = []
         self.max_stack_size = 50
         
+        # Macro recording
+        self.macro_recording = False
+        self.current_macro_actions = []
+        self.macros = {}  # {name: {'actions': [...], 'shortcut': 'Ctrl+...'}}
+        self.macro_shortcuts = {}  # {shortcut: macro_name}
+        self._load_macros()
+        
         self._set_initial_geometry()
         self._load_icons_or_fallback(size=28) 
         self._create_menu() 
@@ -3685,6 +3692,11 @@ class SelectablePDFViewer:
         self.modifications_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Modyfikacje", menu=self.modifications_menu)
         self._populate_modifications_menu(self.modifications_menu) # Wypełniamy nową metodą
+        
+        self.tools_menu = tk.Menu(menu_bar, tearoff=0)
+        menu_bar.add_cascade(label="Narzędzia", menu=self.tools_menu)
+        self.tools_menu.add_command(label="Nagraj makro...", command=self.show_macro_recording_dialog)
+        self.tools_menu.add_command(label="Zarządzaj makrami...", command=self.show_macro_management_dialog)
         
         self.help_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Pomoc", menu=self.help_menu)
@@ -5648,6 +5660,308 @@ class SelectablePDFViewer:
                 inner_frame.config(highlightbackground=FOCUS_HIGHLIGHT_COLOR, highlightcolor=FOCUS_HIGHLIGHT_COLOR)
             else:
                 inner_frame.config(highlightbackground=frame.bg_normal, highlightcolor=frame.bg_normal)
+    
+    # === MACRO FUNCTIONALITY ===
+    
+    def _load_macros(self):
+        """Wczytuje makra z pliku JSON."""
+        try:
+            macros_file = os.path.join(os.path.expanduser("~"), ".pdf_editor_macros.json")
+            if os.path.exists(macros_file):
+                with open(macros_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.macros = data.get('macros', {})
+                    self.macro_shortcuts = data.get('shortcuts', {})
+        except Exception as e:
+            print(f"Błąd wczytywania makr: {e}")
+    
+    def _save_macros(self):
+        """Zapisuje makra do pliku JSON."""
+        try:
+            macros_file = os.path.join(os.path.expanduser("~"), ".pdf_editor_macros.json")
+            data = {
+                'macros': self.macros,
+                'shortcuts': self.macro_shortcuts
+            }
+            with open(macros_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"Błąd zapisywania makr: {e}")
+    
+    def show_macro_recording_dialog(self):
+        """Pokazuje dialog nagrywania makra (niemodalne okno)."""
+        dialog = tk.Toplevel(self.master)
+        dialog.title("Nagrywanie makra")
+        dialog.transient(self.master)
+        dialog.resizable(False, False)
+        
+        # Nie używamy grab_set() - okno ma być niemodalne
+        
+        main_frame = ttk.Frame(dialog, padding=20)
+        main_frame.pack(fill='both', expand=True)
+        
+        # Status
+        status_var = tk.StringVar(value="Gotowy do nagrywania")
+        status_label = ttk.Label(main_frame, textvariable=status_var, font=('', 10, 'bold'))
+        status_label.pack(pady=(0, 20))
+        
+        # Przycisk rozpocznij/zatrzymaj
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(pady=10)
+        
+        def start_recording():
+            self.macro_recording = True
+            self.current_macro_actions = []
+            status_var.set("NAGRYWANIE...")
+            start_btn.config(state=tk.DISABLED)
+            stop_btn.config(state=tk.NORMAL)
+        
+        def stop_recording():
+            self.macro_recording = False
+            status_var.set("Nagrywanie zatrzymane")
+            start_btn.config(state=tk.NORMAL)
+            stop_btn.config(state=tk.DISABLED)
+            
+            if not self.current_macro_actions:
+                custom_messagebox(dialog, "Informacja", "Nie nagrano żadnych akcji.", typ="info")
+                return
+            
+            # Zapytaj o nazwę makra
+            save_dialog = tk.Toplevel(dialog)
+            save_dialog.title("Zapisz makro")
+            save_dialog.transient(dialog)
+            save_dialog.grab_set()
+            
+            ttk.Label(save_dialog, text="Nazwa makra:").pack(padx=10, pady=(10, 5))
+            name_var = tk.StringVar()
+            name_entry = ttk.Entry(save_dialog, textvariable=name_var, width=30)
+            name_entry.pack(padx=10, pady=5)
+            name_entry.focus()
+            
+            result = {'saved': False}
+            
+            def save_macro():
+                name = name_var.get().strip()
+                if not name:
+                    custom_messagebox(save_dialog, "Błąd", "Nazwa makra nie może być pusta", typ="error")
+                    return
+                
+                if name in self.macros:
+                    if not custom_messagebox(save_dialog, "Potwierdzenie", 
+                                            f"Makro '{name}' już istnieje. Nadpisać?", typ="question"):
+                        return
+                
+                self.macros[name] = {
+                    'actions': self.current_macro_actions.copy(),
+                    'shortcut': None
+                }
+                self._save_macros()
+                result['saved'] = True
+                save_dialog.destroy()
+                custom_messagebox(dialog, "Sukces", f"Makro '{name}' zostało zapisane.", typ="info")
+            
+            def cancel_save():
+                save_dialog.destroy()
+            
+            btn_frame = ttk.Frame(save_dialog)
+            btn_frame.pack(pady=10)
+            ttk.Button(btn_frame, text="Zapisz", command=save_macro).pack(side='left', padx=5)
+            ttk.Button(btn_frame, text="Anuluj", command=cancel_save).pack(side='left', padx=5)
+            
+            save_dialog.bind('<Return>', lambda e: save_macro())
+            save_dialog.bind('<Escape>', lambda e: cancel_save())
+            
+            # Wyśrodkuj
+            save_dialog.update_idletasks()
+            x = dialog.winfo_rootx() + (dialog.winfo_width() - save_dialog.winfo_width()) // 2
+            y = dialog.winfo_rooty() + (dialog.winfo_height() - save_dialog.winfo_height()) // 2
+            save_dialog.geometry(f"+{x}+{y}")
+            
+            save_dialog.wait_window()
+        
+        start_btn = ttk.Button(button_frame, text="Rozpocznij nagrywanie", command=start_recording)
+        start_btn.pack(side='left', padx=5)
+        
+        stop_btn = ttk.Button(button_frame, text="Zatrzymaj nagrywanie", command=stop_recording, state=tk.DISABLED)
+        stop_btn.pack(side='left', padx=5)
+        
+        ttk.Button(button_frame, text="Anuluj", command=dialog.destroy).pack(side='left', padx=5)
+        
+        # Info
+        info_label = ttk.Label(main_frame, text="To okno pozostaje otwarte podczas nagrywania.\nWykonaj akcje w głównym oknie programu.", 
+                              foreground='gray', justify='center')
+        info_label.pack(pady=(20, 0))
+        
+        # Wyśrodkuj
+        dialog.update_idletasks()
+        x = self.master.winfo_rootx() + (self.master.winfo_width() - dialog.winfo_width()) // 2
+        y = self.master.winfo_rooty() + (self.master.winfo_height() - dialog.winfo_height()) // 2
+        dialog.geometry(f"+{x}+{y}")
+    
+    def show_macro_management_dialog(self):
+        """Pokazuje dialog zarządzania makrami."""
+        dialog = tk.Toplevel(self.master)
+        dialog.title("Zarządzaj makrami")
+        dialog.transient(self.master)
+        dialog.grab_set()
+        dialog.geometry("500x400")
+        
+        main_frame = ttk.Frame(dialog, padding=10)
+        main_frame.pack(fill='both', expand=True)
+        
+        # Lista makr
+        list_frame = ttk.Frame(main_frame)
+        list_frame.pack(fill='both', expand=True)
+        
+        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar.pack(side='right', fill='y')
+        
+        macro_listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar.set)
+        macro_listbox.pack(side='left', fill='both', expand=True)
+        scrollbar.config(command=macro_listbox.yview)
+        
+        def refresh_list():
+            macro_listbox.delete(0, tk.END)
+            for name, data in self.macros.items():
+                shortcut = data.get('shortcut', '')
+                display = f"{name}" + (f" ({shortcut})" if shortcut else "")
+                macro_listbox.insert(tk.END, display)
+        
+        refresh_list()
+        
+        # Przyciski
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill='x', pady=(10, 0))
+        
+        def assign_shortcut():
+            selection = macro_listbox.curselection()
+            if not selection:
+                custom_messagebox(dialog, "Informacja", "Wybierz makro z listy", typ="info")
+                return
+            
+            idx = selection[0]
+            macro_name = list(self.macros.keys())[idx]
+            
+            # Dialog rejestracji skrótu
+            shortcut_dialog = tk.Toplevel(dialog)
+            shortcut_dialog.title("Przypisz skrót klawiszowy")
+            shortcut_dialog.transient(dialog)
+            shortcut_dialog.grab_set()
+            
+            info_frame = ttk.Frame(shortcut_dialog, padding=20)
+            info_frame.pack(fill='both', expand=True)
+            
+            ttk.Label(info_frame, text=f"Przypisywanie skrótu do makra: {macro_name}", 
+                     font=('', 10, 'bold')).pack(pady=(0, 10))
+            
+            ttk.Label(info_frame, text="Naciśnij kombinację klawiszy...", 
+                     foreground='gray').pack(pady=(0, 20))
+            
+            shortcut_var = tk.StringVar(value="Czekam na klawisz...")
+            shortcut_label = ttk.Label(info_frame, textvariable=shortcut_var, 
+                                      font=('', 12, 'bold'), foreground='blue')
+            shortcut_label.pack(pady=10)
+            
+            captured_shortcut = {'value': None}
+            
+            def on_key_press(event):
+                # Buduj nazwę skrótu
+                modifiers = []
+                if event.state & 0x4:  # Control
+                    modifiers.append('Ctrl')
+                if event.state & 0x1:  # Shift
+                    modifiers.append('Shift')
+                if event.state & 0x20000:  # Alt
+                    modifiers.append('Alt')
+                
+                # Pobierz klawisz
+                key = event.keysym
+                if key in ['Control_L', 'Control_R', 'Shift_L', 'Shift_R', 'Alt_L', 'Alt_R']:
+                    return  # Ignoruj same modyfikatory
+                
+                if not modifiers:
+                    shortcut_var.set("Musisz użyć co najmniej Ctrl, Shift lub Alt")
+                    return
+                
+                shortcut = '+'.join(modifiers + [key])
+                shortcut_var.set(shortcut)
+                captured_shortcut['value'] = shortcut
+                
+                # Sprawdź czy skrót jest już używany
+                if shortcut in self.macro_shortcuts:
+                    existing = self.macro_shortcuts[shortcut]
+                    if existing != macro_name:
+                        status_label.config(text=f"UWAGA: Skrót jest już używany przez makro '{existing}'", 
+                                          foreground='red')
+                else:
+                    status_label.config(text="Skrót jest dostępny", foreground='green')
+            
+            status_label = ttk.Label(info_frame, text="", font=('', 9))
+            status_label.pack(pady=(10, 0))
+            
+            shortcut_dialog.bind('<KeyPress>', on_key_press)
+            
+            def save_shortcut():
+                if not captured_shortcut['value']:
+                    custom_messagebox(shortcut_dialog, "Błąd", "Nie przechwycono skrótu", typ="error")
+                    return
+                
+                # Usuń stary skrót tego makra jeśli istnieje
+                old_shortcut = self.macros[macro_name].get('shortcut')
+                if old_shortcut and old_shortcut in self.macro_shortcuts:
+                    del self.macro_shortcuts[old_shortcut]
+                
+                # Zapisz nowy
+                self.macros[macro_name]['shortcut'] = captured_shortcut['value']
+                self.macro_shortcuts[captured_shortcut['value']] = macro_name
+                self._save_macros()
+                
+                shortcut_dialog.destroy()
+                refresh_list()
+                custom_messagebox(dialog, "Sukces", "Skrót został przypisany", typ="info")
+            
+            btn_frame = ttk.Frame(info_frame)
+            btn_frame.pack(pady=(20, 0))
+            ttk.Button(btn_frame, text="Zapisz", command=save_shortcut).pack(side='left', padx=5)
+            ttk.Button(btn_frame, text="Anuluj", command=shortcut_dialog.destroy).pack(side='left', padx=5)
+            
+            # Wyśrodkuj
+            shortcut_dialog.update_idletasks()
+            x = dialog.winfo_rootx() + (dialog.winfo_width() - shortcut_dialog.winfo_width()) // 2
+            y = dialog.winfo_rooty() + (dialog.winfo_height() - shortcut_dialog.winfo_height()) // 2
+            shortcut_dialog.geometry(f"+{x}+{y}")
+            
+            shortcut_dialog.focus_set()
+        
+        def delete_macro():
+            selection = macro_listbox.curselection()
+            if not selection:
+                custom_messagebox(dialog, "Informacja", "Wybierz makro z listy", typ="info")
+                return
+            
+            idx = selection[0]
+            macro_name = list(self.macros.keys())[idx]
+            
+            if custom_messagebox(dialog, "Potwierdzenie", 
+                                f"Czy na pewno usunąć makro '{macro_name}'?", typ="question"):
+                # Usuń skrót jeśli istnieje
+                shortcut = self.macros[macro_name].get('shortcut')
+                if shortcut and shortcut in self.macro_shortcuts:
+                    del self.macro_shortcuts[shortcut]
+                
+                del self.macros[macro_name]
+                self._save_macros()
+                refresh_list()
+        
+        ttk.Button(button_frame, text="Przypisz skrót klawiszowy", command=assign_shortcut).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="Usuń makro", command=delete_macro).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="Zamknij", command=dialog.destroy).pack(side='right', padx=5)
+        
+        # Wyśrodkuj
+        dialog.update_idletasks()
+        x = self.master.winfo_rootx() + (self.master.winfo_width() - dialog.winfo_width()) // 2
+        y = self.master.winfo_rooty() + (self.master.winfo_height() - dialog.winfo_height()) // 2
+        dialog.geometry(f"+{x}+{y}")
 
 if __name__ == '__main__':
     try:
