@@ -2795,7 +2795,6 @@ class MacrosListDialog(tk.Toplevel):
         ttk.Button(buttons_frame, text="Uruchom", command=self.run_selected, width=15).pack(pady=4)
         ttk.Button(buttons_frame, text="Edytuj...", command=self.edit_selected, width=15).pack(pady=4)
         ttk.Button(buttons_frame, text="Usuń", command=self.delete_selected, width=15).pack(pady=4)
-        ttk.Button(buttons_frame, text="Ustaw skrót...", command=self.set_shortcut, width=15).pack(pady=4)
         ttk.Button(buttons_frame, text="Zamknij", command=self.close, width=15).pack(pady=(4, 0))
     
     def load_macros(self):
@@ -2803,12 +2802,7 @@ class MacrosListDialog(tk.Toplevel):
         self.macros_listbox.delete(0, tk.END)
         macros = self.prefs_manager.get_profiles('macros')
         for name, data in macros.items():
-            shortcut = data.get('shortcut', '')
-            if shortcut:
-                display_name = f"{name} ({shortcut})"
-            else:
-                display_name = name
-            self.macros_listbox.insert(tk.END, display_name)
+            self.macros_listbox.insert(tk.END, name)
     
     def record_macro(self):
         """Otwórz okno nagrywania makra"""
@@ -2863,112 +2857,6 @@ class MacrosListDialog(tk.Toplevel):
             del macros[macro_name]
             self.prefs_manager.save_profiles('macros', macros)
             self.load_macros()
-    
-    def set_shortcut(self):
-        """Ustaw skrót klawiszowy dla makra - tylko Ctrl+1..9"""
-        selection = self.macros_listbox.curselection()
-        if not selection:
-            custom_messagebox(self, "Informacja", "Wybierz makro.", typ="info")
-            return
-
-        index = selection[0]
-        macros = self.prefs_manager.get_profiles('macros')
-        macro_name = list(macros.keys())[index]
-
-        # Dialog do przechwycenia skrótu klawiszowego
-        dialog = tk.Toplevel(self)
-        dialog.title("Ustaw skrót klawiszowy (Ctrl+1..9)")
-        dialog.transient(self)
-        dialog.resizable(False, False)
-        dialog.grab_set()
-
-        main_frame = ttk.Frame(dialog, padding="12")
-        main_frame.pack(fill="both", expand=True)
-
-        ttk.Label(main_frame, text=f"Makro: {macro_name}").pack(anchor="w", pady=(0, 8))
-        info_frame = ttk.LabelFrame(main_frame, text="Dostępne skróty", padding="8")
-        info_frame.pack(fill="x", pady=(0, 8))
-        ttk.Label(info_frame, text="Tylko Ctrl+1..9 (klawiatura główna)").pack(anchor="w")
-        ttk.Label(main_frame, text="Naciśnij Ctrl+1..9 lub ESC aby anulować").pack(anchor="w", pady=2)
-
-        shortcut_var = tk.StringVar(value="Oczekiwanie na skrót...")
-        shortcut_display = ttk.Label(main_frame, textvariable=shortcut_var, relief="sunken", padding=8, width=35)
-        shortcut_display.pack(fill="x", pady=(8, 0))
-
-        current_shortcut = macros[macro_name].get('shortcut', '')
-        if current_shortcut:
-            ttk.Label(main_frame, text=f"Obecny skrót: {current_shortcut}", foreground="gray").pack(anchor="w", pady=(8, 0))
-
-        result = [None]
-
-        valid_keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
-        key_labels = {
-            '1': 'Ctrl+1', '2': 'Ctrl+2', '3': 'Ctrl+3',
-            '4': 'Ctrl+4', '5': 'Ctrl+5', '6': 'Ctrl+6',
-            '7': 'Ctrl+7', '8': 'Ctrl+8', '9': 'Ctrl+9'
-        }
-
-        def on_key_press(event):
-            if event.keysym == 'Escape':
-                dialog.destroy()
-                return
-            # Sprawdź czy wciśnięty jest Ctrl i keysym to cyfra 1-9
-            if event.state & 0x4:  # Ctrl wciśnięty
-                if event.keysym in valid_keys:
-                    shortcut = key_labels[event.keysym]
-                    # Sprawdź konflikt
-                    conflict = None
-                    for name, data in macros.items():
-                        if name != macro_name and data.get('shortcut', '') == shortcut:
-                            conflict = name
-                            break
-                    if conflict:
-                        shortcut_var.set(f"{shortcut} (używany przez: {conflict})")
-                        result[0] = None
-                    else:
-                        shortcut_var.set(shortcut)
-                        result[0] = shortcut
-                else:
-                    shortcut_var.set("Tylko Ctrl+1..9 są dozwolone!")
-                    result[0] = None
-            else:
-                shortcut_var.set("Tylko Ctrl+1..9 są dozwolone!")
-                result[0] = None
-
-        def on_ok():
-            if not result[0]:
-                custom_messagebox(dialog, "Błąd", "Nie przechwycono żadnego skrótu Ctrl+1..9.", typ="error")
-                return
-            macros[macro_name]['shortcut'] = result[0]
-            self.prefs_manager.save_profiles('macros', macros)
-            self.load_macros()
-            custom_messagebox(self, "Sukces", f"Skrót '{result[0]}' przypisany do makra '{macro_name}'.", typ="info")
-            dialog.destroy()
-
-        def on_cancel():
-            dialog.destroy()
-
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(pady=(12, 0))
-        ttk.Button(button_frame, text="OK", command=on_ok, width=10).pack(side="left", padx=4)
-        ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10).pack(side="left", padx=4)
-
-        dialog.bind("<KeyPress>", on_key_press)
-        dialog.focus_set()
-
-        # Wyśrodkuj
-        dialog.update_idletasks()
-        dialog_w = dialog.winfo_width()
-        dialog_h = dialog.winfo_height()
-        parent_x = self.winfo_rootx()
-        parent_y = self.winfo_rooty()
-        parent_w = self.winfo_width()
-        parent_h = self.winfo_height()
-        x = parent_x + (parent_w - dialog_w) // 2
-        y = parent_y + (parent_h - dialog_h) // 2
-        dialog.geometry(f"+{x}+{y}")
-
-        dialog.wait_window()
     
     def close(self):
         """Zamknij okno"""
