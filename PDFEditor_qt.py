@@ -59,10 +59,11 @@ import sys
 import math
 import re
 from typing import Optional, List, Set, Dict, Union
-from datetime import date
+from datetime import date, datetime
 import pypdf
 from pypdf import PdfReader, PdfWriter, Transformation
 from pypdf.generic import RectangleObject, FloatObject, ArrayObject, NameObject
+import json
 
 # ====================================================================
 # CONSTANTS AND CONFIGURATION
@@ -110,6 +111,122 @@ def resource_path(relative_path):
     except AttributeError:
         base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
+
+
+# ====================================================================
+# PREFERENCES MANAGER AND UTILITIES
+# ====================================================================
+
+class PreferencesManager:
+    """Zarządza preferencjami programu i dialogów, zapisuje/odczytuje z pliku preferences.txt"""
+    
+    def __init__(self, filepath="preferences.txt"):
+        self.filepath = os.path.join(BASE_DIR, filepath)
+        self.preferences = {}
+        self.defaults = {
+            # Preferencje globalne
+            'default_save_path': '',
+            'default_read_path': '',
+            'last_open_path': '',
+            'last_save_path': '',
+            'thumbnail_quality': 'Średnia',
+            'confirm_delete': 'False',
+            
+            # PDF Export Settings
+            'pdf_export.version': '1.7',
+            'pdf_export.print_prep': 'brak',
+            'pdf_export.filename_pattern': 'Eksport_{range}_{data}_{czas}',
+            
+            # Image Export Settings
+            'image_export.format': 'PNG',
+            'image_export.dpi': '300',
+            'image_export.filename_pattern': '{base_name}_strona_{page}_{data}_{czas}',
+        }
+        self.load_preferences()
+    
+    def load_preferences(self):
+        """Wczytuje preferencje z pliku"""
+        if os.path.exists(self.filepath):
+            try:
+                with open(self.filepath, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and '=' in line:
+                            key, value = line.split('=', 1)
+                            self.preferences[key.strip()] = value.strip()
+            except Exception as e:
+                print(f"Błąd wczytywania preferencji: {e}")
+        # Wypełnij brakujące wartości domyślnymi
+        for key, value in self.defaults.items():
+            if key not in self.preferences:
+                self.preferences[key] = value
+    
+    def save_preferences(self):
+        """Zapisuje preferencje do pliku"""
+        try:
+            with open(self.filepath, 'w', encoding='utf-8') as f:
+                for key, value in sorted(self.preferences.items()):
+                    f.write(f"{key}={value}\n")
+        except Exception as e:
+            print(f"Błąd zapisywania preferencji: {e}")
+    
+    def get(self, key, default=None):
+        """Pobiera wartość preferencji"""
+        return self.preferences.get(key, default if default is not None else self.defaults.get(key, ''))
+    
+    def set(self, key, value):
+        """Ustawia wartość preferencji"""
+        self.preferences[key] = str(value)
+        self.save_preferences()
+
+
+def custom_messagebox(parent, title, message, typ="info"):
+    """
+    Wyświetla niestandardowe okno dialogowe Qt zamiast standardowego QMessageBox.
+    typ: "info", "error", "warning", "question"
+    Zwraca: True/False dla question, None dla reszty
+    """
+    msg = QMessageBox(parent)
+    msg.setWindowTitle(title)
+    msg.setText(message)
+    
+    if typ == "info":
+        msg.setIcon(QMessageBox.Information)
+        msg.setStandardButtons(QMessageBox.Ok)
+    elif typ == "error":
+        msg.setIcon(QMessageBox.Critical)
+        msg.setStandardButtons(QMessageBox.Ok)
+    elif typ == "warning":
+        msg.setIcon(QMessageBox.Warning)
+        msg.setStandardButtons(QMessageBox.Ok)
+    elif typ == "question":
+        msg.setIcon(QMessageBox.Question)
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        result = msg.exec()
+        return result == QMessageBox.Yes
+    
+    msg.exec()
+    return None
+
+
+def generate_filename(pattern, base_name="", page_range="", page_num=None):
+    """
+    Generuje nazwę pliku na podstawie wzorca z preferencji.
+    Zmienne: {data}, {czas}, {base_name}, {range}, {page}
+    """
+    now = datetime.now()
+    data_str = now.strftime("%Y%m%d")
+    czas_str = now.strftime("%H%M%S")
+    
+    filename = pattern
+    filename = filename.replace("{data}", data_str)
+    filename = filename.replace("{czas}", czas_str)
+    filename = filename.replace("{base_name}", base_name)
+    filename = filename.replace("{range}", page_range)
+    if page_num is not None:
+        filename = filename.replace("{page}", str(page_num))
+    
+    return filename
 
 
 # ====================================================================
@@ -1108,6 +1225,7 @@ class PDFEditorQt(QMainWindow):
         self.min_zoom = 2
         self.max_zoom = 10
         self.thumb_widgets = {}
+        self.prefs_manager = PreferencesManager()
         self.setup_ui()
         self.setup_menus()
         self.setup_shortcuts()
@@ -1654,40 +1772,178 @@ class PDFEditorQt(QMainWindow):
         if not self.pdf_document or not self.selected_pages:
             self.update_status("Zaznacz strony do eksportu.")
             return
+        
+        # Pobierz ustawienia z preferencji
+        pdf_version = self.prefs_manager.get('pdf_export.version', '1.7')
+        print_prep = self.prefs_manager.get('pdf_export.print_prep', 'brak')
+        filename_pattern = self.prefs_manager.get('pdf_export.filename_pattern', 'Eksport_{range}_{data}_{czas}')
+        
+        # Generuj zakres stron dla nazwy pliku
+        sorted_pages = sorted(self.selected_pages)
+        if len(sorted_pages) == 1:
+            page_range = f"str{sorted_pages[0] + 1}"
+        elif len(sorted_pages) == 2:
+            page_range = f"str{sorted_pages[0] + 1}-{sorted_pages[1] + 1}"
+        else:
+            page_range = f"str{sorted_pages[0] + 1}-{sorted_pages[-1] + 1}"
+        
+        # Generuj domyślną nazwę pliku
+        base_name = ""
+        if self.pdf_document and hasattr(self.pdf_document, 'name'):
+            base_name = os.path.splitext(os.path.basename(self.pdf_document.name))[0]
+        
+        default_filename = generate_filename(filename_pattern, base_name=base_name, page_range=page_range)
+        if not default_filename.endswith('.pdf'):
+            default_filename += '.pdf'
+        
+        # Pobierz domyślną ścieżkę zapisu
+        default_save_path = self.prefs_manager.get('default_save_path', '')
+        if default_save_path and os.path.isdir(default_save_path):
+            default_filepath = os.path.join(default_save_path, default_filename)
+        else:
+            default_filepath = default_filename
+        
         filepath, _ = QFileDialog.getSaveFileName(
-            self, "Zapisz wyodrębnione strony jako", "", "Pliki PDF (*.pdf)"
+            self, "Zapisz wyodrębnione strony jako", default_filepath, "Pliki PDF (*.pdf)"
         )
         if not filepath:
             self.update_status("Anulowano ekstrakcję.")
             return
         try:
             temp_doc = fitz.open()
-            for idx in sorted(self.selected_pages):
+            for idx in sorted_pages:
                 temp_doc.insert_pdf(self.pdf_document, from_page=idx, to_page=idx)
-            temp_doc.save(filepath)
+            
+            # Zastosuj ustawienia eksportu PDF
+            # Mapowanie wersji PDF
+            version_map = {
+                '1.4': 4,
+                '1.5': 5,
+                '1.6': 6,
+                '1.7': 7,
+                '2.0': 17
+            }
+            pdf_ver = version_map.get(pdf_version, 7)
+            
+            # Opcje zapisu
+            deflate = True
+            garbage = 4
+            clean = True
+            
+            # Tryb drukarski
+            if print_prep == 'flatten':
+                # Flatten annotations (make them part of the page content)
+                for page_num in range(temp_doc.page_count):
+                    page = temp_doc[page_num]
+                    # Get all annotations and widgets
+                    annots = page.annots()
+                    if annots:
+                        for annot in annots:
+                            try:
+                                annot.update()
+                            except:
+                                pass
+                    page.apply_redactions()
+            elif print_prep == 'metadata':
+                # Usuń metadane
+                temp_doc.set_metadata({})
+                temp_doc.del_xml_metadata()
+            elif print_prep == 'trimbox':
+                # Ustaw TrimBox = MediaBox
+                for page_num in range(temp_doc.page_count):
+                    page = temp_doc[page_num]
+                    page.set_trimbox(page.rect)
+            elif print_prep == 'cropbox':
+                # Ustaw CropBox = MediaBox
+                for page_num in range(temp_doc.page_count):
+                    page = temp_doc[page_num]
+                    page.set_cropbox(page.rect)
+            
+            temp_doc.save(filepath, garbage=garbage, clean=clean, deflate=deflate, deflate_images=True, 
+                         deflate_fonts=True, no_new_id=False, pretty=False, version=pdf_ver)
             temp_doc.close()
             self.update_status(f"Wyeksportowano {len(self.selected_pages)} stron do: {filepath}")
         except Exception as e:
-            QMessageBox.critical(self, "Błąd", f"Nie udało się wyeksportować stron: {e}")
+            custom_messagebox(self, "Błąd", f"Nie udało się wyeksportować stron: {e}", typ="error")
             
     def export_images(self):
         if not self.pdf_document or not self.selected_pages:
             self.update_status("Zaznacz strony do eksportu.")
             return
-        folder = QFileDialog.getExistingDirectory(self, "Wybierz folder do zapisu obrazów")
+        
+        # Pobierz ustawienia z preferencji
+        image_format = self.prefs_manager.get('image_export.format', 'PNG').upper()
+        dpi = int(self.prefs_manager.get('image_export.dpi', '300'))
+        filename_pattern = self.prefs_manager.get('image_export.filename_pattern', '{base_name}_strona_{page}_{data}_{czas}')
+        
+        # Pobierz domyślną ścieżkę zapisu
+        default_save_path = self.prefs_manager.get('default_save_path', '')
+        if default_save_path and os.path.isdir(default_save_path):
+            folder = QFileDialog.getExistingDirectory(self, "Wybierz folder do zapisu obrazów", default_save_path)
+        else:
+            folder = QFileDialog.getExistingDirectory(self, "Wybierz folder do zapisu obrazów")
+        
         if not folder:
             return
+        
         try:
-            zoom = 300 / 72.0
+            # Oblicz zoom na podstawie DPI
+            zoom = dpi / 72.0
             matrix = fitz.Matrix(zoom, zoom)
-            for idx in sorted(self.selected_pages):
+            
+            # Generuj bazową nazwę z dokumentu
+            base_name = ""
+            if self.pdf_document and hasattr(self.pdf_document, 'name'):
+                base_name = os.path.splitext(os.path.basename(self.pdf_document.name))[0]
+            
+            # Generuj zakres stron dla nazwy pliku
+            sorted_pages = sorted(self.selected_pages)
+            if len(sorted_pages) == 1:
+                page_range = f"str{sorted_pages[0] + 1}"
+            elif len(sorted_pages) == 2:
+                page_range = f"str{sorted_pages[0] + 1}-{sorted_pages[1] + 1}"
+            else:
+                page_range = f"str{sorted_pages[0] + 1}-{sorted_pages[-1] + 1}"
+            
+            # Mapowanie rozszerzenia pliku
+            format_ext_map = {
+                'PNG': 'png',
+                'TIFF': 'tiff',
+                'JPG': 'jpg',
+                'JPEG': 'jpg'
+            }
+            file_ext = format_ext_map.get(image_format, 'png')
+            
+            # Eksportuj obrazy
+            for idx in sorted_pages:
                 page = self.pdf_document[idx]
                 pix = page.get_pixmap(matrix=matrix, alpha=False)
-                output_path = os.path.join(folder, f"strona_{idx + 1}.png")
-                pix.save(output_path)
+                
+                # Generuj nazwę pliku dla każdej strony
+                filename = generate_filename(
+                    filename_pattern, 
+                    base_name=base_name, 
+                    page_range=page_range, 
+                    page_num=idx + 1
+                )
+                
+                # Dodaj rozszerzenie jeśli nie ma
+                if not filename.endswith(f'.{file_ext}'):
+                    filename += f'.{file_ext}'
+                
+                output_path = os.path.join(folder, filename)
+                
+                # Zapisz w odpowiednim formacie
+                if image_format in ['JPG', 'JPEG']:
+                    # PyMuPDF zapisuje JPEG bezpośrednio
+                    pix.save(output_path, output='jpeg')
+                else:
+                    # PNG i TIFF
+                    pix.save(output_path)
+            
             self.update_status(f"Wyeksportowano {len(self.selected_pages)} obrazów do: {folder}")
         except Exception as e:
-            QMessageBox.critical(self, "Błąd", f"Nie udało się wyeksportować obrazów: {e}")
+            custom_messagebox(self, "Błąd", f"Nie udało się wyeksportować obrazów: {e}", typ="error")
             
     # ================================================================
     # PAGE EDITING OPERATIONS
