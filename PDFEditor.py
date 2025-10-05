@@ -2584,10 +2584,11 @@ class MacroEditDialog(tk.Toplevel):
 class MacroRecordingDialog(tk.Toplevel):
     """Non-blocking dialog for macro recording with Start/Stop/Cancel buttons"""
     
-    def __init__(self, parent, viewer):
+    def __init__(self, parent, viewer, refresh_callback=None):
         super().__init__(parent)
         self.parent = parent
         self.viewer = viewer
+        self.refresh_callback = refresh_callback
         self.title("Nagrywanie makra")
         self.transient(parent)
         # Don't grab_set() - we want non-blocking dialog
@@ -2627,12 +2628,10 @@ class MacroRecordingDialog(tk.Toplevel):
         ttk.Label(main_frame, text="Funkcje które mogą zostać nagrane:", 
                  font=('TkDefaultFont', 9, 'bold')).grid(row=1, column=0, columnspan=2, sticky="w", pady=(12, 4))
         
-        functions_frame = ttk.Frame(main_frame, relief="sunken", borderwidth=1)
-        functions_frame.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
-        
-        functions_text = tk.Text(functions_frame, height=8, width=50, wrap="word", 
-                                font=('TkDefaultFont', 8), state=tk.DISABLED)
-        functions_text.pack(fill="both", expand=True, padx=2, pady=2)
+        functions_text = tk.Text(main_frame, height=8, width=50, wrap="word", 
+                                font=('TkDefaultFont', 8), state=tk.DISABLED, 
+                                relief="flat", borderwidth=0, background=main_frame.cget('background'))
+        functions_text.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
         
         recordable_functions = """• Obróć w lewo / w prawo
 • Zaznacz wszystkie / nieparzyste / parzyste / pionowe / poziome
@@ -2721,6 +2720,10 @@ class MacroRecordingDialog(tk.Toplevel):
         self.viewer.current_macro_actions = []
         self.viewer._update_status(f"Makro '{self.macro_name}' zapisane.")
         
+        # Call refresh callback if provided
+        if self.refresh_callback:
+            self.refresh_callback()
+        
         self.destroy()
     
     def on_cancel(self):
@@ -2743,7 +2746,7 @@ class MacrosListDialog(tk.Toplevel):
         self.viewer = viewer
         self.title("Lista makr użytkownika")
         self.transient(parent)
-        self.grab_set()
+        # Don't grab_set() - we want non-blocking dialog
         self.resizable(True, True)
         self.geometry("500x400")
         
@@ -2809,9 +2812,7 @@ class MacrosListDialog(tk.Toplevel):
     
     def record_macro(self):
         """Otwórz okno nagrywania makra"""
-        MacroRecordingDialog(self, self.viewer)
-        # Refresh list after recording might be complete
-        self.load_macros()
+        MacroRecordingDialog(self, self.viewer, refresh_callback=self.load_macros)
     
     def run_selected(self):
         """Uruchom wybrane makro"""
@@ -2885,7 +2886,13 @@ class MacrosListDialog(tk.Toplevel):
         main_frame.pack(fill="both", expand=True)
         
         ttk.Label(main_frame, text=f"Makro: {macro_name}").pack(anchor="w", pady=(0, 8))
-        ttk.Label(main_frame, text="Naciśnij kombinację klawiszy lub ESC aby anulować").pack(anchor="w", pady=2)
+        
+        # Display available numpad keys
+        info_frame = ttk.LabelFrame(main_frame, text="Dostępne klawisze (klawiatura numeryczna)", padding="8")
+        info_frame.pack(fill="x", pady=(0, 8))
+        ttk.Label(info_frame, text="Numpad: 0-9, /, *, -, +, .").pack(anchor="w")
+        
+        ttk.Label(main_frame, text="Naciśnij klawisz z klawiatury numerycznej lub ESC aby anulować").pack(anchor="w", pady=2)
         
         # Display area for captured shortcut
         shortcut_var = tk.StringVar(value="Oczekiwanie na skrót...")
@@ -2899,7 +2906,13 @@ class MacrosListDialog(tk.Toplevel):
                      foreground="gray").pack(anchor="w", pady=(8, 0))
         
         result = [None]
-        captured_keys = {'ctrl': False, 'shift': False, 'alt': False, 'key': None}
+        
+        # Valid numpad keys
+        valid_numpad_keys = [
+            'KP_0', 'KP_1', 'KP_2', 'KP_3', 'KP_4', 
+            'KP_5', 'KP_6', 'KP_7', 'KP_8', 'KP_9',
+            'KP_Divide', 'KP_Multiply', 'KP_Subtract', 'KP_Add', 'KP_Decimal'
+        ]
         
         def check_shortcut_conflict(shortcut):
             """Check if shortcut is already used by another macro"""
@@ -2908,59 +2921,32 @@ class MacrosListDialog(tk.Toplevel):
                     return name
             return None
         
-        def format_shortcut():
-            """Format captured keys into shortcut string"""
-            parts = []
-            if captured_keys['ctrl']:
-                parts.append('Ctrl')
-            if captured_keys['alt']:
-                parts.append('Alt')
-            if captured_keys['shift']:
-                parts.append('Shift')
-            if captured_keys['key']:
-                parts.append(captured_keys['key'])
-            return '+'.join(parts) if parts else ''
-        
         def on_key_press(event):
-            # Update modifier states
-            if event.keysym in ('Control_L', 'Control_R'):
-                captured_keys['ctrl'] = True
-            elif event.keysym in ('Shift_L', 'Shift_R'):
-                captured_keys['shift'] = True
-            elif event.keysym in ('Alt_L', 'Alt_R'):
-                captured_keys['alt'] = True
-            elif event.keysym == 'Escape':
+            if event.keysym == 'Escape':
                 # Cancel on ESC
                 dialog.destroy()
                 return
-            else:
-                # Regular key pressed
-                captured_keys['key'] = event.keysym
+            elif event.keysym in valid_numpad_keys:
+                # Valid numpad key pressed
+                shortcut = event.keysym
+                shortcut_var.set(shortcut)
                 
-                shortcut = format_shortcut()
-                if shortcut:
-                    shortcut_var.set(shortcut)
-                    
-                    # Check for conflicts
-                    conflict = check_shortcut_conflict(shortcut)
-                    if conflict:
-                        shortcut_var.set(f"{shortcut} (używany przez: {conflict})")
-        
-        def on_key_release(event):
-            # Update modifier states on release
-            if event.keysym in ('Control_L', 'Control_R'):
-                captured_keys['ctrl'] = False
-            elif event.keysym in ('Shift_L', 'Shift_R'):
-                captured_keys['shift'] = False
-            elif event.keysym in ('Alt_L', 'Alt_R'):
-                captured_keys['alt'] = False
+                # Check for conflicts
+                conflict = check_shortcut_conflict(shortcut)
+                if conflict:
+                    shortcut_var.set(f"{shortcut} (używany przez: {conflict})")
+                
+                result[0] = shortcut
+            else:
+                # Invalid key
+                shortcut_var.set("Nieprawidłowy klawisz - użyj klawiatury numerycznej")
         
         def on_ok():
-            shortcut = format_shortcut()
-            if not shortcut:
+            if result[0] is None:
                 custom_messagebox(dialog, "Błąd", "Nie przechwycono żadnego skrótu.", typ="error")
                 return
             
+            shortcut = result[0]
             # Check for conflicts
             conflict = check_shortcut_conflict(shortcut)
             if conflict:
@@ -2973,7 +2959,6 @@ class MacrosListDialog(tk.Toplevel):
                 if not answer:
                     return
             
-            result[0] = shortcut
             dialog.destroy()
         
         def on_cancel():
@@ -2986,7 +2971,6 @@ class MacrosListDialog(tk.Toplevel):
         
         # Bind key events
         dialog.bind("<KeyPress>", on_key_press)
-        dialog.bind("<KeyRelease>", on_key_release)
         dialog.focus_set()
         
         # Wyśrodkuj
@@ -4720,6 +4704,12 @@ class SelectablePDFViewer:
         self.master.bind('<Control-Shift-I>', lambda e: self._check_action_allowed('import') and self.import_image_to_new_page()) # Ctrl+K dla obrazu
         self.master.bind('<Control-i>', lambda e: self._check_action_allowed('import') and self.import_pdf_after_active_page()) # Ctrl+I dla PDF
         self.master.bind('<Control-I>', lambda e: self._check_action_allowed('import') and self.import_pdf_after_active_page()) # Ctrl+I dla PDF
+        
+        # F12 - Open Macros List
+        self.master.bind('<F12>', lambda e: self.show_macros_list())
+        
+        # Numpad key bindings reserved for macros
+        self._setup_numpad_macro_bindings()
         
     def _setup_focus_logic(self):
         self.master.bind('<Escape>', lambda e: self._clear_all_selection())
@@ -6702,6 +6692,27 @@ class SelectablePDFViewer:
         self.macro_recording = False
         self.current_macro_actions = []
         self.macro_recording_name = None
+    
+    def _setup_numpad_macro_bindings(self):
+        """Set up numpad key bindings for macros"""
+        # Numpad keys that can be assigned to macros
+        numpad_keys = [
+            'KP_0', 'KP_1', 'KP_2', 'KP_3', 'KP_4', 
+            'KP_5', 'KP_6', 'KP_7', 'KP_8', 'KP_9',
+            'KP_Divide', 'KP_Multiply', 'KP_Subtract', 'KP_Add', 'KP_Decimal'
+        ]
+        
+        for key in numpad_keys:
+            self.master.bind(f'<{key}>', lambda e, k=key: self._handle_numpad_macro_key(k))
+    
+    def _handle_numpad_macro_key(self, keysym):
+        """Handle numpad key press for macro execution"""
+        macros = self.prefs_manager.get_profiles('macros')
+        for macro_name, macro_data in macros.items():
+            shortcut = macro_data.get('shortcut', '')
+            if shortcut == keysym:
+                self.run_macro(macro_name)
+                return
     
     def record_macro(self):
         """Opens non-blocking macro recording dialog"""
