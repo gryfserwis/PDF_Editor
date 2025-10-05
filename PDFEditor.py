@@ -8,7 +8,7 @@ import os
 import sys 
 import re 
 from typing import Optional, List, Set, Dict, Union
-from datetime import date 
+from datetime import date, datetime 
 import pypdf
 from pypdf import PdfReader, PdfWriter, Transformation
 from pypdf.generic import RectangleObject, FloatObject, ArrayObject
@@ -71,6 +71,29 @@ def validate_float_range(value, minval, maxval):
         return minval <= v <= maxval
     except Exception:
         return False
+
+def generate_unique_export_filename(directory, base_name, page_range, extension):
+    """
+    Generuje unikalną nazwę pliku w formacie:
+    "Eksport z pliku [base_name]_[page_range]_[date]_[time].[extension]"
+    Jeśli plik istnieje, dodaje (1), (2), (3) itd.
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"Eksport_{page_range}_{timestamp}.{extension}"
+    filepath = os.path.join(directory, filename)
+    
+    # Jeśli plik istnieje, dodaj numer
+    if os.path.exists(filepath):
+        counter = 1
+        base_without_ext = f"Eksport_{page_range}_{timestamp}"
+        while True:
+            filename = f"{base_without_ext} ({counter}).{extension}"
+            filepath = os.path.join(directory, filename)
+            if not os.path.exists(filepath):
+                break
+            counter += 1
+    
+    return filepath
         
 def resource_path(relative_path):
     """
@@ -2615,8 +2638,9 @@ class MergePDFDialog(tk.Toplevel):
         self.transient(parent)
         self.grab_set()
         self.resizable(True, True)
-        self.geometry("600x500")
-        
+        self.geometry("400x400")
+        self.geometry
+        self.minsize(400, 400)
         self.pdf_files = []  # Lista ścieżek do plików PDF
         
         self.build_ui()
@@ -2641,11 +2665,15 @@ class MergePDFDialog(tk.Toplevel):
         main_frame.pack(fill="both", expand=True)
         
         # Nagłówek
-        ttk.Label(main_frame, text="Dodaj pliki PDF do scalenia:", font=("Arial", 10, "bold")).pack(anchor="w", pady=(0, 8))
+        #ttk.Label(main_frame, text="Dodaj pliki PDF do scalenia:", font=("Arial", 10, "bold")).pack(anchor="w", pady=(0, 8))
         
-        # Lista plików
-        list_frame = ttk.Frame(main_frame)
-        list_frame.pack(fill="both", expand=True, pady=(0, 8))
+        # Frame dla listy i przycisków
+        content_frame = ttk.Frame(main_frame)
+        content_frame.pack(fill="both", expand=True, pady=(0, 8))
+        
+        # Lista plików (węższa - z lewej strony)
+        list_frame = ttk.Frame(content_frame)
+        list_frame.pack(side="left", fill="both", expand=True)
         
         scrollbar = ttk.Scrollbar(list_frame)
         scrollbar.pack(side="right", fill="y")
@@ -2654,14 +2682,14 @@ class MergePDFDialog(tk.Toplevel):
         self.files_listbox.pack(side="left", fill="both", expand=True)
         scrollbar.config(command=self.files_listbox.yview)
         
-        # Przyciski zarządzania listą
-        buttons_frame = ttk.Frame(main_frame)
-        buttons_frame.pack(fill="x", pady=(0, 8))
+        # Przyciski zarządzania listą (w rzędzie po prawej)
+        buttons_frame = ttk.Frame(content_frame)
+        buttons_frame.pack(side="right", fill="y", padx=(8, 0))
         
-        ttk.Button(buttons_frame, text="Dodaj pliki...", command=self.add_files).pack(side="left", padx=(0, 4))
-        ttk.Button(buttons_frame, text="Usuń zaznaczony", command=self.remove_selected).pack(side="left", padx=4)
-        ttk.Button(buttons_frame, text="Przesuń w górę", command=self.move_up).pack(side="left", padx=4)
-        ttk.Button(buttons_frame, text="Przesuń w dół", command=self.move_down).pack(side="left", padx=4)
+        ttk.Button(buttons_frame, text="Dodaj pliki...", command=self.add_files, width=15).pack(pady=(0, 4))
+        ttk.Button(buttons_frame, text="Usuń zaznaczony", command=self.remove_selected, width=15).pack(pady=4)
+        ttk.Button(buttons_frame, text="Przesuń w górę", command=self.move_up, width=15).pack(pady=4)
+        ttk.Button(buttons_frame, text="Przesuń w dół", command=self.move_down, width=15).pack(pady=4)
         
         # Przyciski akcji
         action_frame = ttk.Frame(main_frame)
@@ -2717,6 +2745,60 @@ class MergePDFDialog(tk.Toplevel):
         for file in self.pdf_files:
             self.files_listbox.insert(tk.END, os.path.basename(file))
     
+    def _ask_password_dialog(self, filepath):
+        """Wyświetla dialog z prośbą o hasło do pliku PDF.
+        Zwraca hasło lub None jeśli użytkownik anulował."""
+        
+        dialog = tk.Toplevel(self)
+        dialog.title("Plik PDF wymaga hasła")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        
+        main_frame = ttk.Frame(dialog, padding="12")
+        main_frame.pack(fill="both", expand=True)
+        
+        ttk.Label(main_frame, text=f"Plik {os.path.basename(filepath)} jest zabezpieczony hasłem.").pack(anchor="w", pady=(0, 8))
+        ttk.Label(main_frame, text="Wprowadź hasło:").pack(anchor="w", pady=(0, 4))
+        
+        password_var = tk.StringVar()
+        password_entry = ttk.Entry(main_frame, textvariable=password_var, show="*", width=30)
+        password_entry.pack(fill="x", pady=(0, 12))
+        
+        result = [None]
+        
+        def on_ok():
+            result[0] = password_var.get()
+            dialog.destroy()
+        
+        def on_cancel():
+            dialog.destroy()
+        
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack()
+        ttk.Button(button_frame, text="OK", command=on_ok, width=10).pack(side="left", padx=4)
+        ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10).pack(side="left", padx=4)
+        
+        password_entry.focus_set()
+        dialog.bind("<Return>", lambda e: on_ok())
+        dialog.bind("<Escape>", lambda e: on_cancel())
+        
+        # Wyśrodkuj
+        dialog.update_idletasks()
+        dialog_w = dialog.winfo_width()
+        dialog_h = dialog.winfo_height()
+        parent_x = self.winfo_rootx()
+        parent_y = self.winfo_rooty()
+        parent_w = self.winfo_width()
+        parent_h = self.winfo_height()
+        x = parent_x + (parent_w - dialog_w) // 2
+        y = parent_y + (parent_h - dialog_h) // 2
+        dialog.geometry(f"+{x}+{y}")
+        
+        dialog.wait_window()
+        
+        return result[0]
+    
     def merge_and_save(self):
         """Scal pliki PDF i zapisz"""
         if not self.pdf_files:
@@ -2739,6 +2821,23 @@ class MergePDFDialog(tk.Toplevel):
             for pdf_path in self.pdf_files:
                 try:
                     doc = fitz.open(pdf_path)
+                    
+                    # Sprawdź czy dokument jest zaszyfrowany
+                    if doc.is_encrypted:
+                        password = self._ask_password_dialog(pdf_path)
+                        
+                        if password is None:
+                            # Użytkownik anulował
+                            doc.close()
+                            custom_messagebox(self, "Informacja", f"Pominięto plik {os.path.basename(pdf_path)} (anulowano wprowadzenie hasła).", typ="info")
+                            continue
+                        
+                        # Spróbuj uwierzytelnić
+                        if not doc.authenticate(password):
+                            doc.close()
+                            custom_messagebox(self, "Ostrzeżenie", f"Nieprawidłowe hasło dla pliku {os.path.basename(pdf_path)}. Pominięto.", typ="warning")
+                            continue
+                    
                     merged_doc.insert_pdf(doc)
                     doc.close()
                 except Exception as e:
@@ -3595,61 +3694,7 @@ class SelectablePDFViewer:
             custom_messagebox(self.master, "Informacja", "Wybierz strony do eksportu.", typ="info")
             return
 
-        # Jeśli więcej niż jedna strona, zapytaj o tryb eksportu
-        export_mode = "separate"  # domyślnie każda strona osobno
-        if len(selected_indices) > 1:
-            # Dialog wyboru trybu
-            dialog = tk.Toplevel(self.master)
-            dialog.title("Tryb eksportu")
-            dialog.transient(self.master)
-            dialog.grab_set()
-            dialog.resizable(False, False)
-            
-            main_frame = ttk.Frame(dialog, padding="12")
-            main_frame.pack(fill="both", expand=True)
-            
-            ttk.Label(main_frame, text="Wybierz tryb eksportu:").pack(anchor="w", pady=(0, 8))
-            
-            mode_var = tk.StringVar(value="separate")
-            ttk.Radiobutton(main_frame, text="Każda strona do osobnego pliku PNG", variable=mode_var, value="separate").pack(anchor="w", pady=2)
-            # Opcja scalania do jednego pliku jest możliwa tylko przez łączenie obrazów w jeden
-            # Obecnie zostaniemy przy "separate" jako jedynej opcji
-            
-            result = [None]
-            
-            def on_ok():
-                result[0] = mode_var.get()
-                dialog.destroy()
-            
-            def on_cancel():
-                dialog.destroy()
-            
-            button_frame = ttk.Frame(main_frame)
-            button_frame.pack(pady=(12, 0))
-            ttk.Button(button_frame, text="OK", command=on_ok, width=10).pack(side="left", padx=4)
-            ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10).pack(side="left", padx=4)
-            
-            dialog.bind("<Return>", lambda e: on_ok())
-            dialog.bind("<Escape>", lambda e: on_cancel())
-            
-            # Wyśrodkuj
-            dialog.update_idletasks()
-            dialog_w = dialog.winfo_width()
-            dialog_h = dialog.winfo_height()
-            parent_x = self.master.winfo_rootx()
-            parent_y = self.master.winfo_rooty()
-            parent_w = self.master.winfo_width()
-            parent_h = self.master.winfo_height()
-            x = parent_x + (parent_w - dialog_w) // 2
-            y = parent_y + (parent_h - dialog_h) // 2
-            dialog.geometry(f"+{x}+{y}")
-            
-            dialog.wait_window()
-            
-            if result[0] is None:
-                return
-            export_mode = result[0]
-
+        # Wybierz folder do zapisu (bez dialogu trybu - domyślnie każda strona osobno)
         output_dir = filedialog.askdirectory(
             title="Wybierz folder do zapisu wyeksportowanych obrazów"
         )
@@ -3662,12 +3707,17 @@ class SelectablePDFViewer:
             zoom = 300 / 72.0 
             matrix = fitz.Matrix(zoom, zoom)
             
-            # POPRAWKA BŁĘDU: Bezpieczne pobieranie nazwy bazowej
-            # Jeśli self.file_path istnieje, użyj jego nazwy. W przeciwnym razie, użyj "export".
+            # Pobierz nazwę bazową pliku źródłowego
             if hasattr(self, 'file_path') and self.file_path:
                 base_filename = os.path.splitext(os.path.basename(self.file_path))[0]
             else:
-                base_filename = "export"
+                base_filename = "dokument"
+            
+            # Utwórz zakres stron
+            if len(selected_indices) == 1:
+                page_range = str(selected_indices[0] + 1)
+            else:
+                page_range = f"{selected_indices[0] + 1}-{selected_indices[-1] + 1}"
             
             exported_count = 0
             
@@ -3680,9 +3730,11 @@ class SelectablePDFViewer:
                     
                     pix = page.get_pixmap(matrix=matrix, alpha=False)
                     
-                    # Budowanie nazwy pliku: "nazwa_dokumentu_strona_X.png"
-                    output_filename = f"{base_filename}_strona_{index + 1}.png"
-                    output_path = os.path.join(output_dir, output_filename)
+                    # Generuj unikalną nazwę pliku
+                    single_page_range = str(index + 1)
+                    output_path = generate_unique_export_filename(
+                        output_dir, base_filename, single_page_range, "png"
+                    )
                     
                     pix.save(output_path)
                     exported_count += 1
@@ -3987,7 +4039,8 @@ class SelectablePDFViewer:
         self.file_menu.add_command(label="Otwórz PDF...", command=self.open_pdf, accelerator="Ctrl+O")
         self.file_menu.add_command(label="Otwórz obraz jako PDF...", command=self.open_image_as_new_pdf, accelerator="Ctrl+Shift+O")
         self.file_menu.add_command(label="Zapisz jako...", command=self.save_document, state=tk.DISABLED, accelerator="Ctrl+S")
-        self.file_menu.add_separator() 
+        self.file_menu.add_command(label="Zapisz jako plik z hasłem...", command=self.set_pdf_password, state=tk.DISABLED)
+        self.file_menu.add_separator()
         self.file_menu.add_command(label="Importuj strony z PDF...", command=self.import_pdf_after_active_page, state=tk.DISABLED, accelerator="Ctrl+I") 
         self.file_menu.add_command(label="Eksportuj strony do PDF...", command=self.extract_selected_pages, state=tk.DISABLED,accelerator="Ctrl+E") 
         self.file_menu.add_separator() 
@@ -3996,10 +4049,9 @@ class SelectablePDFViewer:
         self.file_menu.add_separator()
         self.file_menu.add_command(label="Scalanie plików PDF...", command=self.merge_pdf_files)
         self.file_menu.add_separator()
-        self.file_menu.add_command(label="Zamknij plik", command=self.close_pdf, accelerator="Ctrl+Q")
-        self.file_menu.add_separator()
         self.file_menu.add_command(label="Preferencje...", command=self.show_preferences_dialog)
         self.file_menu.add_separator()
+        self.file_menu.add_command(label="Zamknij plik", command=self.close_pdf, accelerator="Ctrl+Q")
         self.file_menu.add_command(label="Zamknij program", command=self.on_close_window)
 
         select_menu = tk.Menu(menu_bar, tearoff=0)
@@ -4155,18 +4207,14 @@ class SelectablePDFViewer:
     # ... (resztę modyfikacji) ...
     
         # ODRACANIE KOLEJNOŚCI
-        menu_obj.add_separator()
+
         menu_obj.add_command(label="Przytnij / zmień rozmiar...", command=self.apply_page_crop_resize_dialog, state=tk.DISABLED, accelerator="F8")
+        menu_obj.add_separator()
         menu_obj.add_command(label="Scal strony na arkuszu...", command=self.merge_pages_to_grid, state=tk.DISABLED)
+        menu_obj.add_separator()
         menu_obj.add_command(label="Odwróć kolejność wszystkich stron", command=self._reverse_pages, state=tk.DISABLED)
         
-        # === HASŁA PDF ===
-        menu_obj.add_separator()
-        menu_obj.add_command(label="Ustaw hasło PDF...", command=self.set_pdf_password, state=tk.DISABLED)
-        menu_obj.add_command(label="Usuń hasło PDF...", command=self.remove_pdf_password, state=tk.DISABLED)
-        
         # === USUWANIE PUSTYCH STRON ===
-        menu_obj.add_separator()
         menu_obj.add_command(label="Usuń puste strony", command=self.remove_empty_pages, state=tk.DISABLED)
     
     def _check_action_allowed(self, action_name):
@@ -4512,10 +4560,9 @@ class SelectablePDFViewer:
             "Scal strony na arkuszu...": delete_state,
             "Zamknij plik": import_state, 
             "Zapisz jako...": import_state,
+            "Zapisz jako plik z hasłem...": reverse_state,
             "Zamień strony miejscami": two_pages_state,
-            "Usuń puste strony": reverse_state,            
-            "Ustaw hasło PDF...": reverse_state,
-            "Usuń hasło PDF...": reverse_state,
+            "Usuń puste strony": reverse_state,
             
         }
         
@@ -4564,7 +4611,37 @@ class SelectablePDFViewer:
 
         try:
             if self.pdf_document: self.pdf_document.close()
-            self.pdf_document = fitz.open(filepath)
+            
+            # Spróbuj otworzyć plik
+            doc = fitz.open(filepath)
+            
+            # Sprawdź czy dokument jest zaszyfrowany
+            if doc.is_encrypted:
+                # Zamknij dokument tymczasowy
+                doc.close()
+                
+                # Pokaż dialog z prośbą o hasło
+                password = self._ask_for_password()
+                
+                if password is None:
+                    # Użytkownik anulował
+                    self._update_status("Anulowano otwieranie pliku.")
+                    return
+                
+                # Spróbuj otworzyć z hasłem
+                doc = fitz.open(filepath)
+                if not doc.authenticate(password):
+                    doc.close()
+                    custom_messagebox(
+                        self.master, 
+                        "Błąd", 
+                        "Nieprawidłowe hasło. Nie udało się otworzyć pliku PDF.",
+                        typ="error"
+                    )
+                    self._update_status("BŁĄD: Nieprawidłowe hasło do pliku PDF.")
+                    return
+            
+            self.pdf_document = doc
             self.selected_pages = set()
             self.tk_images = {}
             self.undo_stack.clear()
@@ -4696,6 +4773,29 @@ class SelectablePDFViewer:
         selected_indices = None 
         try:
             imported_doc = fitz.open(import_path)
+            
+            # Sprawdź czy dokument jest zaszyfrowany
+            if imported_doc.is_encrypted:
+                password = self._ask_for_password()
+                
+                if password is None:
+                    # Użytkownik anulował
+                    imported_doc.close()
+                    self._update_status("Anulowano importowanie pliku.")
+                    return
+                
+                # Spróbuj uwierzytelnić
+                if not imported_doc.authenticate(password):
+                    imported_doc.close()
+                    custom_messagebox(
+                        self.master, 
+                        "Błąd", 
+                        "Nieprawidłowe hasło. Nie udało się otworzyć pliku PDF.",
+                        typ="error"
+                    )
+                    self._update_status("BŁĄD: Nieprawidłowe hasło do pliku PDF.")
+                    return
+            
             max_pages = len(imported_doc)
 
             # Jeśli wywołano przez drag&drop, importuj wszystko bez dialogu wyboru zakresu
@@ -5190,15 +5290,32 @@ class SelectablePDFViewer:
         
         if export_mode == "single":
             # Wszystkie strony do jednego pliku
-            filepath = filedialog.asksaveasfilename(
-                defaultextension=".pdf",
-                filetypes=[("Pliki PDF", "*.pdf")],
-                title="Zapisz wyodrębnione strony jako nowy PDF..."
+            # Wybierz folder
+            output_dir = filedialog.askdirectory(
+                title="Wybierz folder do zapisu PDF"
             )
-            if not filepath:
+            if not output_dir:
                 self._update_status("Anulowano ekstrakcję stron.")
                 return
+            
             try:
+                # Pobierz nazwę bazową
+                if hasattr(self, 'file_path') and self.file_path:
+                    base_filename = os.path.splitext(os.path.basename(self.file_path))[0]
+                else:
+                    base_filename = "dokument"
+                
+                # Utwórz zakres stron
+                if len(selected_indices) == 1:
+                    page_range = str(selected_indices[0] + 1)
+                else:
+                    page_range = f"{selected_indices[0] + 1}-{selected_indices[-1] + 1}"
+                
+                # Generuj unikalną nazwę pliku
+                filepath = generate_unique_export_filename(
+                    output_dir, base_filename, page_range, "pdf"
+                )
+                
                 page_bytes = self._get_page_bytes(self.selected_pages)
                 num_extracted = len(self.selected_pages)
                 with open(filepath, "wb") as f:
@@ -5220,14 +5337,18 @@ class SelectablePDFViewer:
                 if hasattr(self, 'file_path') and self.file_path:
                     base_filename = os.path.splitext(os.path.basename(self.file_path))[0]
                 else:
-                    base_filename = "export"
+                    base_filename = "dokument"
                 
                 exported_count = 0
                 for index in selected_indices:
                     # Utwórz dokument z jedną stroną
                     page_bytes = self._get_page_bytes({index})
-                    output_filename = f"{base_filename}_strona_{index + 1}.pdf"
-                    output_path = os.path.join(output_dir, output_filename)
+                    
+                    # Generuj unikalną nazwę pliku
+                    single_page_range = str(index + 1)
+                    output_path = generate_unique_export_filename(
+                        output_dir, base_filename, single_page_range, "pdf"
+                    )
                     
                     with open(output_path, "wb") as f:
                         f.write(page_bytes)
@@ -5926,6 +6047,60 @@ class SelectablePDFViewer:
     # ===================================================================
     # NOWE FUNKCJE: HASŁA PDF, USUWANIE PUSTYCH STRON, SCALANIE PDF
     # ===================================================================
+    
+    def _ask_for_password(self):
+        """Wyświetla dialog z prośbą o hasło do pliku PDF.
+        Zwraca hasło lub None jeśli użytkownik anulował."""
+        
+        dialog = tk.Toplevel(self.master)
+        dialog.title("Plik PDF wymaga hasła")
+        dialog.transient(self.master)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        
+        main_frame = ttk.Frame(dialog, padding="12")
+        main_frame.pack(fill="both", expand=True)
+        
+        ttk.Label(main_frame, text="Ten plik PDF jest zabezpieczony hasłem.").pack(anchor="w", pady=(0, 8))
+        ttk.Label(main_frame, text="Wprowadź hasło:").pack(anchor="w", pady=(0, 4))
+        
+        password_var = tk.StringVar()
+        password_entry = ttk.Entry(main_frame, textvariable=password_var, show="*", width=30)
+        password_entry.pack(fill="x", pady=(0, 12))
+        
+        result = [None]
+        
+        def on_ok():
+            result[0] = password_var.get()
+            dialog.destroy()
+        
+        def on_cancel():
+            dialog.destroy()
+        
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack()
+        ttk.Button(button_frame, text="OK", command=on_ok, width=10).pack(side="left", padx=4)
+        ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10).pack(side="left", padx=4)
+        
+        password_entry.focus_set()
+        dialog.bind("<Return>", lambda e: on_ok())
+        dialog.bind("<Escape>", lambda e: on_cancel())
+        
+        # Wyśrodkuj
+        dialog.update_idletasks()
+        dialog_w = dialog.winfo_width()
+        dialog_h = dialog.winfo_height()
+        parent_x = self.master.winfo_rootx()
+        parent_y = self.master.winfo_rooty()
+        parent_w = self.master.winfo_width()
+        parent_h = self.master.winfo_height()
+        x = parent_x + (parent_w - dialog_w) // 2
+        y = parent_y + (parent_h - dialog_h) // 2
+        dialog.geometry(f"+{x}+{y}")
+        
+        dialog.wait_window()
+        
+        return result[0]
     
     def set_pdf_password(self):
         """Ustawia hasło na otwarty plik PDF"""
