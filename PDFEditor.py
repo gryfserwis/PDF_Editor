@@ -250,6 +250,13 @@ class PreferencesManager:
             'ImageImportSettingsDialog.target_format': 'A4',
             'ImageImportSettingsDialog.orientation': 'auto',
             'ImageImportSettingsDialog.margin_mm': '10',
+            'ImageImportSettingsDialog.scaling_mode': 'DOPASUJ',
+            'ImageImportSettingsDialog.alignment_mode': 'SRODEK',
+            'ImageImportSettingsDialog.scale_factor': '100.0',
+            'ImageImportSettingsDialog.page_orientation': 'PIONOWO',
+            'ImageImportSettingsDialog.custom_width': '',
+            'ImageImportSettingsDialog.custom_height': '',
+            'ImageImportSettingsDialog.keep_ratio': 'True',
         }
         self.load_preferences()
     
@@ -368,7 +375,7 @@ class PreferencesDialog(tk.Toplevel):
         button_frame.pack(fill="x", pady=(8, 0))
         
         ttk.Button(button_frame, text="Zapisz", command=self.ok).pack(side="left", padx=5)
-        ttk.Button(button_frame, text="Przywróć domyślne (wszystkie)", command=self.reset_all_defaults).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Domyślne (wszystkie)", command=self.reset_all_defaults).pack(side="left", padx=5)
         ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side="right", padx=5)
     
     def browse_path(self):
@@ -634,7 +641,7 @@ class PageCropResizeDialog(tk.Toplevel):
         button_frame = ttk.Frame(self)
         button_frame.pack(fill="x", padx=12, pady=(12,10))
         ttk.Button(button_frame, text="Zastosuj", command=self.ok).pack(side="left", expand=True, padx=5)
-        ttk.Button(button_frame, text="Przywróć domyślne", command=self.restore_defaults).pack(side="left", expand=True, padx=5)
+        ttk.Button(button_frame, text="Domyślne", command=self.restore_defaults).pack(side="left", expand=True, padx=5)
         ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side="right", expand=True, padx=5)
 
     def update_field_states(self):
@@ -1002,7 +1009,7 @@ class PageNumberingDialog(tk.Toplevel):
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill='x', pady=(8,6))
         ttk.Button(button_frame, text="Wstaw", command=self.ok).pack(side='left', expand=True, padx=5)
-        ttk.Button(button_frame, text="Przywróć domyślne", command=self.restore_defaults).pack(side='left', expand=True, padx=5)
+        ttk.Button(button_frame, text="Domyślne", command=self.restore_defaults).pack(side='left', expand=True, padx=5)
         ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side='right', expand=True, padx=5)
 
     def ok(self, event=None):
@@ -1160,7 +1167,7 @@ class PageNumberMarginDialog(tk.Toplevel):
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill='x', side='bottom', pady=(8, 4))
         ttk.Button(button_frame, text="Usuń", command=self.ok).pack(side='left', expand=True, padx=5)
-        ttk.Button(button_frame, text="Przywróć domyślne", command=self.restore_defaults).pack(side='left', expand=True, padx=5)
+        ttk.Button(button_frame, text="Domyślne", command=self.restore_defaults).pack(side='left', expand=True, padx=5)
         ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side='right', expand=True, padx=5)
 
     def ok(self, event=None):
@@ -1294,7 +1301,7 @@ class ShiftContentDialog(tk.Toplevel):
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill='x', side='bottom', pady=(10, 4))
         ttk.Button(button_frame, text="Przesuń", command=self.ok).pack(side='left', expand=True, padx=5)
-        ttk.Button(button_frame, text="Przywróć domyślne", command=self.restore_defaults).pack(side='left', expand=True, padx=5)
+        ttk.Button(button_frame, text="Domyślne", command=self.restore_defaults).pack(side='left', expand=True, padx=5)
         ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side='right', expand=True, padx=5)
 
     def ok(self, event=None):
@@ -1324,13 +1331,24 @@ class ShiftContentDialog(tk.Toplevel):
         self.destroy()
 
 class ImageImportSettingsDialog(tk.Toplevel):
-    def __init__(self, parent, title, image_path):
+    DEFAULTS = {
+        'scaling_mode': 'DOPASUJ',
+        'alignment_mode': 'SRODEK',
+        'scale_factor': 100.0,
+        'page_orientation': 'PIONOWO',
+        'custom_width': '',
+        'custom_height': '',
+        'keep_ratio': True
+    }
+
+    def __init__(self, parent, title, image_path, prefs_manager=None):
         super().__init__(parent)
+        self.prefs_manager = prefs_manager
         self.transient(parent)
         self.title(title)
         self.image_path = image_path
         self.result = None
-        
+
         # Pozycjonuj poza ekranem, aby uniknąć migotania
         self.geometry("+10000+10000")
 
@@ -1346,13 +1364,15 @@ class ImageImportSettingsDialog(tk.Toplevel):
         except Exception:
             pass
 
-        self.scaling_mode = tk.StringVar(value="DOPASUJ")
-        self.alignment_mode = tk.StringVar(value="SRODEK")
-        self.scale_factor = tk.DoubleVar(value=100.0)
-        self.page_orientation = tk.StringVar(value="PIONOWO")
-        self.custom_width = tk.StringVar(value="")
-        self.custom_height = tk.StringVar(value="")
-        self.keep_ratio = tk.BooleanVar(value=True)
+        # --- Preferencje / wartości pól ---
+        self.scaling_mode = tk.StringVar(value=self._get_pref('scaling_mode'))
+        self.alignment_mode = tk.StringVar(value=self._get_pref('alignment_mode'))
+        self.scale_factor = tk.DoubleVar(value=float(self._get_pref('scale_factor')))
+        self.page_orientation = tk.StringVar(value=self._get_pref('page_orientation'))
+        self.custom_width = tk.StringVar(value=self._get_pref('custom_width'))
+        self.custom_height = tk.StringVar(value=self._get_pref('custom_height'))
+        self.keep_ratio = tk.BooleanVar(value=self._get_pref('keep_ratio') in ('1', 'True', True))
+
         self._block_update = False  # zabezpieczenie przed zapętleniem synchronizacji
 
         # === WALIDATORY ===
@@ -1378,6 +1398,31 @@ class ImageImportSettingsDialog(tk.Toplevel):
         if self.initial_focus:
             self.initial_focus.focus_set()
         self.wait_window(self)
+
+    def _get_pref(self, key):
+        if self.prefs_manager:
+            return self.prefs_manager.get(f'ImageImportSettingsDialog.{key}', self.DEFAULTS.get(key, ''))
+        return self.DEFAULTS.get(key, '')
+
+    def _save_prefs(self):
+        if self.prefs_manager:
+            self.prefs_manager.set('ImageImportSettingsDialog.scaling_mode', self.scaling_mode.get())
+            self.prefs_manager.set('ImageImportSettingsDialog.alignment_mode', self.alignment_mode.get())
+            self.prefs_manager.set('ImageImportSettingsDialog.scale_factor', str(self.scale_factor.get()))
+            self.prefs_manager.set('ImageImportSettingsDialog.page_orientation', self.page_orientation.get())
+            self.prefs_manager.set('ImageImportSettingsDialog.custom_width', self.custom_width.get())
+            self.prefs_manager.set('ImageImportSettingsDialog.custom_height', self.custom_height.get())
+            self.prefs_manager.set('ImageImportSettingsDialog.keep_ratio', str(self.keep_ratio.get()))
+
+    def restore_defaults(self):
+        self.scaling_mode.set(self.DEFAULTS['scaling_mode'])
+        self.alignment_mode.set(self.DEFAULTS['alignment_mode'])
+        self.scale_factor.set(self.DEFAULTS['scale_factor'])
+        self.page_orientation.set(self.DEFAULTS['page_orientation'])
+        self.custom_width.set(self.DEFAULTS['custom_width'])
+        self.custom_height.set(self.DEFAULTS['custom_height'])
+        self.keep_ratio.set(self.DEFAULTS['keep_ratio'])
+        self.update_scale_controls()
 
     def body(self):
         main_frame = ttk.Frame(self, padding="10")
@@ -1518,8 +1563,9 @@ class ImageImportSettingsDialog(tk.Toplevel):
         box.pack(fill=tk.X, pady=(8, 10))
         center = ttk.Frame(box)
         center.pack(anchor="center")
-        ttk.Button(center, text="Importuj", width=12, command=self.ok).pack(side=tk.LEFT, padx=20)
-        ttk.Button(center, text="Anuluj", width=12, command=self.cancel).pack(side=tk.LEFT, padx=20)
+        ttk.Button(center, text="Importuj", width=12, command=self.ok).pack(side=tk.LEFT, padx=10)
+        ttk.Button(center, text="Domyślne", width=12, command=self.restore_defaults).pack(side=tk.LEFT, padx=10)
+        ttk.Button(center, text="Anuluj", width=12, command=self.cancel).pack(side=tk.LEFT, padx=10)
         self.bind("<Return>", self.ok)
         self.bind("<Escape>", lambda e: self.cancel())
 
@@ -1555,6 +1601,7 @@ class ImageImportSettingsDialog(tk.Toplevel):
             'custom_height_mm': custom_height,
             'keep_ratio': self.keep_ratio.get()
         }
+        self._save_prefs()
         self.destroy()
 
     def cancel(self, event=None):
@@ -1691,7 +1738,8 @@ class EnhancedPageRangeDialog(tk.Toplevel):
         if too_large:
             custom_messagebox(
                 self, "Błąd zakresu",
-                f"Podano numery spoza zakresu 1-{self.max_pages}: {', '.join(map(str, too_large))}",
+            #    f"Podano numery spoza zakresu 1-{self.max_pages}: {', '.join(map(str, too_large))}",
+                f"Podano numery spoza zakresu 1-{self.max_pages}",
                 typ="error"
             )
             self.entry.focus_set()
@@ -1993,7 +2041,7 @@ class MergePageGridDialog(tk.Toplevel):
         button_frame = ttk.Frame(self)
         button_frame.pack(fill="x", padx=16, pady=(0, 12), side="bottom")
         ttk.Button(button_frame, text="Zastosuj", command=self.ok).pack(side="left", expand=True, padx=5)
-        ttk.Button(button_frame, text="Przywróć domyślne", command=self.restore_defaults).pack(side="left", expand=True, padx=5)
+        ttk.Button(button_frame, text="Domyślne", command=self.restore_defaults).pack(side="left", expand=True, padx=5)
         ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side="right", expand=True, padx=5)
     
     def _get_pref(self, key):
@@ -4082,7 +4130,7 @@ class SelectablePDFViewer:
                 'custom_height_mm': None
             }
         else:
-            dialog = ImageImportSettingsDialog(self.master, "Ustawienia importu obrazu", image_path)
+            dialog = ImageImportSettingsDialog(self.master, "Ustawienia importu obrazu", image_path, prefs_manager=self.prefs_manager)
             settings = dialog.result
             if not settings:
                 return
