@@ -284,16 +284,6 @@ class PreferencesManager:
             'ImageImportSettingsDialog.custom_width': '',
             'ImageImportSettingsDialog.custom_height': '',
             'ImageImportSettingsDialog.keep_ratio': 'True',
-            
-            # PDF Export Settings
-            'pdf_export.version': '1.7',
-            'pdf_export.print_prep': 'brak',
-            'pdf_export.filename_pattern': 'Eksport_{range}_{data}_{czas}',
-            
-            # Image Export Settings
-            'image_export.format': 'PNG',
-            'image_export.dpi': '300',
-            'image_export.filename_pattern': '{base_name}_strona_{page}_{data}_{czas}',
         }
         self.load_preferences()
     
@@ -422,60 +412,6 @@ class PreferencesDialog(tk.Toplevel):
         
         general_frame.columnconfigure(1, weight=1)
         
-        # Sekcja eksportu PDF
-        pdf_export_frame = ttk.LabelFrame(main_frame, text="Eksport PDF", padding="8")
-        pdf_export_frame.pack(fill="x", pady=(0, 8))
-        
-        # Wersja PDF
-        ttk.Label(pdf_export_frame, text="Domyślna wersja PDF:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
-        self.pdf_version_var = tk.StringVar()
-        pdf_version_combo = ttk.Combobox(pdf_export_frame, textvariable=self.pdf_version_var, 
-                                         values=["1.4", "1.5", "1.6", "1.7", "2.0"], state="readonly", width=10)
-        pdf_version_combo.grid(row=0, column=1, sticky="w", padx=4, pady=4)
-        
-        # Tryb drukarski
-        ttk.Label(pdf_export_frame, text="Tryb drukarski:").grid(row=1, column=0, sticky="w", padx=4, pady=4)
-        self.pdf_print_prep_var = tk.StringVar()
-        pdf_prep_combo = ttk.Combobox(pdf_export_frame, textvariable=self.pdf_print_prep_var,
-                                      values=["brak", "flatten", "metadata", "trimbox", "cropbox"], state="readonly", width=15)
-        pdf_prep_combo.grid(row=1, column=1, sticky="w", padx=4, pady=4)
-        
-        # Wzorzec nazwy pliku PDF
-        ttk.Label(pdf_export_frame, text="Wzorzec nazwy pliku:").grid(row=2, column=0, sticky="w", padx=4, pady=4)
-        self.pdf_filename_pattern_var = tk.StringVar()
-        ttk.Entry(pdf_export_frame, textvariable=self.pdf_filename_pattern_var, width=35).grid(row=2, column=1, sticky="ew", padx=4, pady=4)
-        ttk.Label(pdf_export_frame, text="Zmienne: {data}, {czas}, {base_name}, {range}", 
-                  foreground="gray", font=("Arial", 8)).grid(row=3, column=0, columnspan=2, sticky="w", padx=4, pady=(0, 4))
-        
-        pdf_export_frame.columnconfigure(1, weight=1)
-        
-        # Sekcja eksportu obrazów
-        image_export_frame = ttk.LabelFrame(main_frame, text="Eksport obrazów", padding="8")
-        image_export_frame.pack(fill="x", pady=(0, 8))
-        
-        # Format obrazu
-        ttk.Label(image_export_frame, text="Domyślny format:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
-        self.image_format_var = tk.StringVar()
-        image_format_combo = ttk.Combobox(image_export_frame, textvariable=self.image_format_var,
-                                          values=["PNG", "TIFF", "JPG"], state="readonly", width=10)
-        image_format_combo.grid(row=0, column=1, sticky="w", padx=4, pady=4)
-        
-        # DPI
-        ttk.Label(image_export_frame, text="DPI:").grid(row=1, column=0, sticky="w", padx=4, pady=4)
-        self.image_dpi_var = tk.StringVar()
-        image_dpi_combo = ttk.Combobox(image_export_frame, textvariable=self.image_dpi_var,
-                                       values=["150", "200", "300", "600"], state="readonly", width=10)
-        image_dpi_combo.grid(row=1, column=1, sticky="w", padx=4, pady=4)
-        
-        # Wzorzec nazwy pliku obrazów
-        ttk.Label(image_export_frame, text="Wzorzec nazwy pliku:").grid(row=2, column=0, sticky="w", padx=4, pady=4)
-        self.image_filename_pattern_var = tk.StringVar()
-        ttk.Entry(image_export_frame, textvariable=self.image_filename_pattern_var, width=35).grid(row=2, column=1, sticky="ew", padx=4, pady=4)
-        ttk.Label(image_export_frame, text="Zmienne: {data}, {czas}, {base_name}, {range}, {page}",
-                  foreground="gray", font=("Arial", 8)).grid(row=3, column=0, columnspan=2, sticky="w", padx=4, pady=(0, 4))
-        
-        image_export_frame.columnconfigure(1, weight=1)
-        
         # Informacja
        # info_frame = ttk.Frame(main_frame)
        # info_frame.pack(fill="x", pady=8)
@@ -512,16 +448,6 @@ class PreferencesDialog(tk.Toplevel):
         self.default_path_var.set(self.prefs_manager.get('default_save_path'))
         self.thumbnail_quality_var.set(self.prefs_manager.get('thumbnail_quality'))
         self.confirm_delete_var.set(self.prefs_manager.get('confirm_delete') == 'True')
-        
-        # PDF export settings
-        self.pdf_version_var.set(self.prefs_manager.get('pdf_export.version'))
-        self.pdf_print_prep_var.set(self.prefs_manager.get('pdf_export.print_prep'))
-        self.pdf_filename_pattern_var.set(self.prefs_manager.get('pdf_export.filename_pattern'))
-        
-        # Image export settings
-        self.image_format_var.set(self.prefs_manager.get('image_export.format'))
-        self.image_dpi_var.set(self.prefs_manager.get('image_export.dpi'))
-        self.image_filename_pattern_var.set(self.prefs_manager.get('image_export.filename_pattern'))
     
     def reset_all_defaults(self):
         """Przywraca domyślne wartości we wszystkich dialogach"""
@@ -554,17 +480,6 @@ class PreferencesDialog(tk.Toplevel):
         self.prefs_manager.set('default_save_path', self.default_path_var.get())
         self.prefs_manager.set('thumbnail_quality', self.thumbnail_quality_var.get())
         self.prefs_manager.set('confirm_delete', 'True' if self.confirm_delete_var.get() else 'False')
-        
-        # PDF export settings
-        self.prefs_manager.set('pdf_export.version', self.pdf_version_var.get())
-        self.prefs_manager.set('pdf_export.print_prep', self.pdf_print_prep_var.get())
-        self.prefs_manager.set('pdf_export.filename_pattern', self.pdf_filename_pattern_var.get())
-        
-        # Image export settings
-        self.prefs_manager.set('image_export.format', self.image_format_var.get())
-        self.prefs_manager.set('image_export.dpi', self.image_dpi_var.get())
-        self.prefs_manager.set('image_export.filename_pattern', self.image_filename_pattern_var.get())
-        
         self.result = True
         self.destroy()
     
