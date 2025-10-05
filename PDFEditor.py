@@ -8,7 +8,7 @@ import os
 import sys 
 import re 
 from typing import Optional, List, Set, Dict, Union
-from datetime import date 
+from datetime import date, datetime 
 import pypdf
 from pypdf import PdfReader, PdfWriter, Transformation
 from pypdf.generic import RectangleObject, FloatObject, ArrayObject
@@ -85,6 +85,35 @@ def resource_path(relative_path):
         base_path = os.path.dirname(os.path.abspath(__file__))
         
     return os.path.join(base_path, relative_path)
+
+def generate_export_filename(source_filename, page_range, extension):
+    """
+    Generuje nazwę pliku eksportu według schematu:
+    "Eksport z pliku [nazwa] strony [zakres] [data] [godzina].ext"
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    if not source_filename:
+        source_filename = "dokument"
+    return f"Eksport z pliku {source_filename} strony {page_range} {timestamp}.{extension}"
+
+def get_unique_filename(directory, filename):
+    """
+    Zwraca unikalną nazwę pliku. Jeśli plik istnieje, dodaje (1), (2), (3) itd.
+    """
+    filepath = os.path.join(directory, filename)
+    if not os.path.exists(filepath):
+        return filepath
+    
+    # Rozdziel nazwę i rozszerzenie
+    name, ext = os.path.splitext(filename)
+    counter = 1
+    
+    while True:
+        new_filename = f"{name} ({counter}){ext}"
+        filepath = os.path.join(directory, new_filename)
+        if not os.path.exists(filepath):
+            return filepath
+        counter += 1
   
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -3257,24 +3286,28 @@ class SelectablePDFViewer:
             custom_messagebox(self.master, "Informacja", "Wybierz strony do eksportu.", typ="info")
             return
 
-        output_dir = filedialog.askdirectory(
-            title="Wybierz folder do zapisu wyeksportowanych obrazów"
-        )
-        
-        if not output_dir:
-            return
+        # Użyj domyślnej ścieżki zapisu z preferencji
+        default_save_path = self.prefs_manager.get('default_save_path', '')
+        if default_save_path and os.path.isdir(default_save_path):
+            output_dir = default_save_path
+        else:
+            # Użyj ostatniej użytej ścieżki lub katalogu domowego
+            last_save_path = self.prefs_manager.get('last_save_path', '')
+            output_dir = last_save_path if last_save_path and os.path.isdir(last_save_path) else os.path.expanduser("~")
 
         try:
             # Ustawienia eksportu
             zoom = 300 / 72.0 
             matrix = fitz.Matrix(zoom, zoom)
             
-            # POPRAWKA BŁĘDU: Bezpieczne pobieranie nazwy bazowej
-            # Jeśli self.file_path istnieje, użyj jego nazwy. W przeciwnym razie, użyj "export".
+            # Bezpieczne pobieranie nazwy bazowej
             if hasattr(self, 'file_path') and self.file_path:
-                base_filename = os.path.splitext(os.path.basename(self.file_path))[0]
+                source_filename = os.path.splitext(os.path.basename(self.file_path))[0]
             else:
-                base_filename = "export"
+                source_filename = "dokument"
+            
+            # Generuj zakres stron
+            page_range = self._format_page_range(selected_indices)
             
             exported_count = 0
             
@@ -3287,23 +3320,48 @@ class SelectablePDFViewer:
                     
                     pix = page.get_pixmap(matrix=matrix, alpha=False)
                     
-                    # Budowanie nazwy pliku: "nazwa_dokumentu_strona_X.png"
-                    output_filename = f"{base_filename}_strona_{index + 1}.png"
-                    output_path = os.path.join(output_dir, output_filename)
+                    # Nowa nazwa z pełnym schematem dla każdej strony
+                    output_filename = generate_export_filename(source_filename, str(index + 1), "png")
+                    output_path = get_unique_filename(output_dir, output_filename)
                     
                     pix.save(output_path)
                     exported_count += 1
             
             self.master.config(cursor="")
             
-        #    messagebox.showinfo(
-        #        "Sukces Eksportu", 
-        #        f"Pomyślnie wyeksportowano {exported_count} stron do folderu:\n{output_dir}"
-        #    )
             self._update_status(f"Pomyślnie wyeksportowano {exported_count} stron do folderu: {output_dir}")   
         except Exception as e:
             self.master.config(cursor="")
             custom_messagebox(self.master, "Błąd Eksportu", f"Wystąpił błąd podczas eksportowania stron:\n{e}", typ="error")
+    
+    def _format_page_range(self, indices):
+        """Formatuje zakres stron w czytelny sposób (np. '1-3,5,7-9')."""
+        if not indices:
+            return ""
+        
+        indices = sorted(indices)
+        ranges = []
+        start = indices[0]
+        end = indices[0]
+        
+        for i in range(1, len(indices)):
+            if indices[i] == end + 1:
+                end = indices[i]
+            else:
+                if start == end:
+                    ranges.append(str(start + 1))
+                else:
+                    ranges.append(f"{start + 1}-{end + 1}")
+                start = indices[i]
+                end = indices[i]
+        
+        # Dodaj ostatni zakres
+        if start == end:
+            ranges.append(str(start + 1))
+        else:
+            ranges.append(f"{start + 1}-{end + 1}")
+        
+        return ",".join(ranges)
             
             
     
@@ -3595,7 +3653,8 @@ class SelectablePDFViewer:
         self.file_menu.add_command(label="Otwórz PDF...", command=self.open_pdf, accelerator="Ctrl+O")
         self.file_menu.add_command(label="Otwórz obraz jako PDF...", command=self.open_image_as_new_pdf, accelerator="Ctrl+Shift+O")
         self.file_menu.add_command(label="Zapisz jako...", command=self.save_document, state=tk.DISABLED, accelerator="Ctrl+S")
-        self.file_menu.add_separator() 
+        self.file_menu.add_command(label="Zapisz jako plik z hasłem...", command=self.save_document_with_password, state=tk.DISABLED)
+        self.file_menu.add_separator()
         self.file_menu.add_command(label="Importuj strony z PDF...", command=self.import_pdf_after_active_page, state=tk.DISABLED, accelerator="Ctrl+I") 
         self.file_menu.add_command(label="Eksportuj strony do PDF...", command=self.extract_selected_pages, state=tk.DISABLED,accelerator="Ctrl+E") 
         self.file_menu.add_separator() 
@@ -3759,6 +3818,8 @@ class SelectablePDFViewer:
         menu_obj.add_command(label="Przytnij / zmień rozmiar...", command=self.apply_page_crop_resize_dialog, state=tk.DISABLED, accelerator="F8")
         menu_obj.add_command(label="Scal strony na arkuszu...", command=self.merge_pages_to_grid, state=tk.DISABLED)
         menu_obj.add_command(label="Odwróć kolejność wszystkich stron", command=self._reverse_pages, state=tk.DISABLED)
+        menu_obj.add_separator()
+        menu_obj.add_command(label="Usuń puste strony", command=self.remove_empty_pages, state=tk.DISABLED)
     
     def _check_action_allowed(self, action_name):
         """Check if an action is allowed based on current button/menu state"""
@@ -4101,6 +4162,8 @@ class SelectablePDFViewer:
             "Scal strony na arkuszu...": delete_state,
             "Zamknij plik": import_state, 
             "Zapisz jako...": import_state,
+            "Zapisz jako plik z hasłem...": import_state,
+            "Usuń puste strony": import_state,
             "Zamień strony miejscami": two_pages_state            
             
         }
@@ -4712,14 +4775,43 @@ class SelectablePDFViewer:
         if not self.pdf_document or not self.selected_pages:
             self._update_status("BŁĄD: Zaznacz strony, które chcesz wyodrębnić do nowego pliku.")
             return
+        
+        # Bezpieczne pobieranie nazwy bazowej
+        if hasattr(self, 'file_path') and self.file_path:
+            source_filename = os.path.splitext(os.path.basename(self.file_path))[0]
+        else:
+            source_filename = "dokument"
+        
+        # Generuj zakres stron i nazwę pliku
+        selected_indices = sorted(list(self.selected_pages))
+        page_range = self._format_page_range(selected_indices)
+        suggested_filename = generate_export_filename(source_filename, page_range, "pdf")
+        
+        # Użyj domyślnej ścieżki zapisu z preferencji
+        default_save_path = self.prefs_manager.get('default_save_path', '')
+        if default_save_path and os.path.isdir(default_save_path):
+            initialdir = default_save_path
+        else:
+            last_save_path = self.prefs_manager.get('last_save_path', '')
+            initialdir = last_save_path if last_save_path and os.path.isdir(last_save_path) else None
+        
         filepath = filedialog.asksaveasfilename(
             defaultextension=".pdf",
             filetypes=[("Pliki PDF", "*.pdf")],
-            title="Zapisz wyodrębnione strony jako nowy PDF..."
+            title="Zapisz wyodrębnione strony jako nowy PDF...",
+            initialfile=suggested_filename,
+            initialdir=initialdir
         )
         if not filepath:
             self._update_status("Anulowano ekstrakcję stron.")
             return
+        
+        # Sprawdź czy plik istnieje i uzyskaj unikalną nazwę jeśli potrzeba
+        if os.path.exists(filepath):
+            directory = os.path.dirname(filepath)
+            filename = os.path.basename(filepath)
+            filepath = get_unique_filename(directory, filename)
+        
         try:
             page_bytes = self._get_page_bytes(self.selected_pages)
             num_extracted = len(self.selected_pages)
@@ -4852,6 +4944,149 @@ class SelectablePDFViewer:
             self.update_tool_button_states() 
         except Exception as e:
             self._update_status(f"BŁĄD: Nie udało się zapisać pliku: {e}")
+    
+    def save_document_with_password(self):
+        """Zapisuje dokument PDF z ochroną hasłem."""
+        if not self.pdf_document:
+            return
+        
+        # Dialog do wprowadzenia hasła
+        password_dialog = tk.Toplevel(self.master)
+        password_dialog.title("Zapisz z hasłem")
+        password_dialog.transient(self.master)
+        password_dialog.grab_set()
+        
+        ttk.Label(password_dialog, text="Wprowadź hasło:").pack(padx=10, pady=(10, 5))
+        password_var = tk.StringVar()
+        password_entry = ttk.Entry(password_dialog, textvariable=password_var, show="*", width=30)
+        password_entry.pack(padx=10, pady=5)
+        password_entry.focus()
+        
+        ttk.Label(password_dialog, text="Powtórz hasło:").pack(padx=10, pady=(10, 5))
+        password_confirm_var = tk.StringVar()
+        password_confirm_entry = ttk.Entry(password_dialog, textvariable=password_confirm_var, show="*", width=30)
+        password_confirm_entry.pack(padx=10, pady=5)
+        
+        result = {'password': None}
+        
+        def ok():
+            pwd = password_var.get()
+            confirm = password_confirm_var.get()
+            if not pwd:
+                custom_messagebox(password_dialog, "Błąd", "Hasło nie może być puste", typ="error")
+                return
+            if pwd != confirm:
+                custom_messagebox(password_dialog, "Błąd", "Hasła nie są identyczne", typ="error")
+                return
+            result['password'] = pwd
+            password_dialog.destroy()
+        
+        def cancel():
+            password_dialog.destroy()
+        
+        button_frame = ttk.Frame(password_dialog)
+        button_frame.pack(pady=10)
+        ttk.Button(button_frame, text="OK", command=ok).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="Anuluj", command=cancel).pack(side='left', padx=5)
+        
+        password_dialog.bind('<Return>', lambda e: ok())
+        password_dialog.bind('<Escape>', lambda e: cancel())
+        
+        # Wyśrodkuj dialog
+        password_dialog.update_idletasks()
+        x = self.master.winfo_rootx() + (self.master.winfo_width() - password_dialog.winfo_width()) // 2
+        y = self.master.winfo_rooty() + (self.master.winfo_height() - password_dialog.winfo_height()) // 2
+        password_dialog.geometry(f"+{x}+{y}")
+        
+        password_dialog.wait_window()
+        
+        if not result['password']:
+            self._update_status("Anulowano zapisywanie z hasłem.")
+            return
+        
+        # Teraz zapisz z hasłem używając PyPDF
+        default_save_path = self.prefs_manager.get('default_save_path', '')
+        if default_save_path:
+            initialdir = default_save_path
+        else:
+            initialdir = self.prefs_manager.get('last_save_path', '')
+        
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".pdf",
+            filetypes=[("Pliki PDF", "*.pdf")],
+            title="Zapisz PDF z hasłem jako...",
+            initialdir=initialdir if initialdir else None
+        )
+        if not filepath:
+            self._update_status("Anulowano zapisywanie.")
+            return
+        
+        try:
+            # Zapisz tymczasowo bez hasła
+            temp_pdf = io.BytesIO()
+            self.pdf_document.save(temp_pdf, garbage=4, clean=True)
+            temp_pdf.seek(0)
+            
+            # Użyj PyPDF do dodania hasła
+            reader = PdfReader(temp_pdf)
+            writer = PdfWriter()
+            
+            for page in reader.pages:
+                writer.add_page(page)
+            
+            # Szyfruj hasłem
+            writer.encrypt(result['password'])
+            
+            with open(filepath, 'wb') as output_file:
+                writer.write(output_file)
+            
+            self._update_status(f"Dokument pomyślnie zapisany z hasłem: {filepath}")
+        except Exception as e:
+            self._update_status(f"BŁĄD: Nie udało się zapisać pliku z hasłem: {e}")
+    
+    def remove_empty_pages(self):
+        """Usuwa puste strony z dokumentu."""
+        if not self.pdf_document:
+            return
+        
+        try:
+            self._save_state_to_undo()
+            
+            # Znajdź puste strony (strony bez tekstu)
+            empty_pages = []
+            for page_num in range(len(self.pdf_document)):
+                page = self.pdf_document.load_page(page_num)
+                text = page.get_text().strip()
+                if not text:
+                    empty_pages.append(page_num)
+            
+            if not empty_pages:
+                custom_messagebox(self.master, "Informacja", "Nie znaleziono pustych stron.", typ="info")
+                return
+            
+            # Potwierdzenie
+            msg = f"Znaleziono {len(empty_pages)} pustych stron. Czy chcesz je usunąć?"
+            if not custom_messagebox(self.master, "Potwierdzenie", msg, typ="question"):
+                return
+            
+            # Usuń strony od końca
+            for page_num in reversed(empty_pages):
+                self.pdf_document.delete_page(page_num)
+            
+            # Odśwież widok
+            self.selected_pages.clear()
+            self.tk_images.clear()
+            for widget in list(self.scrollable_frame.winfo_children()):
+                widget.destroy()
+            self.thumb_frames.clear()
+            self._reconfigure_grid()
+            self.update_selection_display()
+            self.update_tool_button_states()
+            self.update_focus_display()
+            
+            self._update_status(f"Usunięto {len(empty_pages)} pustych stron.")
+        except Exception as e:
+            self._update_status(f"BŁĄD: Nie udało się usunąć pustych stron: {e}")
             
     def rotate_selected_page(self, angle):
         if not self.pdf_document or not self.selected_pages: 
