@@ -3761,12 +3761,13 @@ class SelectablePDFViewer:
         self._init_macro_system()
 
         self.pdf_document = None
+        self.file_path = None  # Track opened file path for export naming
         self.selected_pages: Set[int] = set()
         self.tk_images: Dict[int, ImageTk.PhotoImage] = {}
         self.icons: Dict[str, Union[ImageTk.PhotoImage, str]] = {}
         
         self.thumb_frames: Dict[int, 'ThumbnailFrame'] = {}
-        self.active_page_index = 0 
+        self.active_page_index = 0
 
         self.clipboard: Optional[bytes] = None 
         self.pages_in_clipboard_count: int = 0 
@@ -4641,6 +4642,7 @@ class SelectablePDFViewer:
                     return
             
             self.pdf_document = doc
+            self.file_path = filepath  # Store file path for export naming
             self.selected_pages = set()
             self.tk_images = {}
             self.undo_stack.clear()
@@ -4688,6 +4690,7 @@ class SelectablePDFViewer:
         if self.pdf_document is not None:
             self.pdf_document.close()
             self.pdf_document = None
+        self.file_path = None  # Clear file path
         self.selected_pages.clear()
         self.tk_images.clear()
         self.thumb_frames.clear()
