@@ -4731,19 +4731,15 @@ class SelectablePDFViewer:
     def _select_all(self):
         if self.pdf_document:
             all_pages = set(range(len(self.pdf_document)))
-            if self.selected_pages == all_pages:
-                self.selected_pages.clear()
-                self._update_status("Anulowano zaznaczenie wszystkich stron (Ctrl+A).")
-            else:
-                # Nagraj akcję
-                self._record_action('select_all')
-                self.selected_pages = all_pages
-                self._update_status(f"Zaznaczono wszystkie strony ({len(self.pdf_document)}).")
+            # Zawsze zaznaczaj wszystkie strony, bez przełączania!
+            self._record_action('select_all')
+            self.selected_pages = all_pages
+            self._update_status(f"Zaznaczono wszystkie strony ({len(self.pdf_document)}).")
             if self.pdf_document.page_count > 0:
                 self.active_page_index = 0
             self.update_selection_display()
             self.update_focus_display()
-            
+                
     def _select_range(self, start_index, end_index):
         if not self.pdf_document:
             return
