@@ -1,0 +1,139 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                       MACRO SYSTEM UI CHANGES SUMMARY                        ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+1. MENU CHANGES
+═══════════════
+
+BEFORE:                              AFTER:
+┌──────────────────┐                 ┌──────────────────┐
+│ Makra           ▼│                 │ Makra           ▼│
+├──────────────────┤                 ├──────────────────┤
+│ Nagraj makro...  │                 │ Lista makr...    │
+│ Lista makr...    │                 └──────────────────┘
+└──────────────────┘
+
+
+2. LISTA MAKR UŻYTKOWNIKA DIALOG (MacrosListDialog)
+════════════════════════════════════════════════════
+
+BEFORE (buttons at bottom):          AFTER (buttons on right):
+┌────────────────────────────────┐   ┌──────────────────────┬────────────────┐
+│ Lista makr użytkownika         │   │ Lista makr użytkowni │                │
+├────────────────────────────────┤   ├──────────────────────┤                │
+│                                │   │                      │                │
+│  • Macro1 (Ctrl+1)            │   │  • Macro1 (Ctrl+1)  │ ┌────────────┐ │
+│  • Macro2                     │   │  • Macro2           │ │ Nagraj...  │ │
+│  • Macro3 (F5)                │   │  • Macro3 (F5)      │ ├────────────┤ │
+│                                │   │                      │ │ Uruchom    │ │
+│                                │   │                      │ ├────────────┤ │
+│                                │   │                      │ │ Edytuj...  │ │
+│                                │   │                      │ ├────────────┤ │
+│                                │   │                      │ │ Usuń       │ │
+├────────────────────────────────┤   │                      │ ├────────────┤ │
+│ [Uruchom] [Edytuj] [Usuń]     │   │                      │ │ Ustaw...   │ │
+│ [Ustaw skrót] [Zamknij]       │   │                      │ ├────────────┤ │
+└────────────────────────────────┘   │                      │ │ Zamknij    │ │
+                                     └──────────────────────┴─┴────────────┴─┘
+
+
+3. NAGRYWANIE MAKRA DIALOG (MacroRecordingDialog)
+═══════════════════════════════════════════════════
+
+BEFORE:                              AFTER (with function list):
+┌────────────────────────────────┐   ┌────────────────────────────────────┐
+│ Nagrywanie makra               │   │ Nagrywanie makra                   │
+├────────────────────────────────┤   ├────────────────────────────────────┤
+│ Nazwa makra:                   │   │ Nazwa makra:                       │
+│ [________________]             │   │ [________________]                 │
+│                                │   │                                    │
+│                                │   │ Funkcje które mogą zostać nagrane: │
+│                                │   │ ┌────────────────────────────────┐ │
+│                                │   │ │ • Obróć w lewo / w prawo       │ │
+│                                │   │ │ • Zaznacz wszystkie / ...      │ │
+│                                │   │ │ • Przesuń zawartość strony     │ │
+│                                │   │ │ • Dodaj numerację stron        │ │
+│                                │   │ │ • Usuń numerację stron         │ │
+│                                │   │ │ • Kadruj / Zmień rozmiar       │ │
+│                                │   │ └────────────────────────────────┘ │
+├────────────────────────────────┤   ├────────────────────────────────────┤
+│ [Rozpocznij] [Zatrzymaj]       │   │ [Rozpocznij] [Zatrzymaj] [Anuluj]  │
+│             [Anuluj]           │   └────────────────────────────────────┘
+└────────────────────────────────┘
+
+
+4. EDYCJA MAKRA DIALOG (MacroEditDialog)
+═════════════════════════════════════════
+
+BEFORE (listbox with buttons):      AFTER (text editor):
+┌────────────────────────────────┐   ┌────────────────────────────────────┐
+│ Edytuj makro: Macro1           │   │ Edytuj makro: Macro1               │
+├────────────────────────────────┤   ├────────────────────────────────────┤
+│ Akcje makra:                   │   │ Edytuj makro jako tekst JSON:      │
+│ ┌────────────────────────────┐ │   │ Format: [{"action": "...", ...}]   │
+│ │ 1. rotate_left             │ │   │                                    │
+│ │ 2. select_all              │ │   │ ┌────────────────────────────────┐ │
+│ │ 3. shift_page_content(...) │ │   │ │ [                              │ │
+│ │                            │ │   │ │   {                            │ │
+│ └────────────────────────────┘ │   │ │     "action": "rotate_left",   │ │
+│                                │   │ │     "params": {}               │ │
+│ [↑ W górę] [↓ W dół]          │   │ │   },                           │ │
+│ [Usuń akcję]                   │   │ │   {                            │ │
+│                                │   │ │     "action": "select_all",    │ │
+│                                │   │ │     "params": {}               │ │
+│                                │   │ │   },                           │ │
+│                                │   │ │   {                            │ │
+│                                │   │ │     "action": "shift_page_...", │ │
+│                                │   │ │     "params": {...}            │ │
+│                                │   │ │   }                            │ │
+│                                │   │ │ ]                              │ │
+│                                │   │ └────────────────────────────────┘ │
+├────────────────────────────────┤   ├────────────────────────────────────┤
+│ [Zapisz] [Anuluj]              │   │ [Zapisz] [Anuluj]                  │
+└────────────────────────────────┘   └────────────────────────────────────┘
+
+
+5. REMOVED ACTIONS FROM RECORDING
+══════════════════════════════════
+
+These actions are NO LONGER recorded in macros:
+✗ delete           (Usuń)
+✗ duplicate        (Duplikuj)
+✗ copy             (Kopiuj)
+✗ cut              (Wytnij)
+✗ paste_before     (Wklej przed)
+✗ paste_after      (Wklej po)
+✗ swap             (Zamień miejscami)
+✗ insert_blank_*   (Wstaw pustą stronę)
+
+These actions ARE STILL recorded:
+✓ rotate_left/right        (Obróć)
+✓ select_all/odd/even/...  (Zaznacz)
+✓ shift_page_content       (Przesuń zawartość)
+✓ insert_page_numbers      (Dodaj numerację)
+✓ remove_page_numbers      (Usuń numerację)
+✓ apply_page_crop_resize   (Kadruj/Zmień rozmiar)
+
+
+6. IMPLEMENTED REPLAY FUNCTIONS
+════════════════════════════════
+
+✓ _replay_insert_page_numbers()
+  - Full implementation with all parameters
+  - Supports all 4 rotation angles
+  - Handles all alignment modes (left/right/center)
+  - Mirror margins support
+
+✓ _replay_remove_page_numbers()
+  - Pattern-based detection
+  - Top and bottom margin support
+  - Regex matching for various formats
+
+✓ _replay_apply_page_crop_resize()
+  - All crop modes supported
+  - All resize modes supported
+  - Position and offset handling
+
+═══════════════════════════════════════════════════════════════════════════════
+
+All changes have been tested and validated ✓
