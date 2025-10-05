@@ -2425,6 +2425,163 @@ class MergePageGridDialog(tk.Toplevel):
         self.result = None
         self.destroy()
 
+
+# ====================================================================
+# DIALOG SCALANIA PLIKÓW PDF
+# ====================================================================
+
+class MergePDFDialog(tk.Toplevel):
+    """Okno dialogowe do scalania wielu plików PDF"""
+    
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.parent = parent
+        self.title("Scalanie plików PDF")
+        self.transient(parent)
+        self.grab_set()
+        self.resizable(True, True)
+        self.geometry("600x500")
+        
+        self.pdf_files = []  # Lista ścieżek do plików PDF
+        
+        self.build_ui()
+        self.center_dialog(parent)
+        self.protocol("WM_DELETE_WINDOW", self.cancel)
+        
+    def center_dialog(self, parent):
+        """Wyśrodkuj okno względem rodzica"""
+        self.update_idletasks()
+        dialog_w = self.winfo_width()
+        dialog_h = self.winfo_height()
+        parent_x = parent.winfo_rootx()
+        parent_y = parent.winfo_rooty()
+        parent_w = parent.winfo_width()
+        parent_h = parent.winfo_height()
+        x = parent_x + (parent_w - dialog_w) // 2
+        y = parent_y + (parent_h - dialog_h) // 2
+        self.geometry(f"+{x}+{y}")
+    
+    def build_ui(self):
+        main_frame = ttk.Frame(self, padding="12")
+        main_frame.pack(fill="both", expand=True)
+        
+        # Nagłówek
+        ttk.Label(main_frame, text="Dodaj pliki PDF do scalenia:", font=("Arial", 10, "bold")).pack(anchor="w", pady=(0, 8))
+        
+        # Lista plików
+        list_frame = ttk.Frame(main_frame)
+        list_frame.pack(fill="both", expand=True, pady=(0, 8))
+        
+        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar.pack(side="right", fill="y")
+        
+        self.files_listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar.set, height=15)
+        self.files_listbox.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=self.files_listbox.yview)
+        
+        # Przyciski zarządzania listą
+        buttons_frame = ttk.Frame(main_frame)
+        buttons_frame.pack(fill="x", pady=(0, 8))
+        
+        ttk.Button(buttons_frame, text="Dodaj pliki...", command=self.add_files).pack(side="left", padx=(0, 4))
+        ttk.Button(buttons_frame, text="Usuń zaznaczony", command=self.remove_selected).pack(side="left", padx=4)
+        ttk.Button(buttons_frame, text="Przesuń w górę", command=self.move_up).pack(side="left", padx=4)
+        ttk.Button(buttons_frame, text="Przesuń w dół", command=self.move_down).pack(side="left", padx=4)
+        
+        # Przyciski akcji
+        action_frame = ttk.Frame(main_frame)
+        action_frame.pack(fill="x")
+        
+        ttk.Button(action_frame, text="Scal i zapisz...", command=self.merge_and_save, width=15).pack(side="left", padx=(0, 4))
+        ttk.Button(action_frame, text="Anuluj", command=self.cancel, width=15).pack(side="left", padx=4)
+    
+    def add_files(self):
+        """Dodaj pliki PDF do listy"""
+        files = filedialog.askopenfilenames(
+            title="Wybierz pliki PDF do scalenia",
+            filetypes=[("Pliki PDF", "*.pdf"), ("Wszystkie pliki", "*.*")]
+        )
+        for file in files:
+            if file not in self.pdf_files:
+                self.pdf_files.append(file)
+                self.files_listbox.insert(tk.END, os.path.basename(file))
+    
+    def remove_selected(self):
+        """Usuń zaznaczony plik z listy"""
+        selection = self.files_listbox.curselection()
+        if selection:
+            index = selection[0]
+            self.files_listbox.delete(index)
+            self.pdf_files.pop(index)
+    
+    def move_up(self):
+        """Przesuń zaznaczony plik w górę"""
+        selection = self.files_listbox.curselection()
+        if selection and selection[0] > 0:
+            index = selection[0]
+            # Zamień w liście
+            self.pdf_files[index], self.pdf_files[index - 1] = self.pdf_files[index - 1], self.pdf_files[index]
+            # Odśwież listbox
+            self.refresh_listbox()
+            self.files_listbox.selection_set(index - 1)
+    
+    def move_down(self):
+        """Przesuń zaznaczony plik w dół"""
+        selection = self.files_listbox.curselection()
+        if selection and selection[0] < len(self.pdf_files) - 1:
+            index = selection[0]
+            # Zamień w liście
+            self.pdf_files[index], self.pdf_files[index + 1] = self.pdf_files[index + 1], self.pdf_files[index]
+            # Odśwież listbox
+            self.refresh_listbox()
+            self.files_listbox.selection_set(index + 1)
+    
+    def refresh_listbox(self):
+        """Odśwież zawartość listbox"""
+        self.files_listbox.delete(0, tk.END)
+        for file in self.pdf_files:
+            self.files_listbox.insert(tk.END, os.path.basename(file))
+    
+    def merge_and_save(self):
+        """Scal pliki PDF i zapisz"""
+        if not self.pdf_files:
+            custom_messagebox(self, "Błąd", "Dodaj przynajmniej jeden plik PDF.", typ="error")
+            return
+        
+        output_path = filedialog.asksaveasfilename(
+            defaultextension=".pdf",
+            filetypes=[("Pliki PDF", "*.pdf")],
+            title="Zapisz scalony PDF"
+        )
+        
+        if not output_path:
+            return
+        
+        try:
+            # Użyj PyMuPDF do scalania
+            merged_doc = fitz.open()
+            
+            for pdf_path in self.pdf_files:
+                try:
+                    doc = fitz.open(pdf_path)
+                    merged_doc.insert_pdf(doc)
+                    doc.close()
+                except Exception as e:
+                    custom_messagebox(self, "Ostrzeżenie", f"Nie udało się dodać pliku {os.path.basename(pdf_path)}:\n{e}", typ="warning")
+            
+            merged_doc.save(output_path)
+            merged_doc.close()
+            
+            custom_messagebox(self, "Sukces", f"Scalono {len(self.pdf_files)} plików PDF.\nZapisano do: {output_path}", typ="info")
+            self.destroy()
+        except Exception as e:
+            custom_messagebox(self, "Błąd", f"Nie udało się scalić plików PDF:\n{e}", typ="error")
+    
+    def cancel(self):
+        """Anuluj i zamknij okno"""
+        self.destroy()
+
+
 # ====================================================================
 # GŁÓWNA KLASA PROGRAMU: SELECTABLEPDFVIEWER
 # ====================================================================
@@ -3257,6 +3414,61 @@ class SelectablePDFViewer:
             custom_messagebox(self.master, "Informacja", "Wybierz strony do eksportu.", typ="info")
             return
 
+        # Jeśli więcej niż jedna strona, zapytaj o tryb eksportu
+        export_mode = "separate"  # domyślnie każda strona osobno
+        if len(selected_indices) > 1:
+            # Dialog wyboru trybu
+            dialog = tk.Toplevel(self.master)
+            dialog.title("Tryb eksportu")
+            dialog.transient(self.master)
+            dialog.grab_set()
+            dialog.resizable(False, False)
+            
+            main_frame = ttk.Frame(dialog, padding="12")
+            main_frame.pack(fill="both", expand=True)
+            
+            ttk.Label(main_frame, text="Wybierz tryb eksportu:").pack(anchor="w", pady=(0, 8))
+            
+            mode_var = tk.StringVar(value="separate")
+            ttk.Radiobutton(main_frame, text="Każda strona do osobnego pliku PNG", variable=mode_var, value="separate").pack(anchor="w", pady=2)
+            # Opcja scalania do jednego pliku jest możliwa tylko przez łączenie obrazów w jeden
+            # Obecnie zostaniemy przy "separate" jako jedynej opcji
+            
+            result = [None]
+            
+            def on_ok():
+                result[0] = mode_var.get()
+                dialog.destroy()
+            
+            def on_cancel():
+                dialog.destroy()
+            
+            button_frame = ttk.Frame(main_frame)
+            button_frame.pack(pady=(12, 0))
+            ttk.Button(button_frame, text="OK", command=on_ok, width=10).pack(side="left", padx=4)
+            ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10).pack(side="left", padx=4)
+            
+            dialog.bind("<Return>", lambda e: on_ok())
+            dialog.bind("<Escape>", lambda e: on_cancel())
+            
+            # Wyśrodkuj
+            dialog.update_idletasks()
+            dialog_w = dialog.winfo_width()
+            dialog_h = dialog.winfo_height()
+            parent_x = self.master.winfo_rootx()
+            parent_y = self.master.winfo_rooty()
+            parent_w = self.master.winfo_width()
+            parent_h = self.master.winfo_height()
+            x = parent_x + (parent_w - dialog_w) // 2
+            y = parent_y + (parent_h - dialog_h) // 2
+            dialog.geometry(f"+{x}+{y}")
+            
+            dialog.wait_window()
+            
+            if result[0] is None:
+                return
+            export_mode = result[0]
+
         output_dir = filedialog.askdirectory(
             title="Wybierz folder do zapisu wyeksportowanych obrazów"
         )
@@ -3296,10 +3508,6 @@ class SelectablePDFViewer:
             
             self.master.config(cursor="")
             
-        #    messagebox.showinfo(
-        #        "Sukces Eksportu", 
-        #        f"Pomyślnie wyeksportowano {exported_count} stron do folderu:\n{output_dir}"
-        #    )
             self._update_status(f"Pomyślnie wyeksportowano {exported_count} stron do folderu: {output_dir}")   
         except Exception as e:
             self.master.config(cursor="")
@@ -3602,6 +3810,8 @@ class SelectablePDFViewer:
         self.file_menu.add_command(label="Importuj obraz na nową stronę...", command=self.import_image_to_new_page, state=tk.DISABLED, accelerator="Ctrl+Shift+I") 
         self.file_menu.add_command(label="Eksportuj strony jako obrazy PNG...", command=self.export_selected_pages_to_image, state=tk.DISABLED, accelerator="Ctrl+Shift+E")
         self.file_menu.add_separator()
+        self.file_menu.add_command(label="Scalanie plików PDF...", command=self.merge_pdf_files)
+        self.file_menu.add_separator()
         self.file_menu.add_command(label="Zamknij plik", command=self.close_pdf, accelerator="Ctrl+Q")
         self.file_menu.add_separator()
         self.file_menu.add_command(label="Preferencje...", command=self.show_preferences_dialog)
@@ -3626,6 +3836,12 @@ class SelectablePDFViewer:
         self.modifications_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Modyfikacje", menu=self.modifications_menu)
         self._populate_modifications_menu(self.modifications_menu) # Wypełniamy nową metodą
+        
+        # === MENU MAKRA ===
+        self.macros_menu = tk.Menu(menu_bar, tearoff=0)
+        menu_bar.add_cascade(label="Makra", menu=self.macros_menu)
+        self.macros_menu.add_command(label="Nagraj makro...", command=self.record_macro)
+        self.macros_menu.add_command(label="Lista makr użytkownika...", command=self.show_macros_list)
         
         self.help_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Pomoc", menu=self.help_menu)
@@ -3759,6 +3975,15 @@ class SelectablePDFViewer:
         menu_obj.add_command(label="Przytnij / zmień rozmiar...", command=self.apply_page_crop_resize_dialog, state=tk.DISABLED, accelerator="F8")
         menu_obj.add_command(label="Scal strony na arkuszu...", command=self.merge_pages_to_grid, state=tk.DISABLED)
         menu_obj.add_command(label="Odwróć kolejność wszystkich stron", command=self._reverse_pages, state=tk.DISABLED)
+        
+        # === HASŁA PDF ===
+        menu_obj.add_separator()
+        menu_obj.add_command(label="Ustaw hasło PDF...", command=self.set_pdf_password, state=tk.DISABLED)
+        menu_obj.add_command(label="Usuń hasło PDF...", command=self.remove_pdf_password, state=tk.DISABLED)
+        
+        # === USUWANIE PUSTYCH STRON ===
+        menu_obj.add_separator()
+        menu_obj.add_command(label="Usuń puste strony", command=self.remove_empty_pages, state=tk.DISABLED)
     
     def _check_action_allowed(self, action_name):
         """Check if an action is allowed based on current button/menu state"""
@@ -4712,22 +4937,112 @@ class SelectablePDFViewer:
         if not self.pdf_document or not self.selected_pages:
             self._update_status("BŁĄD: Zaznacz strony, które chcesz wyodrębnić do nowego pliku.")
             return
-        filepath = filedialog.asksaveasfilename(
-            defaultextension=".pdf",
-            filetypes=[("Pliki PDF", "*.pdf")],
-            title="Zapisz wyodrębnione strony jako nowy PDF..."
-        )
-        if not filepath:
-            self._update_status("Anulowano ekstrakcję stron.")
-            return
-        try:
-            page_bytes = self._get_page_bytes(self.selected_pages)
-            num_extracted = len(self.selected_pages)
-            with open(filepath, "wb") as f:
-                f.write(page_bytes)
-            self._update_status(f"Pomyślnie wyodrębniono {num_extracted} stron do: {filepath}")
-        except Exception as e:
-            self._update_status(f"BŁĄD Eksportu: Nie udało się zapisać nowego pliku: {e}")
+        
+        selected_indices = sorted(list(self.selected_pages))
+        
+        # Jeśli więcej niż jedna strona, zapytaj o tryb eksportu
+        export_mode = "single"  # domyślnie wszystkie do jednego pliku
+        if len(selected_indices) > 1:
+            # Dialog wyboru trybu
+            dialog = tk.Toplevel(self.master)
+            dialog.title("Tryb eksportu")
+            dialog.transient(self.master)
+            dialog.grab_set()
+            dialog.resizable(False, False)
+            
+            main_frame = ttk.Frame(dialog, padding="12")
+            main_frame.pack(fill="both", expand=True)
+            
+            ttk.Label(main_frame, text="Wybierz tryb eksportu:").pack(anchor="w", pady=(0, 8))
+            
+            mode_var = tk.StringVar(value="single")
+            ttk.Radiobutton(main_frame, text="Wszystkie strony do jednego pliku PDF", variable=mode_var, value="single").pack(anchor="w", pady=2)
+            ttk.Radiobutton(main_frame, text="Każda strona do osobnego pliku PDF", variable=mode_var, value="separate").pack(anchor="w", pady=2)
+            
+            result = [None]
+            
+            def on_ok():
+                result[0] = mode_var.get()
+                dialog.destroy()
+            
+            def on_cancel():
+                dialog.destroy()
+            
+            button_frame = ttk.Frame(main_frame)
+            button_frame.pack(pady=(12, 0))
+            ttk.Button(button_frame, text="OK", command=on_ok, width=10).pack(side="left", padx=4)
+            ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10).pack(side="left", padx=4)
+            
+            dialog.bind("<Return>", lambda e: on_ok())
+            dialog.bind("<Escape>", lambda e: on_cancel())
+            
+            # Wyśrodkuj
+            dialog.update_idletasks()
+            dialog_w = dialog.winfo_width()
+            dialog_h = dialog.winfo_height()
+            parent_x = self.master.winfo_rootx()
+            parent_y = self.master.winfo_rooty()
+            parent_w = self.master.winfo_width()
+            parent_h = self.master.winfo_height()
+            x = parent_x + (parent_w - dialog_w) // 2
+            y = parent_y + (parent_h - dialog_h) // 2
+            dialog.geometry(f"+{x}+{y}")
+            
+            dialog.wait_window()
+            
+            if result[0] is None:
+                self._update_status("Anulowano ekstrakcję stron.")
+                return
+            export_mode = result[0]
+        
+        if export_mode == "single":
+            # Wszystkie strony do jednego pliku
+            filepath = filedialog.asksaveasfilename(
+                defaultextension=".pdf",
+                filetypes=[("Pliki PDF", "*.pdf")],
+                title="Zapisz wyodrębnione strony jako nowy PDF..."
+            )
+            if not filepath:
+                self._update_status("Anulowano ekstrakcję stron.")
+                return
+            try:
+                page_bytes = self._get_page_bytes(self.selected_pages)
+                num_extracted = len(self.selected_pages)
+                with open(filepath, "wb") as f:
+                    f.write(page_bytes)
+                self._update_status(f"Pomyślnie wyodrębniono {num_extracted} stron do: {filepath}")
+            except Exception as e:
+                self._update_status(f"BŁĄD Eksportu: Nie udało się zapisać nowego pliku: {e}")
+        else:
+            # Każda strona do osobnego pliku
+            output_dir = filedialog.askdirectory(
+                title="Wybierz folder do zapisu plików PDF"
+            )
+            if not output_dir:
+                self._update_status("Anulowano ekstrakcję stron.")
+                return
+            
+            try:
+                # Pobierz nazwę bazową
+                if hasattr(self, 'file_path') and self.file_path:
+                    base_filename = os.path.splitext(os.path.basename(self.file_path))[0]
+                else:
+                    base_filename = "export"
+                
+                exported_count = 0
+                for index in selected_indices:
+                    # Utwórz dokument z jedną stroną
+                    page_bytes = self._get_page_bytes({index})
+                    output_filename = f"{base_filename}_strona_{index + 1}.pdf"
+                    output_path = os.path.join(output_dir, output_filename)
+                    
+                    with open(output_path, "wb") as f:
+                        f.write(page_bytes)
+                    exported_count += 1
+                
+                self._update_status(f"Pomyślnie wyodrębniono {exported_count} stron do folderu: {output_dir}")
+            except Exception as e:
+                self._update_status(f"BŁĄD Eksportu: Nie udało się zapisać plików: {e}")
 
     def undo(self):
         """Cofnij ostatnią operację - przywraca stan ze stosu undo."""
@@ -5404,6 +5719,214 @@ class SelectablePDFViewer:
                  self._update_status(f"Dokument wczytany. Liczba stron: {len(self.pdf_document)}. Zaznacz strony (LPM lub Spacja) do edycji.")
         else:
              self._update_status("Gotowy. Otwórz plik PDF.")
+
+    # ===================================================================
+    # NOWE FUNKCJE: HASŁA PDF, USUWANIE PUSTYCH STRON, SCALANIE PDF
+    # ===================================================================
+    
+    def set_pdf_password(self):
+        """Ustawia hasło na otwarty plik PDF"""
+        if not self.pdf_document:
+            custom_messagebox(self.master, "Błąd", "Brak otwartego dokumentu PDF.", typ="error")
+            return
+            
+        # Dialog do wprowadzenia hasła
+        dialog = tk.Toplevel(self.master)
+        dialog.title("Ustaw hasło PDF")
+        dialog.transient(self.master)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        
+        main_frame = ttk.Frame(dialog, padding="12")
+        main_frame.pack(fill="both", expand=True)
+        
+        ttk.Label(main_frame, text="Wprowadź hasło:").grid(row=0, column=0, sticky="w", pady=2)
+        password_var = tk.StringVar()
+        password_entry = ttk.Entry(main_frame, textvariable=password_var, show="*", width=30)
+        password_entry.grid(row=0, column=1, sticky="ew", pady=2, padx=(8, 0))
+        
+        ttk.Label(main_frame, text="Potwierdź hasło:").grid(row=1, column=0, sticky="w", pady=2)
+        confirm_var = tk.StringVar()
+        confirm_entry = ttk.Entry(main_frame, textvariable=confirm_var, show="*", width=30)
+        confirm_entry.grid(row=1, column=1, sticky="ew", pady=2, padx=(8, 0))
+        
+        result = [None]
+        
+        def on_ok():
+            pwd = password_var.get()
+            conf = confirm_var.get()
+            if not pwd:
+                custom_messagebox(dialog, "Błąd", "Hasło nie może być puste.", typ="error")
+                return
+            if pwd != conf:
+                custom_messagebox(dialog, "Błąd", "Hasła nie są identyczne.", typ="error")
+                return
+            result[0] = pwd
+            dialog.destroy()
+            
+        def on_cancel():
+            dialog.destroy()
+        
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=2, column=0, columnspan=2, pady=(12, 0))
+        ttk.Button(button_frame, text="OK", command=on_ok, width=10).pack(side="left", padx=4)
+        ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10).pack(side="left", padx=4)
+        
+        password_entry.focus_set()
+        dialog.bind("<Return>", lambda e: on_ok())
+        dialog.bind("<Escape>", lambda e: on_cancel())
+        
+        # Wyśrodkuj
+        dialog.update_idletasks()
+        dialog_w = dialog.winfo_width()
+        dialog_h = dialog.winfo_height()
+        parent_x = self.master.winfo_rootx()
+        parent_y = self.master.winfo_rooty()
+        parent_w = self.master.winfo_width()
+        parent_h = self.master.winfo_height()
+        x = parent_x + (parent_w - dialog_w) // 2
+        y = parent_y + (parent_h - dialog_h) // 2
+        dialog.geometry(f"+{x}+{y}")
+        
+        dialog.wait_window()
+        
+        if result[0]:
+            # Zapisz PDF z hasłem używając pypdf
+            try:
+                filepath = filedialog.asksaveasfilename(
+                    defaultextension=".pdf",
+                    filetypes=[("Pliki PDF", "*.pdf")],
+                    title="Zapisz PDF z hasłem"
+                )
+                if not filepath:
+                    return
+                
+                # Konwertuj PyMuPDF do PyPDF
+                pdf_bytes = self.pdf_document.tobytes()
+                reader = PdfReader(io.BytesIO(pdf_bytes))
+                writer = PdfWriter()
+                
+                for page in reader.pages:
+                    writer.add_page(page)
+                
+                # Ustaw hasło
+                writer.encrypt(result[0])
+                
+                with open(filepath, "wb") as output_file:
+                    writer.write(output_file)
+                
+                custom_messagebox(self.master, "Sukces", f"PDF z hasłem zapisany do:\n{filepath}", typ="info")
+                self._update_status(f"Zapisano PDF z hasłem: {filepath}")
+            except Exception as e:
+                custom_messagebox(self.master, "Błąd", f"Nie udało się zapisać PDF z hasłem:\n{e}", typ="error")
+    
+    def remove_pdf_password(self):
+        """Usuwa hasło z pliku PDF"""
+        if not self.pdf_document:
+            custom_messagebox(self.master, "Błąd", "Brak otwartego dokumentu PDF.", typ="error")
+            return
+        
+        # Jeśli dokument jest już otwarty, to hasło zostało już podane przy otwarciu
+        # Zapisujemy go bez hasła
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".pdf",
+            filetypes=[("Pliki PDF", "*.pdf")],
+            title="Zapisz PDF bez hasła"
+        )
+        if not filepath:
+            return
+        
+        try:
+            # Zapisz aktualny dokument bez hasła
+            self.pdf_document.save(filepath)
+            custom_messagebox(self.master, "Sukces", f"PDF bez hasła zapisany do:\n{filepath}", typ="info")
+            self._update_status(f"Zapisano PDF bez hasła: {filepath}")
+        except Exception as e:
+            custom_messagebox(self.master, "Błąd", f"Nie udało się zapisać PDF bez hasła:\n{e}", typ="error")
+    
+    def remove_empty_pages(self):
+        """Usuwa puste strony z dokumentu PDF"""
+        if not self.pdf_document:
+            custom_messagebox(self.master, "Błąd", "Brak otwartego dokumentu PDF.", typ="error")
+            return
+        
+        answer = custom_messagebox(
+            self.master,
+            "Potwierdzenie",
+            "Czy usunąć wszystkie puste strony?\n(Pusta strona = brak tekstu i białe tło)",
+            typ="question"
+        )
+        
+        if not answer:
+            return
+        
+        try:
+            self._save_state_to_undo()
+            empty_pages = []
+            
+            # Identyfikuj puste strony
+            for page_index in range(len(self.pdf_document)):
+                page = self.pdf_document[page_index]
+                text = page.get_text().strip()
+                
+                # Sprawdź czy strona ma tekst
+                if not text:
+                    # Sprawdź czy tło jest białe (bardzo prosty test)
+                    # Możemy sprawdzić czy są jakieś rysunki/obrazy
+                    drawings = page.get_drawings()
+                    images = page.get_images()
+                    
+                    # Jeśli brak tekstu, rysunków i obrazów - strona jest pusta
+                    if not drawings and not images:
+                        empty_pages.append(page_index)
+            
+            if not empty_pages:
+                custom_messagebox(self.master, "Informacja", "Nie znaleziono pustych stron w dokumencie.", typ="info")
+                return
+            
+            # Usuń puste strony (od końca, żeby nie zmienić indeksów)
+            for page_index in reversed(empty_pages):
+                self.pdf_document.delete_page(page_index)
+            
+            # Odśwież widok
+            self.selected_pages.clear()
+            self.tk_images.clear()
+            self.thumb_frames.clear()
+            for widget in list(self.scrollable_frame.winfo_children()):
+                widget.destroy()
+            
+            self.active_page_index = 0
+            self._reconfigure_grid()
+            self.update_tool_button_states()
+            self.update_focus_display()
+            
+            custom_messagebox(
+                self.master,
+                "Sukces",
+                f"Usunięto {len(empty_pages)} pustych stron.",
+                typ="info"
+            )
+            self._update_status(f"Usunięto {len(empty_pages)} pustych stron.")
+        except Exception as e:
+            custom_messagebox(self.master, "Błąd", f"Nie udało się usunąć pustych stron:\n{e}", typ="error")
+    
+    def merge_pdf_files(self):
+        """Otwiera okno dialogowe do scalania plików PDF"""
+        MergePDFDialog(self.master)
+    
+    # ===================================================================
+    # FUNKCJE MAKR
+    # ===================================================================
+    
+    def record_macro(self):
+        """Rozpoczyna nagrywanie makra"""
+        # TODO: Implementacja nagrywania makra
+        custom_messagebox(self.master, "Informacja", "Funkcja nagrywania makr będzie dostępna wkrótce.", typ="info")
+    
+    def show_macros_list(self):
+        """Wyświetla listę makr użytkownika"""
+        # TODO: Implementacja listy makr
+        custom_messagebox(self.master, "Informacja", "Lista makr będzie dostępna wkrótce.", typ="info")
 
     def update_focus_display(self, hide_mouse_focus: bool = False):
         if not self.pdf_document: return
