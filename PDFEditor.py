@@ -2865,7 +2865,7 @@ class MacrosListDialog(tk.Toplevel):
             self.load_macros()
     
     def set_shortcut(self):
-        """Ustaw skrót klawiszowy dla makra - tylko klawiatura numeryczna (Numpad)"""
+        """Ustaw skrót klawiszowy dla makra - tylko Ctrl+1..9"""
         selection = self.macros_listbox.curselection()
         if not selection:
             custom_messagebox(self, "Informacja", "Wybierz makro.", typ="info")
@@ -2877,7 +2877,7 @@ class MacrosListDialog(tk.Toplevel):
 
         # Dialog do przechwycenia skrótu klawiszowego
         dialog = tk.Toplevel(self)
-        dialog.title("Ustaw skrót klawiszowy (Numpad)")
+        dialog.title("Ustaw skrót klawiszowy (Ctrl+1..9)")
         dialog.transient(self)
         dialog.resizable(False, False)
         dialog.grab_set()
@@ -2886,10 +2886,10 @@ class MacrosListDialog(tk.Toplevel):
         main_frame.pack(fill="both", expand=True)
 
         ttk.Label(main_frame, text=f"Makro: {macro_name}").pack(anchor="w", pady=(0, 8))
-        info_frame = ttk.LabelFrame(main_frame, text="Dostępne klawisze (klawiatura numeryczna)", padding="8")
+        info_frame = ttk.LabelFrame(main_frame, text="Dostępne skróty", padding="8")
         info_frame.pack(fill="x", pady=(0, 8))
-        ttk.Label(info_frame, text="Tylko Numpad: 0-9, /, *, -, +, .").pack(anchor="w")
-        ttk.Label(main_frame, text="Naciśnij klawisz z klawiatury numerycznej lub ESC aby anulować").pack(anchor="w", pady=2)
+        ttk.Label(info_frame, text="Tylko Ctrl+1..9 (klawiatura główna)").pack(anchor="w")
+        ttk.Label(main_frame, text="Naciśnij Ctrl+1..9 lub ESC aby anulować").pack(anchor="w", pady=2)
 
         shortcut_var = tk.StringVar(value="Oczekiwanie na skrót...")
         shortcut_display = ttk.Label(main_frame, textvariable=shortcut_var, relief="sunken", padding=8, width=35)
@@ -2901,58 +2901,44 @@ class MacrosListDialog(tk.Toplevel):
 
         result = [None]
 
-        valid_numpad_keys = [
-            'KP_0', 'KP_1', 'KP_2', 'KP_3', 'KP_4',
-            'KP_5', 'KP_6', 'KP_7', 'KP_8', 'KP_9',
-            'KP_Divide', 'KP_Multiply', 'KP_Subtract', 'KP_Add', 'KP_Decimal',
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-            '/', '*', '-', '+', '.', 'decimal'
-        ]
+        valid_keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
         key_labels = {
-            'KP_0': 'Numpad 0', 'KP_1': 'Numpad 1', 'KP_2': 'Numpad 2', 'KP_3': 'Numpad 3',
-            'KP_4': 'Numpad 4', 'KP_5': 'Numpad 5', 'KP_6': 'Numpad 6', 'KP_7': 'Numpad 7',
-            'KP_8': 'Numpad 8', 'KP_9': 'Numpad 9', 'KP_Divide': 'Numpad /',
-            'KP_Multiply': 'Numpad *', 'KP_Subtract': 'Numpad -', 'KP_Add': 'Numpad +', 'KP_Decimal': 'Numpad .',
-            '0': 'Numpad 0', '1': 'Numpad 1', '2': 'Numpad 2', '3': 'Numpad 3', '4': 'Numpad 4',
-            '5': 'Numpad 5', '6': 'Numpad 6', '7': 'Numpad 7', '8': 'Numpad 8', '9': 'Numpad 9',
-            '/': 'Numpad /', '*': 'Numpad *', '-': 'Numpad -', '+': 'Numpad +', '.': 'Numpad .',
-            'decimal': 'Numpad .'
+            '1': 'Ctrl+1', '2': 'Ctrl+2', '3': 'Ctrl+3',
+            '4': 'Ctrl+4', '5': 'Ctrl+5', '6': 'Ctrl+6',
+            '7': 'Ctrl+7', '8': 'Ctrl+8', '9': 'Ctrl+9'
         }
 
         def on_key_press(event):
-            # DEBUG: pokazuj, co zwraca system (dla testów!)
-            shortcut_var.set(f"keysym: {event.keysym}, keycode: {event.keycode}, char: {event.char}")
             if event.keysym == 'Escape':
                 dialog.destroy()
                 return
-            # Akceptuj keysym lub char z listy
-            if event.keysym in valid_numpad_keys or event.char in valid_numpad_keys:
-                # Preferuj keysym, jeśli jest w key_labels, w innym wypadku char
-                if event.keysym in key_labels:
-                    shortcut = key_labels[event.keysym]
-                elif event.char in key_labels:
+            
+            # Sprawdź, czy wciśnięty jest Ctrl i klawisz to cyfra 1-9
+            if event.state & 0x4:  # 0x4 to maska dla Ctrl
+                if event.char in valid_keys:
                     shortcut = key_labels[event.char]
+                    # Sprawdź konflikt
+                    conflict = None
+                    for name, data in macros.items():
+                        if name != macro_name and data.get('shortcut', '') == shortcut:
+                            conflict = name
+                            break
+                    if conflict:
+                        shortcut_var.set(f"{shortcut} (używany przez: {conflict})")
+                        result[0] = None
+                    else:
+                        shortcut_var.set(shortcut)
+                        result[0] = shortcut
                 else:
-                    shortcut = event.keysym
-                # Sprawdź konflikt
-                conflict = None
-                for name, data in macros.items():
-                    if name != macro_name and data.get('shortcut', '') == shortcut:
-                        conflict = name
-                        break
-                if conflict:
-                    shortcut_var.set(f"{shortcut} (używany przez: {conflict})")
+                    shortcut_var.set("Tylko Ctrl+1..9 są dozwolone!")
                     result[0] = None
-                else:
-                    shortcut_var.set(shortcut)
-                    result[0] = shortcut
             else:
-                shortcut_var.set("Tylko klawisze Numpad są dozwolone!")
+                shortcut_var.set("Tylko Ctrl+1..9 są dozwolone!")
                 result[0] = None
 
         def on_ok():
             if not result[0]:
-                custom_messagebox(dialog, "Błąd", "Nie przechwycono żadnego skrótu numerycznego.", typ="error")
+                custom_messagebox(dialog, "Błąd", "Nie przechwycono żadnego skrótu Ctrl+1..9.", typ="error")
                 return
             macros[macro_name]['shortcut'] = result[0]
             self.prefs_manager.save_profiles('macros', macros)
@@ -6686,23 +6672,16 @@ class SelectablePDFViewer:
         self.macro_recording_name = None
     
     def _setup_numpad_macro_bindings(self):
-        """Set up numpad key bindings for macros"""
-        # Numpad keys that can be assigned to macros
-        numpad_keys = [
-            'KP_0', 'KP_1', 'KP_2', 'KP_3', 'KP_4', 
-            'KP_5', 'KP_6', 'KP_7', 'KP_8', 'KP_9',
-            'KP_Divide', 'KP_Multiply', 'KP_Subtract', 'KP_Add', 'KP_Decimal'
-        ]
-        
-        for key in numpad_keys:
-            self.master.bind(f'<{key}>', lambda e, k=key: self._handle_numpad_macro_key(k))
+        """Set up Ctrl+1..9 key bindings for macros"""
+        # Main keyboard number keys 1-9 with Ctrl modifier
+        for num in range(1, 10):
+            self.master.bind(f'<Control-{num}>', lambda e, n=num: self._handle_macro_key(f'Ctrl+{n}'))
     
-    def _handle_numpad_macro_key(self, keysym):
-        """Handle numpad key press for macro execution"""
+    def _handle_macro_key(self, shortcut):
+        """Handle Ctrl+1..9 key press for macro execution"""
         macros = self.prefs_manager.get_profiles('macros')
         for macro_name, macro_data in macros.items():
-            shortcut = macro_data.get('shortcut', '')
-            if shortcut == keysym:
+            if macro_data.get('shortcut', '') == shortcut:
                 self.run_macro(macro_name)
                 return
     
