@@ -3683,8 +3683,9 @@ class SelectablePDFViewer:
                 format_type=format_mode,
                 margin_left_mm=left_mm,
                 margin_right_mm=right_mm,
-                top_mm=settings.get('top_mm', 20),
-                bottom_mm=settings.get('bottom_mm', 20))
+                margin_vertical_mm=margin_v_mm,
+                font_size=font_size,
+                font_name=font)
 
         except Exception as e:
             self._update_status(f"BŁĄD przy dodawaniu numeracji: {e}")
