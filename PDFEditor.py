@@ -30,7 +30,7 @@ FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
 
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
-PROGRAM_VERSION = "5.0.0"
+PROGRAM_VERSION = "5.5.0"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
 # === STAŁE DLA A4 [w punktach PDF i mm] ===
@@ -3895,26 +3895,37 @@ class SelectablePDFViewer:
             custom_messagebox(self.master, "Błąd", f"Wystąpił błąd podczas odwracania stron: {e}", typ="error")
             # W przypadku błędu użytkownik może użyć przycisku Cofnij aby przywrócić stan
     
-    def _apply_selection_by_indices(self, indices_to_select):
-        """Ogólna metoda do zaznaczania stron na podstawie listy indeksów."""
+    def _apply_selection_by_indices(self, indices_to_select, macro_source_page_count=None):
+        """
+        Zaznacza strony zgodnie z podanymi indeksami do source_page_count-1,
+        a następnie wszystkie strony powyżej source_page_count do końca dokumentu.
+        """
         if not self.pdf_document:
             return
 
+        max_index = len(self.pdf_document) - 1
+
+        indices = set()
+        if indices_to_select:
+            if macro_source_page_count is not None:
+                # Zaznacz tylko te, które są <= source_page_count - 1
+                indices.update(i for i in indices_to_select if 0 <= i < macro_source_page_count)
+                # Dodaj wszystkie strony powyżej source_page_count-1
+                indices.update(range(macro_source_page_count, max_index + 1))
+            else:
+                # Standardowe zachowanie dla braku makra
+                indices.update(i for i in indices_to_select if 0 <= i <= max_index)
+        else:
+            # Jeśli nie podano indeksów, ale jest source_page_count, zaznacz od source_page_count do końca
+            if macro_source_page_count is not None:
+                indices.update(range(macro_source_page_count, max_index + 1))
+
         current_selection = self.selected_pages.copy()
-        
-        # Tworzenie nowej, czystej selekcji
-        new_selection = set(indices_to_select)
-        
-        # Zastąpienie dotychczasowej selekcji
+        new_selection = set(indices)
         self.selected_pages = new_selection
-        
-        # Przerenderowanie, jeśli selekcja się zmieniła
+
         if current_selection != self.selected_pages:
-            
-            # === POPRAWKA ===
-            # Właściwa metoda do odświeżania widoku po zmianie zaznaczenia:
             self.update_selection_display()
-            # ================
             self.update_tool_button_states()
             
     def _select_odd_pages(self):
@@ -4755,9 +4766,9 @@ class SelectablePDFViewer:
 
         # --- Dodaj to poniżej! ---
         if getattr(self, "macro_recording", False):
-            # Po kliknięciu, nagraj aktualne zaznaczenie
             indices = sorted(self.selected_pages)
-            self._record_action('select_custom', indices=indices)
+            page_count = len(self.pdf_document) if self.pdf_document else 0
+            self._record_action('select_custom', indices=indices, source_page_count=page_count)
         
     def _toggle_selection_lpm(self, page_index):
         # Validate page_index before using it
@@ -6669,7 +6680,8 @@ class SelectablePDFViewer:
                     indices = params.get('indices', [])
                     if isinstance(indices, int):
                         indices = [indices]
-                    self._apply_selection_by_indices(indices)
+                    source_page_count = params.get('source_page_count', None)
+                    self._apply_selection_by_indices(indices, macro_source_page_count=source_page_count)
                 # Parameterized actions - replay with saved parameters
                 elif action == 'shift_page_content' and params:
                     self._replay_shift_page_content(params)
