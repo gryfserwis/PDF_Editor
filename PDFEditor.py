@@ -30,7 +30,7 @@ FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
 
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
-PROGRAM_VERSION = "5.5.0"
+PROGRAM_VERSION = "5.5.1"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
 # === STAŁE DLA A4 [w punktach PDF i mm] ===
@@ -2688,6 +2688,12 @@ class MacroRecordingDialog(tk.Toplevel):
             custom_messagebox(self, "Błąd", "Nazwa makra nie może być pusta.", typ="error")
             return
         
+        # Check if macro with this name already exists
+        macros = self.viewer.prefs_manager.get_profiles('macros')
+        if name in macros:
+            custom_messagebox(self, "Błąd", f"Makro o nazwie '{name}' już istnieje. Wybierz inną nazwę.", typ="error")
+            return
+        
         self.macro_name = name
         self.recording = True
         
@@ -2803,12 +2809,17 @@ class MacrosListDialog(tk.Toplevel):
         self.macros_listbox.pack(side="left", fill="both", expand=True)
         scrollbar.config(command=self.macros_listbox.yview)
         
+        # Bind double-click to run macro
+        self.macros_listbox.bind("<Double-Button-1>", lambda e: self.run_selected())
+        
         # Przyciski akcji (right side, vertical layout)
         buttons_frame = ttk.Frame(content_frame)
         buttons_frame.pack(side="right", fill="y")
         
-        ttk.Button(buttons_frame, text="Nagraj makro...", command=self.record_macro, width=15).pack(pady=(0, 4))
-        ttk.Button(buttons_frame, text="Uruchom", command=self.run_selected, width=15).pack(pady=4)
+        ttk.Button(buttons_frame, text="Uruchom", command=self.run_selected, width=15).pack(pady=(0, 4))
+        ttk.Button(buttons_frame, text="Nagraj makro...", command=self.record_macro, width=15).pack(pady=4)
+        #ttk.Button(buttons_frame, text="Nowe makro", command=self.new_macro, width=15).pack(pady=4)
+        ttk.Button(buttons_frame, text="Duplikuj", command=self.duplicate_selected, width=15).pack(pady=4)
         ttk.Button(buttons_frame, text="Edytuj...", command=self.edit_selected, width=15).pack(pady=4)
         ttk.Button(buttons_frame, text="Usuń", command=self.delete_selected, width=15).pack(pady=4)
         ttk.Button(buttons_frame, text="Zamknij", command=self.close, width=15).pack(pady=(4, 0))
@@ -2823,6 +2834,50 @@ class MacrosListDialog(tk.Toplevel):
     def record_macro(self):
         """Otwórz okno nagrywania makra"""
         MacroRecordingDialog(self, self.viewer, refresh_callback=self.load_macros)
+    
+    def new_macro(self):
+        """Otwórz okno nagrywania nowego makra z pustą nazwą"""
+        MacroRecordingDialog(self, self.viewer, refresh_callback=self.load_macros)
+    
+    def duplicate_selected(self):
+        """Duplikuj wybrane makro pod nową nazwą"""
+        selection = self.macros_listbox.curselection()
+        if not selection:
+            custom_messagebox(self, "Informacja", "Wybierz makro do duplikacji.", typ="info")
+            return
+        
+        index = selection[0]
+        macros = self.prefs_manager.get_profiles('macros')
+        macro_name = list(macros.keys())[index]
+        
+        # Ask for new name using simpledialog
+        from tkinter import simpledialog
+        new_name = simpledialog.askstring(
+            "Duplikuj makro",
+            f"Wprowadź nową nazwę dla kopii makra '{macro_name}':",
+            parent=self
+        )
+        
+        if not new_name:
+            return  # User cancelled
+        
+        new_name = new_name.strip()
+        if not new_name:
+            custom_messagebox(self, "Błąd", "Nazwa makra nie może być pusta.", typ="error")
+            return
+        
+        # Check if macro with new name already exists
+        if new_name in macros:
+            custom_messagebox(self, "Błąd", f"Makro o nazwie '{new_name}' już istnieje.", typ="error")
+            return
+        
+        # Create duplicate
+        macros[new_name] = macros[macro_name].copy()
+        self.prefs_manager.save_profiles('macros', macros)
+        self.load_macros()
+        self.viewer.refresh_macros_menu()
+        
+        custom_messagebox(self, "Sukces", f"Makro '{macro_name}' zostało zduplikowane jako '{new_name}'.", typ="info")
     
     def run_selected(self):
         """Uruchom wybrane makro"""
