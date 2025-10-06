@@ -16,6 +16,7 @@ from pypdf.generic import RectangleObject, FloatObject, ArrayObject
 # wystarczyłoby, jeśli pypdf je konwertuje. Zostawiam dla pełnej kompatybilności.
 from pypdf.generic import NameObject # Dodaj import dla NameObject
 import json
+from export_to_docx import export_selected_pages_to_docx
 
 # Definicja BASE_DIR i inne stałe
 if getattr(sys, 'frozen', False):
@@ -3711,6 +3712,7 @@ class SelectablePDFViewer:
             ("Importuj obraz", "Ctrl+Shift+I"),
             ("Eksportuj PDF", "Ctrl+E"),
             ("Eksportuj obrazy", "Ctrl+Shift+E"),
+            ("Eksportuj DOCX", "Ctrl+Shift+W"),
             ("Cofnij", "Ctrl+Z"),
             ("Ponów", "Ctrl+Y"),
             ("Wytnij strony", "Ctrl+X"),
@@ -4092,8 +4094,67 @@ class SelectablePDFViewer:
         except Exception as e:
             self.master.config(cursor="")
             custom_messagebox(self.master, "Błąd Eksportu", f"Wystąpił błąd podczas eksportowania stron:\n{e}", typ="error")
+    
+    def export_selected_pages_to_docx(self):
+        """Eksportuje wybrane strony do pliku DOCX (Word)."""
+        
+        selected_indices = sorted(list(self.selected_pages))
+        
+        if not selected_indices:
+            custom_messagebox(self.master, "Informacja", "Wybierz strony do eksportu.", typ="info")
+            return
+        
+        # Pobierz nazwę bazową pliku źródłowego
+        if hasattr(self, 'file_path') and self.file_path:
+            base_filename = os.path.splitext(os.path.basename(self.file_path))[0]
+        else:
+            base_filename = "dokument"
+        
+        # Utwórz zakres stron dla sugerowanej nazwy pliku
+        if len(selected_indices) == 1:
+            page_range = str(selected_indices[0] + 1)
+        else:
+            page_range = f"{selected_indices[0] + 1}-{selected_indices[-1] + 1}"
+        
+        # Sugerowana nazwa pliku
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        suggested_filename = f"Eksport_{page_range}_{timestamp}.docx"
+        
+        # Wybierz miejsce zapisu pliku
+        output_path = filedialog.asksaveasfilename(
+            title="Zapisz eksport jako DOCX",
+            defaultextension=".docx",
+            initialfile=suggested_filename,
+            filetypes=[("Dokumenty Word", "*.docx"), ("Wszystkie pliki", "*.*")]
+        )
+        
+        if not output_path:
+            self._update_status("Anulowano eksport do DOCX.")
+            return
+        
+        try:
+            # Pobierz DPI z preferencji (użyj niższej wartości niż dla PNG, np. 200-300 DPI)
+            # Dla DOCX 300 DPI jest rozsądnym kompromisem między jakością a rozmiarem
+            export_dpi = 300
             
+            self.master.config(cursor="wait")
+            self.master.update()
             
+            # Wywołaj funkcję eksportu z modułu export_to_docx
+            exported_count = export_selected_pages_to_docx(
+                self.pdf_document,
+                selected_indices,
+                output_path,
+                dpi=export_dpi
+            )
+            
+            self.master.config(cursor="")
+            
+            self._update_status(f"Pomyślnie wyeksportowano {exported_count} stron do pliku: {output_path}")
+            
+        except Exception as e:
+            self.master.config(cursor="")
+            custom_messagebox(self.master, "Błąd Eksportu", f"Wystąpił błąd podczas eksportowania stron do DOCX:\n{e}", typ="error")
     
     
     def __init__(self, master):
@@ -4405,6 +4466,7 @@ class SelectablePDFViewer:
         self.file_menu.add_separator() 
         self.file_menu.add_command(label="Importuj obraz na nową stronę...", command=self.import_image_to_new_page, state=tk.DISABLED, accelerator="Ctrl+Shift+I") 
         self.file_menu.add_command(label="Eksportuj strony jako obrazy PNG...", command=self.export_selected_pages_to_image, state=tk.DISABLED, accelerator="Ctrl+Shift+E")
+        self.file_menu.add_command(label="Eksportuj zaznaczone strony do DOCX...", command=self.export_selected_pages_to_docx, state=tk.DISABLED, accelerator="Ctrl+Shift+W")
         self.file_menu.add_separator()
         self.file_menu.add_command(label="Scalanie plików PDF...", command=self.merge_pdf_files)
         self.file_menu.add_separator()
@@ -4657,6 +4719,8 @@ class SelectablePDFViewer:
         self.master.bind('<Control-E>', lambda e: self._check_action_allowed('export') and self.extract_selected_pages())
         # Ctrl+Shift+E dla Eksportu stron jako obrazów PNG
         self.master.bind('<Control-Shift-E>', lambda e: self._check_action_allowed('export') and self.export_selected_pages_to_image())
+        # Ctrl+Shift+W dla Eksportu stron do DOCX (Word)
+        self.master.bind('<Control-Shift-W>', lambda e: self._check_action_allowed('export') and self.export_selected_pages_to_docx())
         # ===========================
         self._setup_focus_logic()
         self.master.bind('<Control-o>', lambda e: self.open_pdf())
@@ -4907,7 +4971,8 @@ class SelectablePDFViewer:
             "Importuj strony z PDF...": import_state, 
             "Importuj obraz na nową stronę...": import_state,
             "Eksportuj strony do PDF...": delete_state,
-            "Eksportuj strony jako obrazy PNG...": delete_state,            
+            "Eksportuj strony jako obrazy PNG...": delete_state,
+            "Eksportuj zaznaczone strony do DOCX...": delete_state,
             "Cofnij": undo_state,
             "Ponów": redo_state,
             "Wszystkie strony": select_state,
