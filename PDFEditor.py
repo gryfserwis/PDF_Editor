@@ -32,9 +32,8 @@ else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 ICON_FOLDER = os.path.join(BASE_DIR, "icons")
-#FOCUS_HIGHLIGHT_COLOR = "#B3E5FC" # Czarny (Black)
-FOCUS_HIGHLIGHT_COLOR = "#d3d3d3" # Czarny (Black)
-FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
+FOCUS_HIGHLIGHT_COLOR = "#d3d3d3"
+FOCUS_HIGHLIGHT_WIDTH = 6
 
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
@@ -135,12 +134,6 @@ class PreferencesDialog(tk.Toplevel):
         dpi_combo.grid(row=4, column=1, sticky="w", padx=4, pady=4)
         
         general_frame.columnconfigure(1, weight=1)
-        
-        # Informacja
-       # info_frame = ttk.Frame(main_frame)
-       # info_frame.pack(fill="x", pady=8)
-       # info_label = ttk.Label(info_frame, text="Program automatycznie zapamiętuje ostatnio użyte wartości\nw oknach dialogowych.", foreground="gray")
-       # info_label.pack()
         
         # Ramka resetu
         reset_frame = ttk.LabelFrame(main_frame, text="Reset do ustawień domyślnych", padding="8")
@@ -3006,11 +2999,8 @@ class SelectablePDFViewer:
 
         except Exception as e:
             self._update_status(f"Błąd podczas przetwarzania PDF: {e}")
-            import traceback; traceback.print_exc()
-                
-# Zakładamy, że ta funkcja jest metodą klasy PdfToolApp, 
-# która ma atrybuty self.pdf_document, self.master, self.MM_TO_POINTS, 
-# _save_state, _update_status i _reconfigure_grid.
+            import traceback
+            traceback.print_exc()
 
     def insert_page_numbers(self):
         """Wstawia numerację stron na zaznaczonych stronach."""
