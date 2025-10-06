@@ -3013,20 +3013,15 @@ class SelectablePDFViewer:
 # _save_state, _update_status i _reconfigure_grid.
 
     def insert_page_numbers(self):
-        """
-        Wstawia numerację stron, z uwzględnieniem tylko zaznaczonych stron 
-        (self.selected_pages) oraz poprawnej logiki centrowania ('srodek').
-        """
+        """Wstawia numerację stron na zaznaczonych stronach."""
         if not self.pdf_document:
             self._update_status("Musisz zaznaczyć przynajmniej jedną stronę PDF.")
             return
 
-        # POPRAWKA: Sprawdzamy i używamy atrybutu self.selected_pages
         if not hasattr(self, 'selected_pages') or not self.selected_pages:
              self._update_status("Musisz zaznaczyć przynajmniej jedną stronę PDF.")
              return
         
-        # 1. Wywołanie dialogu i pobranie ustawień
         dialog = PageNumberingDialog(self.master, self.prefs_manager)
         settings = dialog.result
 
@@ -3034,170 +3029,28 @@ class SelectablePDFViewer:
             self._update_status("Wstawianie numeracji anulowane przez użytkownika.")
             return
 
-        doc = self.pdf_document
         self._update_status("Wstawianie numeracji stron...")
-        
-        MM_PT = self.MM_TO_POINTS 
 
         try:
-            self._save_state_to_undo() 
-            
-            # 2. Pobieranie parametrów
-            start_number = settings['start_num']
-            mode = settings['mode']                 
-            direction = settings['alignment']        
-            position = settings['vertical_pos']      
-            mirror_margins = settings['mirror_margins']
-            format_mode = settings['format_type']    
-            
-            left_mm = settings['margin_left_mm']
-            right_mm = settings['margin_right_mm']
-
-            left_pt_base = left_mm * MM_PT
-            right_pt_base = right_mm * MM_PT
-            margin_v_mm = settings['margin_vertical_mm']
-            margin_v = margin_v_mm * MM_PT
-            font_size = settings['font_size']
-            font = settings['font_name']
-            
-            # Pobieramy listę indeksów stron do przetworzenia
+            self._save_state_to_undo()
             selected_indices = sorted(self.selected_pages)
             
-            current_number = start_number
-            # Całkowita liczba stron, które zostaną PONUMEROWANE (dla formatu 'full')
-            total_counted_pages = len(selected_indices) + start_number - 1 
+            num_pages = insert_page_numbers_on_pages(
+                self.pdf_document, selected_indices, settings, self.MM_TO_POINTS
+            )
             
-            # 3. Główna pętla przez ZAZNACZONE strony
-            # i = indeks strony w dokumencie
-            for i in selected_indices:
-                
-                # Używamy load_page(i) tak jak w Twojej funkcji usuwania
-                page = doc.load_page(i) 
-                rect = page.rect
-                rotation = page.rotation
-                
-                # Tworzenie tekstu numeracji
-                if format_mode == 'full':
-                    # current_number rośnie od start_number do total_counted_pages
-                    text = f"Strona {current_number} z {total_counted_pages}"
-                else:
-                    text = str(current_number)
-                
-                text_width = fitz.get_text_length(text, fontname=font, fontsize=font_size)
-
-                # A. Ustal ostateczne wyrównanie (align)
-                is_even_counted_page = (current_number - start_number) % 2 == 0 
-
-                if mode == "lustrzana":
-                    if direction == "srodek":
-                        align = "srodek"
-                    elif direction == "lewa":
-                        # Lewa (ustawienie) = Wewnętrzna (zmiana na zewnątrz/do wewnątrz w zależności od parzystości licznika)
-                        align = "lewa" if is_even_counted_page else "prawa"
-                    else: # direction == "prawa"
-                        # Prawa (ustawienie) = Zewnętrzna
-                        align = "prawa" if is_even_counted_page else "lewa"
-                else:
-                    align = direction
-
-                # B. Korekta marginesów bazowych (left_pt, right_pt) na podstawie 'mirror_margins'
-                is_physical_odd = (i + 1) % 2 == 1 # Indeks strony fizycznej (i)
-                
-                if mirror_margins:
-                    # Zamiana marginesów dla stron parzystych dokumentu
-                    if is_physical_odd:
-                        left_pt, right_pt = left_pt_base, right_pt_base
-                    else:
-                        left_pt, right_pt = right_pt_base, left_pt_base
-                else:
-                    left_pt, right_pt = left_pt_base, right_pt_base
-
-                # C. Obliczanie pozycji (x, y) z uwzględnieniem rotacji
-                
-                if rotation == 0:
-                    if align == "lewa":
-                        x = rect.x0 + left_pt
-                    elif align == "prawa":
-                        x = rect.x1 - right_pt - text_width
-                    elif align == "srodek":
-                        # Skorygowana formuła centrowania
-                        total_width = rect.width
-                        margin_diff = left_pt - right_pt
-                        x = rect.x0 + (total_width / 2) - (text_width / 2) + (margin_diff / 2)
-                        
-                    y = rect.y0 + margin_v + font_size if position == "gora" else rect.y1 - margin_v 
-                    angle = 0
-                    
-                elif rotation == 90:
-                    if align == "lewa":
-                        y = rect.y0 + left_pt
-                    elif align == "prawa":
-                        y = rect.y1 - right_pt - text_width
-                    elif align == "srodek":
-                        total_height = rect.height 
-                        margin_diff = left_pt - right_pt
-                        y = rect.y0 + (total_height / 2) - (text_width / 2) + (margin_diff / 2)
-                        
-                    x = rect.x0 + margin_v + font_size if position == "gora" else rect.x1 - margin_v
-                    angle = 90
-                    
-                elif rotation == 180:
-                    if align == "lewa":
-                        x = rect.x1 - right_pt - text_width 
-                    elif align == "prawa":
-                        x = rect.x0 + left_pt
-                    elif align == "srodek":
-                        total_width = rect.width
-                        margin_diff = left_pt - right_pt
-                        x = rect.x0 + (total_width / 2) - (text_width / 2) + (margin_diff / 2)
-
-                    y = rect.y1 - margin_v - font_size if position == "gora" else rect.y0 + margin_v
-                    angle = 180
-                    
-                elif rotation == 270:
-                    if align == "lewa":
-                        y = rect.y1 - right_pt - text_width
-                    elif align == "prawa":
-                        y = rect.y0 + left_pt
-                    elif align == "srodek":
-                        total_height = rect.height 
-                        margin_diff = left_pt - right_pt
-                        y = rect.y0 + (total_height / 2) - (text_width / 2) + (margin_diff / 2)
-                        
-                    x = rect.x1 - margin_v - font_size if position == "gora" else rect.x0 + margin_v
-                    angle = 270
-                else:
-                    x = rect.x0 + left_pt
-                    y = rect.y1 - margin_v
-                    angle = 0
-
-                # D. Wstawienie numeru
-                page.insert_text(
-                    fitz.Point(x, y),
-                    text,
-                    fontsize=font_size,
-                    fontname=font,
-                    color=(0, 0, 0),
-                    rotate=angle
-                )
-
-                # WZROST LICZNIKA TYLKO DLA PRZETWORZONEJ STRONY
-                current_number += 1
-
-            # 4. Finalizacja GUI
-            self._reconfigure_grid() 
-            self._update_status(f"Numeracja wstawiona na {len(selected_indices)} stronach. Plik gotowy do zapisu.")
+            self._reconfigure_grid()
+            self._update_status(f"Numeracja wstawiona na {num_pages} stronach. Plik gotowy do zapisu.")
             
-            # Record action with parameters
-            self._record_action('insert_page_numbers', 
-                start_num=start_number,
-                mode=mode,
-                alignment=direction,
-                vertical_pos=position,
-                mirror_margins=mirror_margins,
-                format_type=format_mode,
-                margin_left_mm=left_mm,
-                margin_right_mm=right_mm,
+            self._record_action('insert_page_numbers',
+                start_num=settings['start_num'],
+                mode=settings['mode'],
+                alignment=settings['alignment'],
+                vertical_pos=settings['vertical_pos'],
+                mirror_margins=settings['mirror_margins'],
+                format_type=settings['format_type'],
+                margin_left_mm=settings['margin_left_mm'],
+                margin_right_mm=settings['margin_right_mm'],
                 top_mm=settings.get('top_mm', 20),
                 bottom_mm=settings.get('bottom_mm', 20))
 
@@ -3624,15 +3477,13 @@ class SelectablePDFViewer:
         self._record_action('select_landscape')
 
     def export_selected_pages_to_image(self):
-        """Eksportuje wybrane strony do plików PNG o wysokiej rozdzielczości."""
-        
+        """Eksportuje wybrane strony do plików PNG."""
         selected_indices = sorted(list(self.selected_pages))
         
         if not selected_indices:
             custom_messagebox(self.master, "Informacja", "Wybierz strony do eksportu.", typ="info")
             return
 
-        # Wybierz folder do zapisu (bez dialogu trybu - domyślnie każda strona osobno)
         output_dir = filedialog.askdirectory(
             title="Wybierz folder do zapisu wyeksportowanych obrazów"
         )
@@ -3641,46 +3492,22 @@ class SelectablePDFViewer:
             return
 
         try:
-            # Ustawienia eksportu - pobierz DPI z preferencji
             export_dpi = int(self.prefs_manager.get('export_image_dpi', '600'))
-            zoom = export_dpi / 72.0 
-            matrix = fitz.Matrix(zoom, zoom)
             
-            # Pobierz nazwę bazową pliku źródłowego
             if hasattr(self, 'file_path') and self.file_path:
                 base_filename = os.path.splitext(os.path.basename(self.file_path))[0]
             else:
                 base_filename = "dokument"
             
-            # Utwórz zakres stron
-            if len(selected_indices) == 1:
-                page_range = str(selected_indices[0] + 1)
-            else:
-                page_range = f"{selected_indices[0] + 1}-{selected_indices[-1] + 1}"
-            
-            exported_count = 0
-            
             self.master.config(cursor="wait")
             self.master.update()
             
-            for index in selected_indices:
-                if index < len(self.pdf_document):
-                    page = self.pdf_document.load_page(index)
-                    
-                    pix = page.get_pixmap(matrix=matrix, alpha=False)
-                    
-                    # Generuj unikalną nazwę pliku
-                    single_page_range = str(index + 1)
-                    output_path = generate_unique_export_filename(
-                        output_dir, base_filename, single_page_range, "png"
-                    )
-                    
-                    pix.save(output_path)
-                    exported_count += 1
+            exported_count = export_pages_to_images(
+                self.pdf_document, selected_indices, output_dir, base_filename, export_dpi
+            )
             
             self.master.config(cursor="")
-            
-            self._update_status(f"Pomyślnie wyeksportowano {exported_count} stron do folderu: {output_dir}")   
+            self._update_status(f"Pomyślnie wyeksportowano {exported_count} stron do folderu: {output_dir}")
         except Exception as e:
             self.master.config(cursor="")
             custom_messagebox(self.master, "Błąd Eksportu", f"Wystąpił błąd podczas eksportowania stron:\n{e}", typ="error")
