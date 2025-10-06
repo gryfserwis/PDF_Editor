@@ -220,7 +220,7 @@ class PreferencesManager:
             'last_save_path': '',
             'thumbnail_quality': 'Średnia',
             'confirm_delete': 'False',
-            'export_image_dpi': '600',  # DPI dla eksportu obrazów (150, 300, 600)
+            'export_image_dpi': '300',  # DPI dla eksportu obrazów (150, 300, 600)
             
             # PageCropResizeDialog
             'PageCropResizeDialog.crop_mode': 'nocrop',
@@ -411,6 +411,12 @@ class PreferencesDialog(tk.Toplevel):
         confirm_check = ttk.Checkbutton(general_frame, variable=self.confirm_delete_var)
         confirm_check.grid(row=3, column=1, sticky="w", padx=4, pady=4)
         
+        # DPI eksportowanych obrazów
+        ttk.Label(general_frame, text="DPI eksportowanych obrazów:").grid(row=4, column=0, sticky="w", padx=4, pady=4)
+        self.export_image_dpi_var = tk.StringVar()
+        dpi_combo = ttk.Combobox(general_frame, textvariable=self.export_image_dpi_var, values=["150", "300", "600"], state="readonly", width=10)
+        dpi_combo.grid(row=4, column=1, sticky="w", padx=4, pady=4)
+        
         general_frame.columnconfigure(1, weight=1)
         
         # Informacja
@@ -449,6 +455,7 @@ class PreferencesDialog(tk.Toplevel):
         self.default_path_var.set(self.prefs_manager.get('default_save_path'))
         self.thumbnail_quality_var.set(self.prefs_manager.get('thumbnail_quality'))
         self.confirm_delete_var.set(self.prefs_manager.get('confirm_delete') == 'True')
+        self.export_image_dpi_var.set(self.prefs_manager.get('export_image_dpi'))
     
     def reset_all_defaults(self):
         """Przywraca domyślne wartości we wszystkich dialogach"""
@@ -481,6 +488,7 @@ class PreferencesDialog(tk.Toplevel):
         self.prefs_manager.set('default_save_path', self.default_path_var.get())
         self.prefs_manager.set('thumbnail_quality', self.thumbnail_quality_var.get())
         self.prefs_manager.set('confirm_delete', 'True' if self.confirm_delete_var.get() else 'False')
+        self.prefs_manager.set('export_image_dpi', self.export_image_dpi_var.get())
         self.result = True
         self.destroy()
     
