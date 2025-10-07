@@ -30,7 +30,7 @@ FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
 
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
-PROGRAM_VERSION = "5.5.1"
+PROGRAM_VERSION = "5.5.2"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
 # === STAŁE DLA A4 [w punktach PDF i mm] ===
@@ -3188,6 +3188,31 @@ class SelectablePDFViewer:
     #   self.hovered_page_index = page_index
     #    self.update_focus_display(hide_mouse_focus=False)
 
+    def run_compare_program(self):
+        import subprocess
+        import sys
+
+        # Pobierz pełne ścieżki do ostatnio otwartego i zapisanego pliku (dla compare.exe)
+        last_opened = self.prefs_manager.get('last_opened_file', '')
+        last_saved = self.prefs_manager.get('last_saved_file', '')
+
+        # Ścieżka do compare.exe w tym samym katalogu co PDFEditor.py
+        compare_exe = os.path.join(BASE_DIR, 'compare.exe')
+
+        # Skonstruuj listę argumentów
+        args = [compare_exe]
+        if last_opened and os.path.isfile(last_opened):
+            args.append(last_opened)
+            if last_saved and os.path.isfile(last_saved):
+                args.append(last_saved)
+
+        print("Wywołanie compare.exe z argumentami:", args)  # Wypisz w konsoli
+
+        try:
+            subprocess.Popen(args)
+        except Exception as e:
+            custom_messagebox(self.master, "Błąd", f"Nie udało się uruchomić compare.exe:\n{e}", typ="error")
+            
     def _setup_drag_and_drop_file(self):
         # Rejestrujemy canvas do odbioru plików DND
         self.master.drop_target_register(self.DND_FILES)
@@ -4437,6 +4462,10 @@ class SelectablePDFViewer:
         menu_bar.add_cascade(label="Makra", menu=self.macros_menu)
         self.refresh_macros_menu()  # dodaj to tu!
         
+        self.external_menu = tk.Menu(menu_bar, tearoff=0)
+        menu_bar.add_cascade(label="Programy", menu=self.external_menu)
+        self.external_menu.add_command(label="Porównianie PDF", command=self.run_compare_program)
+        
         self.help_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Pomoc", menu=self.help_menu)
         self.help_menu.add_command(label="Skróty klawiszowe...", command=self.show_shortcuts_dialog)
@@ -5036,6 +5065,8 @@ class SelectablePDFViewer:
             self.file_menu.entryconfig("Zapisz jako...", state=tk.NORMAL)
             self.update_tool_button_states()
             self.update_focus_display()
+            # --- DODANE: zapamiętaj ostatnio otwarty plik PDF! ---
+            self.prefs_manager.set('last_opened_file', filepath)   
             
         except Exception as e:
             self._update_status(f"BŁĄD: Nie udało się wczytać pliku PDF: {e}")
@@ -5844,11 +5875,13 @@ class SelectablePDFViewer:
         try:
             self.pdf_document.save(filepath, garbage=4, clean=True, pretty=True)  
             self._update_status(f"Dokument pomyślnie zapisany jako: {filepath}")
+            self.prefs_manager.set('last_saved_file', filepath) 
             # Po zapisaniu czyścimy stosy undo/redo
             self.undo_stack.clear()
             self.redo_stack.clear()
             print("DEBUG: Czyszczenie historii save_document")
             self.update_tool_button_states() 
+            
         except Exception as e:
             self._update_status(f"BŁĄD: Nie udało się zapisać pliku: {e}")
             
