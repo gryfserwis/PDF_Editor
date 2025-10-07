@@ -19,7 +19,7 @@ import json
 
 # Definicja BASE_DIR i inne stałe
 if getattr(sys, 'frozen', False):
-    BASE_DIR = os.path.dirname(sys.executable)
+    BASE_DIR = sys._MEIPASS
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -27,10 +27,10 @@ ICON_FOLDER = os.path.join(BASE_DIR, "icons")
 #FOCUS_HIGHLIGHT_COLOR = "#B3E5FC" # Czarny (Black)
 FOCUS_HIGHLIGHT_COLOR = "#d3d3d3" # Czarny (Black)
 FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
-
+2  
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
-PROGRAM_VERSION = "5.5.0"
+PROGRAM_VERSION = "5.5.2"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
 # === STAŁE DLA A4 [w punktach PDF i mm] ===
@@ -2688,6 +2688,12 @@ class MacroRecordingDialog(tk.Toplevel):
             custom_messagebox(self, "Błąd", "Nazwa makra nie może być pusta.", typ="error")
             return
         
+        # Check if macro with this name already exists
+        macros = self.viewer.prefs_manager.get_profiles('macros')
+        if name in macros:
+            custom_messagebox(self, "Błąd", f"Makro o nazwie '{name}' już istnieje. Wybierz inną nazwę.", typ="error")
+            return
+        
         self.macro_name = name
         self.recording = True
         
@@ -2803,12 +2809,17 @@ class MacrosListDialog(tk.Toplevel):
         self.macros_listbox.pack(side="left", fill="both", expand=True)
         scrollbar.config(command=self.macros_listbox.yview)
         
+        # Bind double-click to run macro
+        self.macros_listbox.bind("<Double-Button-1>", lambda e: self.run_selected())
+        
         # Przyciski akcji (right side, vertical layout)
         buttons_frame = ttk.Frame(content_frame)
         buttons_frame.pack(side="right", fill="y")
         
-        ttk.Button(buttons_frame, text="Nagraj makro...", command=self.record_macro, width=15).pack(pady=(0, 4))
-        ttk.Button(buttons_frame, text="Uruchom", command=self.run_selected, width=15).pack(pady=4)
+        ttk.Button(buttons_frame, text="Uruchom", command=self.run_selected, width=15).pack(pady=(0, 4))
+        ttk.Button(buttons_frame, text="Nagraj makro...", command=self.record_macro, width=15).pack(pady=4)
+        #ttk.Button(buttons_frame, text="Nowe makro", command=self.new_macro, width=15).pack(pady=4)
+        ttk.Button(buttons_frame, text="Duplikuj", command=self.duplicate_selected, width=15).pack(pady=4)
         ttk.Button(buttons_frame, text="Edytuj...", command=self.edit_selected, width=15).pack(pady=4)
         ttk.Button(buttons_frame, text="Usuń", command=self.delete_selected, width=15).pack(pady=4)
         ttk.Button(buttons_frame, text="Zamknij", command=self.close, width=15).pack(pady=(4, 0))
@@ -2823,6 +2834,50 @@ class MacrosListDialog(tk.Toplevel):
     def record_macro(self):
         """Otwórz okno nagrywania makra"""
         MacroRecordingDialog(self, self.viewer, refresh_callback=self.load_macros)
+    
+    def new_macro(self):
+        """Otwórz okno nagrywania nowego makra z pustą nazwą"""
+        MacroRecordingDialog(self, self.viewer, refresh_callback=self.load_macros)
+    
+    def duplicate_selected(self):
+        """Duplikuj wybrane makro pod nową nazwą"""
+        selection = self.macros_listbox.curselection()
+        if not selection:
+            custom_messagebox(self, "Informacja", "Wybierz makro do duplikacji.", typ="info")
+            return
+        
+        index = selection[0]
+        macros = self.prefs_manager.get_profiles('macros')
+        macro_name = list(macros.keys())[index]
+        
+        # Ask for new name using simpledialog
+        from tkinter import simpledialog
+        new_name = simpledialog.askstring(
+            "Duplikuj makro",
+            f"Wprowadź nową nazwę dla kopii makra '{macro_name}':",
+            parent=self
+        )
+        
+        if not new_name:
+            return  # User cancelled
+        
+        new_name = new_name.strip()
+        if not new_name:
+            custom_messagebox(self, "Błąd", "Nazwa makra nie może być pusta.", typ="error")
+            return
+        
+        # Check if macro with new name already exists
+        if new_name in macros:
+            custom_messagebox(self, "Błąd", f"Makro o nazwie '{new_name}' już istnieje.", typ="error")
+            return
+        
+        # Create duplicate
+        macros[new_name] = macros[macro_name].copy()
+        self.prefs_manager.save_profiles('macros', macros)
+        self.load_macros()
+        self.viewer.refresh_macros_menu()
+        
+        custom_messagebox(self, "Sukces", f"Makro '{macro_name}' zostało zduplikowane jako '{new_name}'.", typ="info")
     
     def run_selected(self):
         """Uruchom wybrane makro"""
@@ -3133,6 +3188,35 @@ class SelectablePDFViewer:
     #   self.hovered_page_index = page_index
     #    self.update_focus_display(hide_mouse_focus=False)
 
+    def run_compare_program(self):
+        import subprocess
+        import sys
+
+        # Pobierz pełne ścieżki do ostatnio otwartego i zapisanego pliku (dla compare.exe)
+        last_opened = self.prefs_manager.get('last_opened_file', '')
+        last_saved = self.prefs_manager.get('last_saved_file', '')
+
+        # Ścieżka do compare.exe w tym samym katalogu co PDFEditor.py
+        if getattr(sys, 'frozen', False):
+            exe_dir = os.path.dirname(sys.executable)
+        else:
+            exe_dir = os.path.dirname(os.path.abspath(__file__))
+        compare_exe = os.path.join(exe_dir, 'compare.exe')
+
+        # Skonstruuj listę argumentów
+        args = [compare_exe]
+        if last_opened and os.path.isfile(last_opened):
+            args.append(last_opened)
+            if last_saved and os.path.isfile(last_saved):
+                args.append(last_saved)
+
+        print("Wywołanie compare.exe z argumentami:", args)  # Wypisz w konsoli
+
+        try:
+            subprocess.Popen(args)
+        except Exception as e:
+            custom_messagebox(self.master, "Błąd", f"Nie udało się uruchomić compare.exe:\n{e}", typ="error")
+            
     def _setup_drag_and_drop_file(self):
         # Rejestrujemy canvas do odbioru plików DND
         self.master.drop_target_register(self.DND_FILES)
@@ -3895,26 +3979,37 @@ class SelectablePDFViewer:
             custom_messagebox(self.master, "Błąd", f"Wystąpił błąd podczas odwracania stron: {e}", typ="error")
             # W przypadku błędu użytkownik może użyć przycisku Cofnij aby przywrócić stan
     
-    def _apply_selection_by_indices(self, indices_to_select):
-        """Ogólna metoda do zaznaczania stron na podstawie listy indeksów."""
+    def _apply_selection_by_indices(self, indices_to_select, macro_source_page_count=None):
+        """
+        Zaznacza strony zgodnie z podanymi indeksami do source_page_count-1,
+        a następnie wszystkie strony powyżej source_page_count do końca dokumentu.
+        """
         if not self.pdf_document:
             return
 
+        max_index = len(self.pdf_document) - 1
+
+        indices = set()
+        if indices_to_select:
+            if macro_source_page_count is not None:
+                # Zaznacz tylko te, które są <= source_page_count - 1
+                indices.update(i for i in indices_to_select if 0 <= i < macro_source_page_count)
+                # Dodaj wszystkie strony powyżej source_page_count-1
+                indices.update(range(macro_source_page_count, max_index + 1))
+            else:
+                # Standardowe zachowanie dla braku makra
+                indices.update(i for i in indices_to_select if 0 <= i <= max_index)
+        else:
+            # Jeśli nie podano indeksów, ale jest source_page_count, zaznacz od source_page_count do końca
+            if macro_source_page_count is not None:
+                indices.update(range(macro_source_page_count, max_index + 1))
+
         current_selection = self.selected_pages.copy()
-        
-        # Tworzenie nowej, czystej selekcji
-        new_selection = set(indices_to_select)
-        
-        # Zastąpienie dotychczasowej selekcji
+        new_selection = set(indices)
         self.selected_pages = new_selection
-        
-        # Przerenderowanie, jeśli selekcja się zmieniła
+
         if current_selection != self.selected_pages:
-            
-            # === POPRAWKA ===
-            # Właściwa metoda do odświeżania widoku po zmianie zaznaczenia:
             self.update_selection_display()
-            # ================
             self.update_tool_button_states()
             
     def _select_odd_pages(self):
@@ -4371,6 +4466,10 @@ class SelectablePDFViewer:
         menu_bar.add_cascade(label="Makra", menu=self.macros_menu)
         self.refresh_macros_menu()  # dodaj to tu!
         
+        self.external_menu = tk.Menu(menu_bar, tearoff=0)
+        menu_bar.add_cascade(label="Programy", menu=self.external_menu)
+        self.external_menu.add_command(label="Porównianie PDF", command=self.run_compare_program)
+        
         self.help_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Pomoc", menu=self.help_menu)
         self.help_menu.add_command(label="Skróty klawiszowe...", command=self.show_shortcuts_dialog)
@@ -4755,9 +4854,9 @@ class SelectablePDFViewer:
 
         # --- Dodaj to poniżej! ---
         if getattr(self, "macro_recording", False):
-            # Po kliknięciu, nagraj aktualne zaznaczenie
             indices = sorted(self.selected_pages)
-            self._record_action('select_custom', indices=indices)
+            page_count = len(self.pdf_document) if self.pdf_document else 0
+            self._record_action('select_custom', indices=indices, source_page_count=page_count)
         
     def _toggle_selection_lpm(self, page_index):
         # Validate page_index before using it
@@ -4970,6 +5069,8 @@ class SelectablePDFViewer:
             self.file_menu.entryconfig("Zapisz jako...", state=tk.NORMAL)
             self.update_tool_button_states()
             self.update_focus_display()
+            # --- DODANE: zapamiętaj ostatnio otwarty plik PDF! ---
+            self.prefs_manager.set('last_opened_file', filepath)   
             
         except Exception as e:
             self._update_status(f"BŁĄD: Nie udało się wczytać pliku PDF: {e}")
@@ -5778,11 +5879,13 @@ class SelectablePDFViewer:
         try:
             self.pdf_document.save(filepath, garbage=4, clean=True, pretty=True)  
             self._update_status(f"Dokument pomyślnie zapisany jako: {filepath}")
+            self.prefs_manager.set('last_saved_file', filepath) 
             # Po zapisaniu czyścimy stosy undo/redo
             self.undo_stack.clear()
             self.redo_stack.clear()
             print("DEBUG: Czyszczenie historii save_document")
             self.update_tool_button_states() 
+            
         except Exception as e:
             self._update_status(f"BŁĄD: Nie udało się zapisać pliku: {e}")
             
@@ -6669,7 +6772,8 @@ class SelectablePDFViewer:
                     indices = params.get('indices', [])
                     if isinstance(indices, int):
                         indices = [indices]
-                    self._apply_selection_by_indices(indices)
+                    source_page_count = params.get('source_page_count', None)
+                    self._apply_selection_by_indices(indices, macro_source_page_count=source_page_count)
                 # Parameterized actions - replay with saved parameters
                 elif action == 'shift_page_content' and params:
                     self._replay_shift_page_content(params)
