@@ -218,6 +218,8 @@ class PreferencesManager:
             'default_read_path': '',
             'last_open_path': '',
             'last_save_path': '',
+            'last_opened_file': '',
+            'last_saved_file': '',
             'thumbnail_quality': 'Średnia',
             'confirm_delete': 'False',
             'export_image_dpi': '300',  # DPI dla eksportu obrazów (150, 300, 600)
