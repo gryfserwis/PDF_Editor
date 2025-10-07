@@ -27,7 +27,7 @@ ICON_FOLDER = os.path.join(BASE_DIR, "icons")
 #FOCUS_HIGHLIGHT_COLOR = "#B3E5FC" # Czarny (Black)
 FOCUS_HIGHLIGHT_COLOR = "#d3d3d3" # Czarny (Black)
 FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
-2  
+
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
 PROGRAM_VERSION = "5.5.2"
