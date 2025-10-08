@@ -16,6 +16,8 @@ from pypdf.generic import RectangleObject, FloatObject, ArrayObject
 # wystarczyłoby, jeśli pypdf je konwertuje. Zostawiam dla pełnej kompatybilności.
 from pypdf.generic import NameObject # Dodaj import dla NameObject
 import json
+import requests
+import webbrowser
 
 # Definicja BASE_DIR i inne stałe
 if getattr(sys, 'frozen', False):
@@ -115,6 +117,90 @@ def resource_path(relative_path):
         base_path = os.path.dirname(os.path.abspath(__file__))
         
     return os.path.join(base_path, relative_path)
+
+def check_for_github_update(current_version, repo_owner="gryfserwis", repo_name="PDF_Editor"):
+    """
+    Sprawdza najnowszą wersję programu na GitHub Releases.
+    
+    Args:
+        current_version: Aktualna wersja programu (string, np. "5.5.3")
+        repo_owner: Właściciel repozytorium GitHub
+        repo_name: Nazwa repozytorium GitHub
+    
+    Returns:
+        dict: {
+            'available': bool,  # Czy dostępna jest nowsza wersja
+            'latest_version': str,  # Najnowsza wersja (lub None jeśli błąd)
+            'download_url': str,  # URL do strony releases (lub None)
+            'error': str  # Komunikat błędu (lub None)
+        }
+    """
+    try:
+        api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
+        response = requests.get(api_url, timeout=10)
+        
+        if response.status_code == 404:
+            return {
+                'available': False,
+                'latest_version': None,
+                'download_url': None,
+                'error': 'Nie znaleziono wydań w repozytorium.'
+            }
+        
+        response.raise_for_status()
+        data = response.json()
+        
+        latest_version = data.get('tag_name', '').lstrip('v')
+        html_url = data.get('html_url', f"https://github.com/{repo_owner}/{repo_name}/releases")
+        
+        if not latest_version:
+            return {
+                'available': False,
+                'latest_version': None,
+                'download_url': html_url,
+                'error': 'Nie można odczytać numeru wersji z GitHub.'
+            }
+        
+        # Porównaj wersje (proste porównanie stringów dla x.y.z)
+        def version_tuple(v):
+            try:
+                return tuple(map(int, v.split('.')))
+            except:
+                return (0, 0, 0)
+        
+        current = version_tuple(current_version)
+        latest = version_tuple(latest_version)
+        
+        is_newer = latest > current
+        
+        return {
+            'available': is_newer,
+            'latest_version': latest_version,
+            'download_url': html_url,
+            'error': None
+        }
+        
+    except requests.exceptions.Timeout:
+        return {
+            'available': False,
+            'latest_version': None,
+            'download_url': None,
+            'error': 'Przekroczono limit czasu połączenia.'
+        }
+    except requests.exceptions.ConnectionError:
+        return {
+            'available': False,
+            'latest_version': None,
+            'download_url': None,
+            'error': 'Brak połączenia z internetem.'
+        }
+    except Exception as e:
+        return {
+            'available': False,
+            'latest_version': None,
+            'download_url': None,
+            'error': f'Błąd sprawdzania aktualizacji: {str(e)}'
+        }
   
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -4470,7 +4556,7 @@ class SelectablePDFViewer:
         PROGRAM_LOGO_PATH = resource_path(os.path.join('icons', 'logo.png'))
         # STAŁE WYMIARY OKNA
         DIALOG_WIDTH = 280
-        DIALOG_HEIGHT = 260
+        DIALOG_HEIGHT = 300
 
         # 1. Inicjalizacja i Ustawienia Okna
         dialog = tk.Toplevel(self.master)
@@ -4542,10 +4628,152 @@ class SelectablePDFViewer:
         )
         copy_label.pack(pady=(5, 0))
         
+        # Przycisk sprawdzania aktualizacji
+        update_button = ttk.Button(main_frame, text="Sprawdź aktualizacje", command=lambda: self.show_update_dialog(dialog))
+        update_button.pack(pady=(10, 0))
+        
         # 5. Blokowanie
         dialog.bind('<Escape>', lambda e: dialog.destroy())
         dialog.focus_force()
         dialog.wait_window()
+    
+    def show_update_dialog(self, parent_dialog=None):
+        """
+        Sprawdza dostępność aktualizacji z GitHub i wyświetla odpowiedni dialog.
+        
+        Args:
+            parent_dialog: Opcjonalny dialog rodzica (np. okno "O programie")
+        """
+        # Wyświetl komunikat o sprawdzaniu
+        checking_dialog = tk.Toplevel(self.master)
+        checking_dialog.title("Sprawdzanie aktualizacji")
+        checking_dialog.transient(self.master)
+        checking_dialog.resizable(False, False)
+        
+        # Wyśrodkuj względem głównego okna
+        checking_dialog.update_idletasks()
+        master_x = self.master.winfo_rootx()
+        master_y = self.master.winfo_rooty()
+        master_w = self.master.winfo_width()
+        master_h = self.master.winfo_height()
+        dialog_w = 250
+        dialog_h = 80
+        position_x = master_x + (master_w - dialog_w) // 2
+        position_y = master_y + (master_h - dialog_h) // 2
+        checking_dialog.geometry(f"{dialog_w}x{dialog_h}+{position_x}+{position_y}")
+        
+        frame = ttk.Frame(checking_dialog)
+        frame.pack(padx=20, pady=20)
+        
+        ttk.Label(frame, text="Sprawdzanie aktualizacji...", font=("Helvetica", 10)).pack()
+        
+        # Uruchom sprawdzanie w tle
+        def check_updates():
+            result = check_for_github_update(PROGRAM_VERSION)
+            checking_dialog.destroy()
+            
+            # Wyświetl wynik
+            if result['error']:
+                # Błąd połączenia
+                self._show_update_result_dialog(
+                    title="Błąd sprawdzania aktualizacji",
+                    message=result['error'],
+                    show_download=False
+                )
+            elif result['available']:
+                # Dostępna nowa wersja
+                message = (f"Dostępna jest nowa wersja: {result['latest_version']}\n"
+                          f"Aktualna wersja: {PROGRAM_VERSION}\n\n"
+                          f"Czy chcesz przejść do strony pobierania?")
+                self._show_update_result_dialog(
+                    title="Dostępna aktualizacja",
+                    message=message,
+                    show_download=True,
+                    download_url=result['download_url']
+                )
+            else:
+                # Brak nowej wersji
+                if result['latest_version']:
+                    message = f"Masz najnowszą wersję ({PROGRAM_VERSION})."
+                else:
+                    message = "Masz najnowszą wersję."
+                self._show_update_result_dialog(
+                    title="Brak aktualizacji",
+                    message=message,
+                    show_download=False
+                )
+        
+        # Uruchom sprawdzanie po krótkiej chwili (aby dialog się pokazał)
+        checking_dialog.after(100, check_updates)
+    
+    def _show_update_result_dialog(self, title, message, show_download, download_url=None):
+        """
+        Wyświetla dialog z wynikiem sprawdzania aktualizacji.
+        
+        Args:
+            title: Tytuł okna
+            message: Treść komunikatu
+            show_download: Czy pokazać przycisk pobierania
+            download_url: URL do strony releases (jeśli show_download=True)
+        """
+        dialog = tk.Toplevel(self.master)
+        dialog.title(title)
+        dialog.transient(self.master)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        
+        main_frame = ttk.Frame(dialog)
+        main_frame.pack(padx=20, pady=15)
+        
+        # Komunikat
+        msg_label = ttk.Label(
+            main_frame,
+            text=message,
+            font=("Helvetica", 10),
+            justify="center",
+            wraplength=300
+        )
+        msg_label.pack(pady=(0, 15))
+        
+        # Przyciski
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack()
+        
+        if show_download and download_url:
+            def open_download():
+                webbrowser.open(download_url)
+                dialog.destroy()
+            
+            download_btn = ttk.Button(
+                button_frame,
+                text="Pobierz aktualizację",
+                command=open_download,
+                width=18
+            )
+            download_btn.pack(side="left", padx=4)
+        
+        close_btn = ttk.Button(
+            button_frame,
+            text="Zamknij",
+            command=dialog.destroy,
+            width=12
+        )
+        close_btn.pack(side="left", padx=4)
+        
+        # Wyśrodkuj dialog
+        dialog.update_idletasks()
+        dialog_w = dialog.winfo_width()
+        dialog_h = dialog.winfo_height()
+        master_x = self.master.winfo_rootx()
+        master_y = self.master.winfo_rooty()
+        master_w = self.master.winfo_width()
+        master_h = self.master.winfo_height()
+        position_x = master_x + (master_w - dialog_w) // 2
+        position_y = master_y + (master_h - dialog_h) // 2
+        dialog.geometry(f"+{position_x}+{position_y}")
+        
+        dialog.bind('<Escape>', lambda e: dialog.destroy())
+        dialog.focus_force()
     
     def _setup_context_menu(self):
         self.context_menu = tk.Menu(self.master, tearoff=0)
