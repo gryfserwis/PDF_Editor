@@ -23,11 +23,18 @@ if getattr(sys, 'frozen', False):
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-ICON_FOLDER = os.path.join(BASE_DIR, "icons")
+def get_icon_folder():
+    if getattr(sys, 'frozen', False):
+        return os.path.join(sys._MEIPASS, "icons")
+    else:
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
+
+ICON_FOLDER = get_icon_folder()
+
 #FOCUS_HIGHLIGHT_COLOR = "#B3E5FC" # Czarny (Black)
 FOCUS_HIGHLIGHT_COLOR = "#d3d3d3" # Czarny (Black)
 FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
-
+ 
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
 PROGRAM_VERSION = "5.5.2"
