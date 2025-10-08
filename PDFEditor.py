@@ -37,7 +37,7 @@ FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
  
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
-PROGRAM_VERSION = "5.5.2"
+PROGRAM_VERSION = "5.5.3"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
 # === STAŁE DLA A4 [w punktach PDF i mm] ===
@@ -3460,17 +3460,16 @@ class SelectablePDFViewer:
         """
         Wstawia numerację stron, z uwzględnieniem tylko zaznaczonych stron 
         (self.selected_pages) oraz poprawnej logiki centrowania ('srodek').
+        Obsługuje poprawnie pozycje lewa/prawa/środek dla wszystkich rotacji.
         """
         if not self.pdf_document:
             self._update_status("Musisz zaznaczyć przynajmniej jedną stronę PDF.")
             return
 
-        # POPRAWKA: Sprawdzamy i używamy atrybutu self.selected_pages
         if not hasattr(self, 'selected_pages') or not self.selected_pages:
              self._update_status("Musisz zaznaczyć przynajmniej jedną stronę PDF.")
              return
         
-        # 1. Wywołanie dialogu i pobranie ustawień
         dialog = PageNumberingDialog(self.master, self.prefs_manager)
         settings = dialog.result
 
@@ -3486,7 +3485,6 @@ class SelectablePDFViewer:
         try:
             self._save_state_to_undo() 
             
-            # 2. Pobieranie parametrów
             start_number = settings['start_num']
             mode = settings['mode']                 
             direction = settings['alignment']        
@@ -3499,123 +3497,107 @@ class SelectablePDFViewer:
 
             left_pt_base = left_mm * MM_PT
             right_pt_base = right_mm * MM_PT
-            margin_v_mm = settings['margin_vertical_mm']
-            margin_v = margin_v_mm * MM_PT
+            margin_v = settings['margin_vertical_mm'] * MM_PT
             font_size = settings['font_size']
             font = settings['font_name']
             
-            # Pobieramy listę indeksów stron do przetworzenia
             selected_indices = sorted(self.selected_pages)
             
             current_number = start_number
-            # Całkowita liczba stron, które zostaną PONUMEROWANE (dla formatu 'full')
             total_counted_pages = len(selected_indices) + start_number - 1 
             
-            # 3. Główna pętla przez ZAZNACZONE strony
-            # i = indeks strony w dokumencie
-            for i in selected_indices:
-                
-                # Używamy load_page(i) tak jak w Twojej funkcji usuwania
+            for idx, i in enumerate(selected_indices):
                 page = doc.load_page(i) 
                 rect = page.rect
                 rotation = page.rotation
-                
-                # Tworzenie tekstu numeracji
-                if format_mode == 'full':
-                    # current_number rośnie od start_number do total_counted_pages
-                    text = f"Strona {current_number} z {total_counted_pages}"
-                else:
-                    text = str(current_number)
-                
+
+                text = f"Strona {current_number} z {total_counted_pages}" if format_mode == 'full' else str(current_number)
                 text_width = fitz.get_text_length(text, fontname=font, fontsize=font_size)
 
-                # A. Ustal ostateczne wyrównanie (align)
-                is_even_counted_page = (current_number - start_number) % 2 == 0 
-
+                numerowana_strona = idx  # numerowana_strona liczymy od 0
+                # 1. Ustal align
                 if mode == "lustrzana":
-                    if direction == "srodek":
+                    if direction == "lewa":
+                        align = "lewa" if numerowana_strona % 2 == 0 else "prawa"
+                    elif direction == "prawa":
+                        align = "prawa" if numerowana_strona % 2 == 0 else "lewa"
+                    else:
                         align = "srodek"
-                    elif direction == "lewa":
-                        # Lewa (ustawienie) = Wewnętrzna (zmiana na zewnątrz/do wewnątrz w zależności od parzystości licznika)
-                        align = "lewa" if is_even_counted_page else "prawa"
-                    else: # direction == "prawa"
-                        # Prawa (ustawienie) = Zewnętrzna
-                        align = "prawa" if is_even_counted_page else "lewa"
                 else:
                     align = direction
 
-                # B. Korekta marginesów bazowych (left_pt, right_pt) na podstawie 'mirror_margins'
-                is_physical_odd = (i + 1) % 2 == 1 # Indeks strony fizycznej (i)
-                
+                # 2. Korekta align przy rotacji poziomej
+                # if rotation == 270 and align in ("lewa", "prawa"):
+                #align = "prawa" if align == "lewa" else "lewa"
+
+                # 3. Pozycjonowanie numeru
                 if mirror_margins:
-                    # Zamiana marginesów dla stron parzystych dokumentu
-                    if is_physical_odd:
-                        left_pt, right_pt = left_pt_base, right_pt_base
-                    else:
+                    if numerowana_strona % 2 == 1:
                         left_pt, right_pt = right_pt_base, left_pt_base
+                    else:
+                        left_pt, right_pt = left_pt_base, right_pt_base
                 else:
                     left_pt, right_pt = left_pt_base, right_pt_base
 
-                # C. Obliczanie pozycji (x, y) z uwzględnieniem rotacji
-                
+                # --- LOGIKA POZYCJONOWANIA ---
                 if rotation == 0:
                     if align == "lewa":
                         x = rect.x0 + left_pt
                     elif align == "prawa":
                         x = rect.x1 - right_pt - text_width
                     elif align == "srodek":
-                        # Skorygowana formuła centrowania
-                        total_width = rect.width
-                        margin_diff = left_pt - right_pt
-                        x = rect.x0 + (total_width / 2) - (text_width / 2) + (margin_diff / 2)
-                        
-                    y = rect.y0 + margin_v + font_size if position == "gora" else rect.y1 - margin_v 
+                        text_area_w = rect.width - left_pt - right_pt
+                        x = rect.x0 + left_pt + (text_area_w / 2) - (text_width / 2)
+                    y = rect.y0 + margin_v + font_size if position == "gora" else rect.y1 - margin_v
                     angle = 0
-                    
                 elif rotation == 90:
+                    lp, rp = left_pt, right_pt  
+                    x = rect.y0 + margin_v + font_size if position == "gora" else rect.y1 - margin_v
                     if align == "lewa":
-                        y = rect.y0 + left_pt
+                        y = rect.x1 - lp
                     elif align == "prawa":
-                        y = rect.y1 - right_pt - text_width
+                        y = rect.x0 + rp + text_width
                     elif align == "srodek":
-                        total_height = rect.height 
-                        margin_diff = left_pt - right_pt
-                        y = rect.y0 + (total_height / 2) - (text_width / 2) + (margin_diff / 2)
-                        
-                    x = rect.x0 + margin_v + font_size if position == "gora" else rect.x1 - margin_v
+                        text_area_w = rect.width - lp - rp
+                        y = rect.x0 + rp + (text_area_w / 2) + (text_width / 2)
                     angle = 90
-                    
                 elif rotation == 180:
+                    lp, rp = left_pt, right_pt  
                     if align == "lewa":
-                        x = rect.x1 - right_pt - text_width 
+                        x = rect.x1 - lp 
                     elif align == "prawa":
-                        x = rect.x0 + left_pt
+                        x = rect.x0 + rp + text_width
                     elif align == "srodek":
-                        total_width = rect.width
-                        margin_diff = left_pt - right_pt
-                        x = rect.x0 + (total_width / 2) - (text_width / 2) + (margin_diff / 2)
-
+                        text_area_w = rect.width - lp - rp
+                        x = rect.x0 + rp + (text_area_w / 2) + (text_width / 2)
                     y = rect.y1 - margin_v - font_size if position == "gora" else rect.y0 + margin_v
                     angle = 180
-                    
                 elif rotation == 270:
+                    lp, rp = left_pt, right_pt
+                    x = rect.y1 - margin_v if position == "gora" else rect.y0 + margin_v
                     if align == "lewa":
-                        y = rect.y1 - right_pt - text_width
+                        y = rect.x0 + lp
                     elif align == "prawa":
-                        y = rect.y0 + left_pt
+                        y = rect.x1 - rp - text_width
                     elif align == "srodek":
-                        total_height = rect.height 
-                        margin_diff = left_pt - right_pt
-                        y = rect.y0 + (total_height / 2) - (text_width / 2) + (margin_diff / 2)
-                        
-                    x = rect.x1 - margin_v - font_size if position == "gora" else rect.x0 + margin_v
+                        text_area_w = rect.width - lp - rp
+                        y = rect.x0 + lp + (text_area_w / 2) - (text_width / 2)
                     angle = 270
+     #           elif rotation == 270:
+     #              x = rect.y1 - margin_v if position == "gora" else rect.y0 + margin_v
+      #              if align == "lewa":
+       #                 y = rect.x1 - right_pt - text_width
+        #            elif align == "prawa":
+         #               y = rect.x0 + left_pt
+          #          elif align == "srodek":
+           #             text_area_w = rect.width - left_pt - right_pt
+            #            y = rect.x0 + left_pt + (text_area_w / 2) - (text_width / 2)
+             #       angle = 270
                 else:
                     x = rect.x0 + left_pt
                     y = rect.y1 - margin_v
                     angle = 0
 
-                # D. Wstawienie numeru
                 page.insert_text(
                     fitz.Point(x, y),
                     text,
@@ -3625,14 +3607,11 @@ class SelectablePDFViewer:
                     rotate=angle
                 )
 
-                # WZROST LICZNIKA TYLKO DLA PRZETWORZONEJ STRONY
+                print(f"✅ Strona {i+1}: numer {text}, align={align}, mirror={mirror_margins}, x={x:.2f}, y={y:.2f}, rotacja={rotation}°")
                 current_number += 1
 
-            # 4. Finalizacja GUI
             self._reconfigure_grid() 
             self._update_status(f"Numeracja wstawiona na {len(selected_indices)} stronach. Plik gotowy do zapisu.")
-            
-            # Record action with parameters
             self._record_action('insert_page_numbers', 
                 start_num=start_number,
                 mode=mode,
@@ -3648,6 +3627,7 @@ class SelectablePDFViewer:
         except Exception as e:
             self._update_status(f"BŁĄD przy dodawaniu numeracji: {e}")
             custom_messagebox(self.master, "Błąd Numeracji", str(e), typ="error")
+   
     def remove_page_numbers(self):
         """
         Usuwa numery stron z marginesów określonych przez użytkownika.
