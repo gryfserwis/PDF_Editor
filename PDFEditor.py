@@ -37,7 +37,7 @@ FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
  
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
-PROGRAM_VERSION = "5.5.4"
+PROGRAM_VERSION = "5.5.5"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
 # === STAŁE DLA A4 [w punktach PDF i mm] ===
@@ -3257,9 +3257,15 @@ class SelectablePDFViewer:
     def _crop_pages(self, pdf_bytes, selected_indices, top_mm, bottom_mm, left_mm, right_mm, reposition=False, pos_mode="center", offset_x_mm=0, offset_y_mm=0):
         reader = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
+        total_pages = len(reader.pages)
+        
+        self.show_progressbar(maximum=total_pages)
+        self._update_status("Kadrowanie stron...")
+        
         for i, page in enumerate(reader.pages):
             if i not in selected_indices:
                 writer.add_page(page)
+                self.update_progressbar(i + 1)
                 continue
             orig_mediabox = RectangleObject([float(v) for v in page.mediabox])
             x0, y0, x1, y1 = [float(v) for v in orig_mediabox]
@@ -3269,6 +3275,7 @@ class SelectablePDFViewer:
             new_y1 = y1 - mm2pt(top_mm)
             if new_x0 >= new_x1 or new_y0 >= new_y1:
                 writer.add_page(page)
+                self.update_progressbar(i + 1)
                 continue
             new_rect = RectangleObject([new_x0, new_y0, new_x1, new_y1])
 
@@ -3288,6 +3295,9 @@ class SelectablePDFViewer:
                     page.add_transformation(transform)
 
             writer.add_page(page)
+            self.update_progressbar(i + 1)
+        
+        self.hide_progressbar()
         out = io.BytesIO()
         writer.write(out)
         out.seek(0)
@@ -3298,7 +3308,11 @@ class SelectablePDFViewer:
     def _mask_crop_pages(self, pdf_bytes, selected_indices, top_mm, bottom_mm, left_mm, right_mm):
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         MM_TO_PT = 72 / 25.4
-        for i in selected_indices:
+        
+        self.show_progressbar(maximum=len(selected_indices))
+        self._update_status("Maskowanie marginesów...")
+        
+        for idx_progress, i in enumerate(selected_indices):
             page = doc[i]
             rect = page.rect
 
@@ -3324,7 +3338,10 @@ class SelectablePDFViewer:
             if bottom_pt > 0:
                 mask_rect = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y0 + bottom_pt)
                 page.draw_rect(mask_rect, color=(1,1,1), fill=(1,1,1), overlay=True)
+            
+            self.update_progressbar(idx_progress + 1)
 
+        self.hide_progressbar()
         output_bytes = doc.write()
         doc.close()
         return output_bytes
@@ -3334,9 +3351,15 @@ class SelectablePDFViewer:
         writer = PdfWriter()
         target_width = mm2pt(width_mm)
         target_height = mm2pt(height_mm)
+        total_pages = len(reader.pages)
+        
+        self.show_progressbar(maximum=total_pages)
+        self._update_status("Zmiana rozmiaru stron ze skalowaniem...")
+        
         for i, page in enumerate(reader.pages):
             if i not in selected_indices:
                 writer.add_page(page)
+                self.update_progressbar(i + 1)
                 continue
             orig_w = float(page.mediabox.width)
             orig_h = float(page.mediabox.height)
@@ -3348,6 +3371,9 @@ class SelectablePDFViewer:
             page.mediabox = RectangleObject([0, 0, target_width, target_height])
             page.cropbox = RectangleObject([0, 0, target_width, target_height])
             writer.add_page(page)
+            self.update_progressbar(i + 1)
+        
+        self.hide_progressbar()
         out = io.BytesIO()
         writer.write(out)
         out.seek(0)
@@ -3358,9 +3384,15 @@ class SelectablePDFViewer:
         writer = PdfWriter()
         target_width = mm2pt(width_mm)
         target_height = mm2pt(height_mm)
+        total_pages = len(reader.pages)
+        
+        self.show_progressbar(maximum=total_pages)
+        self._update_status("Zmiana rozmiaru stron bez skalowania...")
+        
         for i, page in enumerate(reader.pages):
             if i not in selected_indices:
                 writer.add_page(page)
+                self.update_progressbar(i + 1)
                 continue
             orig_w = float(page.mediabox.width)
             orig_h = float(page.mediabox.height)
@@ -3375,6 +3407,9 @@ class SelectablePDFViewer:
             page.mediabox = RectangleObject([0, 0, target_width, target_height])
             page.cropbox = RectangleObject([0, 0, target_width, target_height])
             writer.add_page(page)
+            self.update_progressbar(i + 1)
+        
+        self.hide_progressbar()
         out = io.BytesIO()
         writer.write(out)
         out.seek(0)
@@ -3510,6 +3545,8 @@ class SelectablePDFViewer:
             current_number = start_number
             total_counted_pages = len(selected_indices) + start_number - 1 
             
+            self.show_progressbar(maximum=len(selected_indices))
+            
             for idx, i in enumerate(selected_indices):
                 page = doc.load_page(i) 
                 rect = page.rect
@@ -3613,8 +3650,10 @@ class SelectablePDFViewer:
 
                 print(f"✅ Strona {i+1}: numer {text}, align={align}, mirror={mirror_margins}, x={x:.2f}, y={y:.2f}, rotacja={rotation}°")
                 current_number += 1
+                self.update_progressbar(idx + 1)
 
-            self._reconfigure_grid() 
+            self.hide_progressbar()
+            self._reconfigure_grid()
             self._update_status(f"Numeracja wstawiona na {len(selected_indices)} stronach. Plik gotowy do zapisu.")
             self._record_action('insert_page_numbers', 
                 start_num=start_number,
@@ -3629,6 +3668,7 @@ class SelectablePDFViewer:
                 bottom_mm=settings.get('bottom_mm', 20))
 
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"BŁĄD przy dodawaniu numeracji: {e}")
             custom_messagebox(self.master, "Błąd Numeracji", str(e), typ="error")
    
@@ -3671,7 +3711,10 @@ class SelectablePDFViewer:
                 self._save_state_to_undo()
             modified_count = 0
             
-            for page_index in pages_to_process:
+            self.show_progressbar(maximum=len(pages_to_process))
+            self._update_status("Usuwanie numerów stron...")
+            
+            for idx, page_index in enumerate(pages_to_process):
                 page = self.pdf_document.load_page(page_index)
                 rect = page.rect
                 
@@ -3709,8 +3752,11 @@ class SelectablePDFViewer:
                 if found_and_removed:
                     page.apply_redactions()
                     modified_count += 1
+                
+                self.update_progressbar(idx + 1)
                     
             # 3. Finalizacja
+            self.hide_progressbar()
             if modified_count > 0:
           #      self._save_state_to_undo()
                 self._reconfigure_grid() 
@@ -3720,6 +3766,7 @@ class SelectablePDFViewer:
                 self._update_status(f"Nie znaleziono numerów stron w marginesach: G={top_mm:.1f}mm, D={bottom_mm:.1f}mm.")
                 
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"BŁĄD: Nie udało się usunąć numerów stron: {e}")
             
     def show_shortcuts_dialog(self):
@@ -3885,6 +3932,10 @@ class SelectablePDFViewer:
 
             pages_to_shift = sorted(list(self.selected_pages))
             pages_to_shift_set = set(pages_to_shift)
+            total_pages = len(self.pdf_document)
+            
+            self.show_progressbar(maximum=total_pages * 2)  # 2 etapy: oczyszczanie i przesuwanie
+            self._update_status("Przesuwanie zawartości stron...")
 
             # --- 1. Resave wybranych stron przez PyMuPDF (oczyszczenie) ---
             original_pdf_bytes = self.pdf_document.tobytes()
@@ -3900,6 +3951,7 @@ class SelectablePDFViewer:
                 else:
                     # Dodajemy oryginalną stronę bez zmian
                     cleaned_doc.insert_pdf(pymupdf_doc, from_page=idx, to_page=idx)
+                self.update_progressbar(idx + 1)
 
             cleaned_pdf_bytes = cleaned_doc.write()
             pymupdf_doc.close()
@@ -3914,6 +3966,7 @@ class SelectablePDFViewer:
                 if i in pages_to_shift_set:
                     page.add_transformation(transform)
                 pdf_writer.add_page(page)
+                self.update_progressbar(total_pages + i + 1)
 
             new_pdf_stream = io.BytesIO()
             pdf_writer.write(new_pdf_stream)
@@ -3925,6 +3978,7 @@ class SelectablePDFViewer:
             import fitz
             self.pdf_document = fitz.open("pdf", new_pdf_bytes)
 
+            self.hide_progressbar()
             self._reconfigure_grid()
             self._update_status(f"Przesunięto zawartość na {len(pages_to_shift)} stronach o {result['x_mm']} mm (X) i {result['y_mm']} mm (Y) – automatyczne oczyszczenie stron.")
             self._record_action('shift_page_content',
@@ -3934,6 +3988,7 @@ class SelectablePDFViewer:
                 y_dir=result['y_dir'])
 
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"BŁĄD (pypdf): Nie udało się przesunąć zawartości: {e}")
                 
     def _reverse_pages(self):
@@ -3950,10 +4005,17 @@ class SelectablePDFViewer:
             page_count = len(doc)
             
             # Tworzenie nowego, pustego dokumentu z odwróconą kolejnością
-            new_doc = fitz.open() 
-            for i in range(page_count - 1, -1, -1):
+            new_doc = fitz.open()
+            
+            self.show_progressbar(maximum=page_count)
+            self._update_status("Odwracanie kolejności stron...")
+            
+            for idx, i in enumerate(range(page_count - 1, -1, -1)):
                 new_doc.insert_pdf(doc, from_page=i, to_page=i)
-                
+                self.update_progressbar(idx + 1)
+            
+            self.hide_progressbar()
+            
             # Zastąpienie starego dokumentu nowym
             self.pdf_document.close()
             self.pdf_document = new_doc
@@ -3977,6 +4039,7 @@ class SelectablePDFViewer:
             self._update_status(f"Pomyślnie odwrócono kolejność {page_count} stron.")
             
         except Exception as e:
+            self.hide_progressbar()
             custom_messagebox(self.master, "Błąd", f"Wystąpił błąd podczas odwracania stron: {e}", typ="error")
             # W przypadku błędu użytkownik może użyć przycisku Cofnij aby przywrócić stan
     
@@ -4097,11 +4160,13 @@ class SelectablePDFViewer:
                 page_range = f"{selected_indices[0] + 1}-{selected_indices[-1] + 1}"
             
             exported_count = 0
+            total_pages = len(selected_indices)
             
             self.master.config(cursor="wait")
-            self.master.update()
+            self.show_progressbar(maximum=total_pages)
+            self._update_status("Eksportowanie stron do obrazów...")
             
-            for index in selected_indices:
+            for idx, index in enumerate(selected_indices):
                 if index < len(self.pdf_document):
                     page = self.pdf_document.load_page(index)
                     
@@ -4115,11 +4180,14 @@ class SelectablePDFViewer:
                     
                     pix.save(output_path)
                     exported_count += 1
+                    self.update_progressbar(idx + 1)
             
+            self.hide_progressbar()
             self.master.config(cursor="")
             
             self._update_status(f"Pomyślnie wyeksportowano {exported_count} stron do folderu: {output_dir}")   
         except Exception as e:
+            self.hide_progressbar()
             self.master.config(cursor="")
             custom_messagebox(self.master, "Błąd Eksportu", f"Wystąpił błąd podczas eksportowania stron:\n{e}", typ="error")
             
@@ -4307,9 +4375,17 @@ class SelectablePDFViewer:
              self.zoom_out_button.config(width=ZOOM_WIDTH, height=1, font=ZOOM_FONT)
         
         
-        # Pasek statusu 
-        self.status_bar = tk.Label(master, text="Gotowy. Otwórz plik PDF.", bd=1, relief=tk.SUNKEN, anchor=tk.W, bg="#f0f0f0", fg="black")
-        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        # Pasek statusu z paskiem postępu
+        status_frame = tk.Frame(master, bd=1, relief=tk.SUNKEN, bg="#f0f0f0")
+        status_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        self.status_bar = tk.Label(status_frame, text="Gotowy. Otwórz plik PDF.", anchor=tk.W, bg="#f0f0f0", fg="black")
+        self.status_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Pasek postępu (początkowo ukryty)
+        self.progress_bar = ttk.Progressbar(status_frame, orient="horizontal", length=200, mode="determinate")
+        self.progress_bar.pack(side=tk.RIGHT, padx=(5, 5))
+        self.progress_bar.pack_forget()  # Ukryj na starcie
 
 
         self.canvas = tk.Canvas(master, bg="#F5F5F5") 
@@ -5233,10 +5309,17 @@ class SelectablePDFViewer:
             self._save_state_to_undo()
             num_inserted = len(selected_indices)
             temp_doc_for_insert = fitz.open()
-            for page_index_to_import in selected_indices:
+            
+            self.show_progressbar(maximum=num_inserted)
+            self._update_status("Importowanie stron z PDF...")
+            
+            for idx, page_index_to_import in enumerate(selected_indices):
                 temp_doc_for_insert.insert_pdf(imported_doc, from_page=page_index_to_import, to_page=page_index_to_import)
+                self.update_progressbar(idx + 1)
+            
             self.pdf_document.insert_pdf(temp_doc_for_insert, start_at=insert_index)
             temp_doc_for_insert.close()
+            self.hide_progressbar()
 
             # Select the newly imported pages
             self.selected_pages = set(range(insert_index, insert_index + num_inserted))
@@ -5252,6 +5335,7 @@ class SelectablePDFViewer:
             self._update_status(f"Zaimportowano {num_inserted} wybranych stron i wstawiono w pozycji {insert_index}.")
 
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"BŁĄD Importowania: Nie udało się wczytać lub wstawić pliku: {e}")
             
         finally:
@@ -5416,6 +5500,40 @@ class SelectablePDFViewer:
                 
     def _update_status(self, message):
         self.status_bar.config(text=message, fg="black")
+    
+    def show_progressbar(self, maximum=100, mode="determinate"):
+        """
+        Pokazuje pasek postępu na pasku statusu.
+        
+        Args:
+            maximum: Maksymalna wartość paska postępu (liczba kroków)
+            mode: "determinate" (znana liczba kroków) lub "indeterminate" (nieznana liczba kroków)
+        """
+        self.progress_bar["mode"] = mode
+        self.progress_bar["maximum"] = maximum
+        self.progress_bar["value"] = 0
+        self.progress_bar.pack(side=tk.RIGHT, padx=(5, 5))
+        if mode == "indeterminate":
+            self.progress_bar.start(10)  # Animacja w trybie nieokreślonym
+        self.master.update_idletasks()
+    
+    def update_progressbar(self, value):
+        """
+        Aktualizuje wartość paska postępu i odświeża GUI.
+        
+        Args:
+            value: Aktualna wartość postępu (0 do maximum)
+        """
+        self.progress_bar["value"] = value
+        self.master.update_idletasks()
+    
+    def hide_progressbar(self):
+        """
+        Ukrywa pasek postępu po zakończeniu operacji.
+        """
+        self.progress_bar.stop()  # Zatrzymaj animację (jeśli była)
+        self.progress_bar.pack_forget()
+        self.master.update_idletasks()
             
     def _save_state_to_undo(self):
         """Zapisuje bieżący stan dokumentu na stosie undo i czyści stos redo."""
@@ -5612,9 +5730,16 @@ class SelectablePDFViewer:
         try:
             if save_state:
                 self._save_state_to_undo()
-            for page_index in pages_to_delete:
+            
+            self.show_progressbar(maximum=len(pages_to_delete))
+            self._update_status("Usuwanie stron...")
+            
+            for idx, page_index in enumerate(pages_to_delete):
                 self.pdf_document.delete_page(page_index)
                 deleted_count += 1
+                self.update_progressbar(idx + 1)
+            
+            self.hide_progressbar()
             self.selected_pages.clear()
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
@@ -5630,6 +5755,7 @@ class SelectablePDFViewer:
                     f"Usunięto {deleted_count} stron. Aktualna liczba stron: {self.total_pages}."
                 )
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"BŁĄD: Wystąpił błąd podczas usuwania: {e}")
 
     def extract_selected_pages(self):
@@ -5746,7 +5872,11 @@ class SelectablePDFViewer:
                     base_filename = "dokument"
                 
                 exported_count = 0
-                for index in selected_indices:
+                
+                self.show_progressbar(maximum=len(selected_indices))
+                self._update_status("Ekstrakcja stron do osobnych plików...")
+                
+                for idx, index in enumerate(selected_indices):
                     # Utwórz dokument z jedną stroną
                     page_bytes = self._get_page_bytes({index})
                     
@@ -5759,9 +5889,12 @@ class SelectablePDFViewer:
                     with open(output_path, "wb") as f:
                         f.write(page_bytes)
                     exported_count += 1
+                    self.update_progressbar(idx + 1)
                 
+                self.hide_progressbar()
                 self._update_status(f"Pomyślnie wyodrębniono {exported_count} stron do folderu: {output_dir}")
             except Exception as e:
+                self.hide_progressbar()
                 self._update_status(f"BŁĄD Eksportu: Nie udało się zapisać plików: {e}")
 
     def undo(self):
@@ -6018,8 +6151,11 @@ class SelectablePDFViewer:
             sorted_pages = sorted(self.selected_pages)
             new_page_indices = set()
             offset = 0
+            
+            self.show_progressbar(maximum=len(sorted_pages))
+            self._update_status("Duplikowanie stron...")
 
-            for original_index in sorted_pages:
+            for idx_progress, original_index in enumerate(sorted_pages):
                 # Po każdej insercji kolejne strony są przesunięte o offset
                 idx = original_index + offset
 
@@ -6035,7 +6171,9 @@ class SelectablePDFViewer:
                 # Wstawiona strona jest zawsze na pozycji idx+1
                 new_page_indices.add(idx + 1)
                 offset += 1
+                self.update_progressbar(idx_progress + 1)
 
+            self.hide_progressbar()
             self.selected_pages = new_page_indices
 
             # Odświeżenie GUI
@@ -6053,6 +6191,7 @@ class SelectablePDFViewer:
             else:
                 self._update_status(f"Zduplikowano {num_selected} stron.")
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"BŁĄD: Wystąpił błąd podczas duplikowania strony: {e}")
   
     def swap_pages(self):
@@ -6165,6 +6304,9 @@ class SelectablePDFViewer:
             self._save_state_to_undo()
             new_page = self.pdf_document.new_page(width=sheet_width_pt, height=sheet_height_pt)
 
+            self.show_progressbar(maximum=len(source_pages))
+            self._update_status("Scalanie stron w siatkę...")
+            
             for idx, src_idx in enumerate(source_pages):
                 row = idx // cols
                 col = idx % cols
@@ -6204,8 +6346,10 @@ class SelectablePDFViewer:
                 img_bytes = pix.tobytes("png")
                 rect = fitz.Rect(x, y, x + cell_width, y + cell_height)
                 new_page.insert_image(rect, stream=img_bytes)
+                self.update_progressbar(idx + 1)
 
             # Odświeżenie GUI
+            self.hide_progressbar()
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
@@ -6217,6 +6361,7 @@ class SelectablePDFViewer:
                 f"Scalono {num_pages} stron w siatkę {rows}x{cols} na nowym arkuszu {params['format_name']} (bitmapy 600dpi)."
             )
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"BŁĄD: Nie udało się scalić stron: {e}")
             import traceback
             traceback.print_exc()
