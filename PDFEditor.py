@@ -6068,21 +6068,26 @@ class SelectablePDFViewer:
         pages_to_rotate = sorted(list(self.selected_pages))
         try:
             self._save_state_to_undo()
+            self.show_progressbar(maximum=len(pages_to_rotate))
             rotated_count = 0
-            for page_index in pages_to_rotate:
+            for idx, page_index in enumerate(pages_to_rotate):
                 page = self.pdf_document.load_page(page_index)
                 current_rotation = page.rotation
                 new_rotation = (current_rotation + angle) % 360
                 page.set_rotation(new_rotation)
                 rotated_count += 1
+                self.update_progressbar(idx + 1)
+            self.hide_progressbar()
             self.tk_images.clear()
-            for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
+            for widget in list(self.scrollable_frame.winfo_children()):
+                widget.destroy()
             self.thumb_frames.clear()
             self._reconfigure_grid()  
             self.update_tool_button_states()
             self.update_focus_display()
             self._update_status(f"Obrócono {rotated_count} stron o {angle} stopni.")
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"BŁĄD: Wystąpił błąd podczas obracania: {e}")
 
     def insert_blank_page_before(self):
