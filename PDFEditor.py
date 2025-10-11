@@ -5095,6 +5095,10 @@ class SelectablePDFViewer:
         try:
             if self.pdf_document: self.pdf_document.close()
             
+            # Pokaż pasek postępu w trybie nieokreślonym (nie wiemy ile to potrwa)
+            self.show_progressbar(mode="indeterminate")
+            self._update_status("Otwieranie pliku PDF...")
+            
             # Spróbuj otworzyć plik
             doc = fitz.open(filepath)
             
@@ -5102,6 +5106,7 @@ class SelectablePDFViewer:
             if doc.is_encrypted:
                 # Zamknij dokument tymczasowy
                 doc.close()
+                self.hide_progressbar()
                 
                 # Pokaż dialog z prośbą o hasło
                 password = self._ask_for_password()
@@ -5111,10 +5116,15 @@ class SelectablePDFViewer:
                     self._update_status("Anulowano otwieranie pliku.")
                     return
                 
+                # Pokaż pasek postępu ponownie
+                self.show_progressbar(mode="indeterminate")
+                self._update_status("Otwieranie pliku PDF z hasłem...")
+                
                 # Spróbuj otworzyć z hasłem
                 doc = fitz.open(filepath)
                 if not doc.authenticate(password):
                     doc.close()
+                    self.hide_progressbar()
                     custom_messagebox(
                         self.master, 
                         "Błąd", 
@@ -5141,6 +5151,10 @@ class SelectablePDFViewer:
                 widget.destroy()
             self.thumb_width = 205  # Reset to default thumbnail width
             self._reconfigure_grid()
+            
+            # Ukryj pasek postępu po zakończeniu
+            self.hide_progressbar()
+            
             self._update_status(f"Wczytano {len(self.pdf_document)} stron. Gotowy do edycji.")
             self.save_button_icon.config(state=tk.NORMAL)
             self.file_menu.entryconfig("Zapisz jako...", state=tk.NORMAL)
@@ -5150,6 +5164,7 @@ class SelectablePDFViewer:
             self.prefs_manager.set('last_opened_file', filepath)   
             
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"BŁĄD: Nie udało się wczytać pliku PDF: {e}")
             self.pdf_document = None
             print("DEBUG: Ustawiono self.pdf_document = None w open_pdf z powodu błędu:", e)
@@ -5646,7 +5661,11 @@ class SelectablePDFViewer:
                 new_page_indices = set()
                 offset = 0  # Ile już wstawiono (przesunięcie indeksów po każdej insercji)
 
-                for page_index in sorted_pages:
+                # Pokaż pasek postępu
+                self.show_progressbar(maximum=len(sorted_pages))
+                self._update_status("Wklejanie stron...")
+
+                for idx, page_index in enumerate(sorted_pages):
                     if before:
                         target_index = page_index + offset
                     else:
@@ -5657,6 +5676,7 @@ class SelectablePDFViewer:
                     for i in range(pages_per_paste):
                         new_page_indices.add(target_index + i)
                     offset += pages_per_paste
+                    self.update_progressbar(idx + 1)
 
                 temp_doc.close()
                 self.selected_pages = new_page_indices
@@ -5670,12 +5690,15 @@ class SelectablePDFViewer:
                 self.update_tool_button_states()
                 self.update_focus_display()
 
+                self.hide_progressbar()
+                
                 num_inserted = pages_per_paste * num_selected
                 if num_selected == 1:
                     self._update_status(f"Wklejono {pages_per_paste} stron.")
                 else:
                     self._update_status(f"Wklejono {num_inserted} stron razem.")
             except Exception as e:
+                self.hide_progressbar()
                 self._update_status(f"BŁĄD Wklejania: {e}")
 
     def _perform_paste(self, target_index: int):
@@ -5683,6 +5706,11 @@ class SelectablePDFViewer:
             self._save_state_to_undo()
             temp_doc = fitz.open("pdf", self.clipboard)
             num_inserted = len(temp_doc)
+            
+            # Pokaż pasek postępu (tryb nieokreślony dla pojedynczej operacji wklejania)
+            self.show_progressbar(mode="indeterminate")
+            self._update_status("Wklejanie stron...")
+            
             self.pdf_document.insert_pdf(temp_doc, start_at=target_index)
             temp_doc.close()
 
@@ -5697,8 +5725,11 @@ class SelectablePDFViewer:
             self.update_selection_display()
             self.update_tool_button_states()
             self.update_focus_display()
+            
+            self.hide_progressbar()
             self._update_status(f"Wklejono {num_inserted} stron w pozycji {target_index}.")
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"BŁĄD Wklejania: {e}")
             
     def delete_selected_pages(self, event=None, save_state: bool = True): 
@@ -6086,7 +6117,11 @@ class SelectablePDFViewer:
             new_page_indices = set()
             offset = 0
 
-            for page_index in sorted_pages:
+            # Pokaż pasek postępu
+            self.show_progressbar(maximum=len(sorted_pages))
+            self._update_status("Wstawianie pustych stron...")
+
+            for idx, page_index in enumerate(sorted_pages):
                 try:
                     rect = self.pdf_document[page_index + offset].rect
                     width = rect.width
@@ -6106,6 +6141,7 @@ class SelectablePDFViewer:
                 )
                 new_page_indices.add(target_page)
                 offset += 1
+                self.update_progressbar(idx + 1)
 
             self.selected_pages = new_page_indices
 
@@ -6118,11 +6154,14 @@ class SelectablePDFViewer:
             self.update_tool_button_states()
             self.update_focus_display()
 
+            self.hide_progressbar()
+            
             if num_selected == 1:
                 self._update_status(f"Wstawiono nową, pustą stronę. Aktualna liczba stron: {len(self.pdf_document)}.")
             else:
                 self._update_status(f"Wstawiono {num_selected} nowych, pustych stron. Aktualna liczba stron: {len(self.pdf_document)}.")
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"BŁĄD: Wystąpił błąd podczas wstawiania: {e}")
     
     def duplicate_selected_page(self):
@@ -6203,6 +6242,10 @@ class SelectablePDFViewer:
         try:
             self._save_state_to_undo()
             
+            # Pokaż pasek postępu (4 kroki: kopiuj stronę 1, kopiuj stronę 2, usuń, wstaw)
+            self.show_progressbar(maximum=4)
+            self._update_status("Zamiana stron miejscami...")
+            
             # Get the two page indices
             pages = sorted(list(self.selected_pages))
             page1_idx = pages[0]
@@ -6211,17 +6254,21 @@ class SelectablePDFViewer:
             # Create temporary documents for both pages
             temp_doc1 = fitz.open()
             temp_doc1.insert_pdf(self.pdf_document, from_page=page1_idx, to_page=page1_idx)
+            self.update_progressbar(1)
             
             temp_doc2 = fitz.open()
             temp_doc2.insert_pdf(self.pdf_document, from_page=page2_idx, to_page=page2_idx)
+            self.update_progressbar(2)
             
             # Delete both pages (delete higher index first to maintain lower index)
             self.pdf_document.delete_page(page2_idx)
             self.pdf_document.delete_page(page1_idx)
+            self.update_progressbar(3)
             
             # Insert them in swapped positions
             self.pdf_document.insert_pdf(temp_doc2, from_page=0, to_page=0, start_at=page1_idx)
             self.pdf_document.insert_pdf(temp_doc1, from_page=0, to_page=0, start_at=page2_idx)
+            self.update_progressbar(4)
             
             temp_doc1.close()
             temp_doc2.close()
@@ -6239,8 +6286,10 @@ class SelectablePDFViewer:
             self.update_tool_button_states()
             self.update_focus_display()
             
+            self.hide_progressbar()
             self._update_status(f"Zamieniono strony {page1_idx + 1} i {page2_idx + 1} miejscami.")
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"BŁĄD: Wystąpił błąd podczas zamiany stron: {e}")
   
     def merge_pages_to_grid(self):
@@ -6792,8 +6841,14 @@ class SelectablePDFViewer:
             self._save_state_to_undo()
             empty_pages = []
             
+            total_pages = len(self.pdf_document)
+            
+            # Pokaż pasek postępu dla skanowania stron
+            self.show_progressbar(maximum=total_pages)
+            self._update_status("Skanowanie pustych stron...")
+            
             # Identyfikuj puste strony
-            for page_index in range(len(self.pdf_document)):
+            for page_index in range(total_pages):
                 page = self.pdf_document[page_index]
                 text = page.get_text().strip()
                 
@@ -6807,14 +6862,22 @@ class SelectablePDFViewer:
                     # Jeśli brak tekstu, rysunków i obrazów - strona jest pusta
                     if not drawings and not images:
                         empty_pages.append(page_index)
+                
+                self.update_progressbar(page_index + 1)
             
             if not empty_pages:
+                self.hide_progressbar()
                 custom_messagebox(self.master, "Informacja", "Nie znaleziono pustych stron w dokumencie.", typ="info")
                 return
             
+            # Zmień pasek na usuwanie stron
+            self.show_progressbar(maximum=len(empty_pages))
+            self._update_status("Usuwanie pustych stron...")
+            
             # Usuń puste strony (od końca, żeby nie zmienić indeksów)
-            for page_index in reversed(empty_pages):
+            for idx, page_index in enumerate(reversed(empty_pages)):
                 self.pdf_document.delete_page(page_index)
+                self.update_progressbar(idx + 1)
             
             # Odśwież widok
             self.selected_pages.clear()
@@ -6828,6 +6891,8 @@ class SelectablePDFViewer:
             self.update_tool_button_states()
             self.update_focus_display()
             
+            self.hide_progressbar()
+            
             custom_messagebox(
                 self.master,
                 "Sukces",
@@ -6836,6 +6901,7 @@ class SelectablePDFViewer:
             )
             self._update_status(f"Usunięto {len(empty_pages)} pustych stron.")
         except Exception as e:
+            self.hide_progressbar()
             custom_messagebox(self.master, "Błąd", f"Nie udało się usunąć pustych stron:\n{e}", typ="error")
     
     def merge_pdf_files(self):
