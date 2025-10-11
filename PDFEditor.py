@@ -3351,9 +3351,15 @@ class SelectablePDFViewer:
         writer = PdfWriter()
         target_width = mm2pt(width_mm)
         target_height = mm2pt(height_mm)
+        total_pages = len(reader.pages)
+        
+        self.show_progressbar(maximum=total_pages)
+        self._update_status("Zmiana rozmiaru stron ze skalowaniem...")
+        
         for i, page in enumerate(reader.pages):
             if i not in selected_indices:
                 writer.add_page(page)
+                self.update_progressbar(i + 1)
                 continue
             orig_w = float(page.mediabox.width)
             orig_h = float(page.mediabox.height)
@@ -3365,6 +3371,9 @@ class SelectablePDFViewer:
             page.mediabox = RectangleObject([0, 0, target_width, target_height])
             page.cropbox = RectangleObject([0, 0, target_width, target_height])
             writer.add_page(page)
+            self.update_progressbar(i + 1)
+        
+        self.hide_progressbar()
         out = io.BytesIO()
         writer.write(out)
         out.seek(0)
@@ -3375,9 +3384,15 @@ class SelectablePDFViewer:
         writer = PdfWriter()
         target_width = mm2pt(width_mm)
         target_height = mm2pt(height_mm)
+        total_pages = len(reader.pages)
+        
+        self.show_progressbar(maximum=total_pages)
+        self._update_status("Zmiana rozmiaru stron bez skalowania...")
+        
         for i, page in enumerate(reader.pages):
             if i not in selected_indices:
                 writer.add_page(page)
+                self.update_progressbar(i + 1)
                 continue
             orig_w = float(page.mediabox.width)
             orig_h = float(page.mediabox.height)
@@ -3392,6 +3407,9 @@ class SelectablePDFViewer:
             page.mediabox = RectangleObject([0, 0, target_width, target_height])
             page.cropbox = RectangleObject([0, 0, target_width, target_height])
             writer.add_page(page)
+            self.update_progressbar(i + 1)
+        
+        self.hide_progressbar()
         out = io.BytesIO()
         writer.write(out)
         out.seek(0)
@@ -3987,10 +4005,17 @@ class SelectablePDFViewer:
             page_count = len(doc)
             
             # Tworzenie nowego, pustego dokumentu z odwróconą kolejnością
-            new_doc = fitz.open() 
-            for i in range(page_count - 1, -1, -1):
+            new_doc = fitz.open()
+            
+            self.show_progressbar(maximum=page_count)
+            self._update_status("Odwracanie kolejności stron...")
+            
+            for idx, i in enumerate(range(page_count - 1, -1, -1)):
                 new_doc.insert_pdf(doc, from_page=i, to_page=i)
-                
+                self.update_progressbar(idx + 1)
+            
+            self.hide_progressbar()
+            
             # Zastąpienie starego dokumentu nowym
             self.pdf_document.close()
             self.pdf_document = new_doc
@@ -4014,6 +4039,7 @@ class SelectablePDFViewer:
             self._update_status(f"Pomyślnie odwrócono kolejność {page_count} stron.")
             
         except Exception as e:
+            self.hide_progressbar()
             custom_messagebox(self.master, "Błąd", f"Wystąpił błąd podczas odwracania stron: {e}", typ="error")
             # W przypadku błędu użytkownik może użyć przycisku Cofnij aby przywrócić stan
     
@@ -5283,10 +5309,17 @@ class SelectablePDFViewer:
             self._save_state_to_undo()
             num_inserted = len(selected_indices)
             temp_doc_for_insert = fitz.open()
-            for page_index_to_import in selected_indices:
+            
+            self.show_progressbar(maximum=num_inserted)
+            self._update_status("Importowanie stron z PDF...")
+            
+            for idx, page_index_to_import in enumerate(selected_indices):
                 temp_doc_for_insert.insert_pdf(imported_doc, from_page=page_index_to_import, to_page=page_index_to_import)
+                self.update_progressbar(idx + 1)
+            
             self.pdf_document.insert_pdf(temp_doc_for_insert, start_at=insert_index)
             temp_doc_for_insert.close()
+            self.hide_progressbar()
 
             # Select the newly imported pages
             self.selected_pages = set(range(insert_index, insert_index + num_inserted))
@@ -5302,6 +5335,7 @@ class SelectablePDFViewer:
             self._update_status(f"Zaimportowano {num_inserted} wybranych stron i wstawiono w pozycji {insert_index}.")
 
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"BŁĄD Importowania: Nie udało się wczytać lub wstawić pliku: {e}")
             
         finally:
@@ -5838,7 +5872,11 @@ class SelectablePDFViewer:
                     base_filename = "dokument"
                 
                 exported_count = 0
-                for index in selected_indices:
+                
+                self.show_progressbar(maximum=len(selected_indices))
+                self._update_status("Ekstrakcja stron do osobnych plików...")
+                
+                for idx, index in enumerate(selected_indices):
                     # Utwórz dokument z jedną stroną
                     page_bytes = self._get_page_bytes({index})
                     
@@ -5851,9 +5889,12 @@ class SelectablePDFViewer:
                     with open(output_path, "wb") as f:
                         f.write(page_bytes)
                     exported_count += 1
+                    self.update_progressbar(idx + 1)
                 
+                self.hide_progressbar()
                 self._update_status(f"Pomyślnie wyodrębniono {exported_count} stron do folderu: {output_dir}")
             except Exception as e:
+                self.hide_progressbar()
                 self._update_status(f"BŁĄD Eksportu: Nie udało się zapisać plików: {e}")
 
     def undo(self):
