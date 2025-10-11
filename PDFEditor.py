@@ -5057,6 +5057,7 @@ class SelectablePDFViewer:
                     continue
     
        # --- Metody obsługi plików i edycji (Ze zmianami w import_image_to_new_page) ---
+    
     def open_pdf(self, event=None, filepath=None):
         if self.pdf_document is not None and len(self.undo_stack) > 0:
             response = custom_messagebox(
@@ -5071,6 +5072,7 @@ class SelectablePDFViewer:
                 if len(self.undo_stack) > 0:
                     return  # Jeśli nie udało się zapisać, nie otwieraj nowego pliku
             # jeśli Nie - kontynuuj
+
         if not filepath:
             # Użyj domyślnej ścieżki odczytu lub ostatniej użytej ścieżki
             default_read_path = self.prefs_manager.get('default_read_path', '')
@@ -5095,32 +5097,29 @@ class SelectablePDFViewer:
         try:
             if self.pdf_document: self.pdf_document.close()
             
-            # Pokaż pasek postępu w trybie nieokreślonym (nie wiemy ile to potrwa)
-            self.show_progressbar(mode="indeterminate")
-            self._update_status("Otwieranie pliku PDF...")
+            # Krok 1: inicjalizacja progresu
+            self.show_progressbar(maximum=3, mode="determinate")
+            self._update_status("Otwieranie pliku PDF... (krok 1/2)")
+            self.master.update_idletasks()
+            self.update_progressbar(1)
             
-            # Spróbuj otworzyć plik
+            # Krok 2: otwieranie pliku (może potrwać)
             doc = fitz.open(filepath)
+            self._update_status("Otwieranie pliku PDF...")
+            self.update_progressbar(1)
+            self.master.update_idletasks()
             
-            # Sprawdź czy dokument jest zaszyfrowany
+            # Krok 3: obsługa hasła
             if doc.is_encrypted:
-                # Zamknij dokument tymczasowy
                 doc.close()
                 self.hide_progressbar()
-                
-                # Pokaż dialog z prośbą o hasło
                 password = self._ask_for_password()
-                
                 if password is None:
-                    # Użytkownik anulował
                     self._update_status("Anulowano otwieranie pliku.")
                     return
-                
-                # Pokaż pasek postępu ponownie
-                self.show_progressbar(mode="indeterminate")
+                self.show_progressbar(maximum=3, mode="determinate")
                 self._update_status("Otwieranie pliku PDF z hasłem...")
-                
-                # Spróbuj otworzyć z hasłem
+                self.master.update_idletasks()
                 doc = fitz.open(filepath)
                 if not doc.authenticate(password):
                     doc.close()
@@ -5133,45 +5132,47 @@ class SelectablePDFViewer:
                     )
                     self._update_status("BŁĄD: Nieprawidłowe hasło do pliku PDF.")
                     return
+            self.update_progressbar(2)
+            self.master.update_idletasks()
             
+            # Krok 4: czyszczenie i GUI
+            self._update_status("Wczytywanie dokumentu i czyszczenie widoku...")
             self.pdf_document = doc
             self.selected_pages = set()
             self.tk_images = {}
             self.undo_stack.clear()
             self.redo_stack.clear()
-            print("DEBUG: Czyszczenie historii open_pdf 1")
             self.clipboard = None
             self.pages_in_clipboard_count = 0
             self.active_page_index = 0
             self.thumb_frames.clear()
             self.undo_stack.clear()
             self.redo_stack.clear()
-            print("DEBUG: Czyszczenie historii open_pdf 2")
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
             self.thumb_width = 205  # Reset to default thumbnail width
             self._reconfigure_grid()
+            self.update_progressbar(3)
+            self.master.update_idletasks()
             
-            # Ukryj pasek postępu po zakończeniu
             self.hide_progressbar()
-            
             self._update_status(f"Wczytano {len(self.pdf_document)} stron. Gotowy do edycji.")
             self.save_button_icon.config(state=tk.NORMAL)
             self.file_menu.entryconfig("Zapisz jako...", state=tk.NORMAL)
             self.update_tool_button_states()
             self.update_focus_display()
-            # --- DODANE: zapamiętaj ostatnio otwarty plik PDF! ---
             self.prefs_manager.set('last_opened_file', filepath)   
             
         except Exception as e:
             self.hide_progressbar()
             self._update_status(f"BŁĄD: Nie udało się wczytać pliku PDF: {e}")
             self.pdf_document = None
-            print("DEBUG: Ustawiono self.pdf_document = None w open_pdf z powodu błędu:", e)
-            self.save_button_icon.config(state=tk.DISABLED)
-            self.file_menu.entryconfig("Zapisz jako...", state=tk.DISABLED)
+            if hasattr(self, 'save_button_icon'):
+                self.save_button_icon.config(state=tk.DISABLED)
+            if hasattr(self, 'file_menu'):
+                self.file_menu.entryconfig("Zapisz jako...", state=tk.DISABLED)
             self.update_tool_button_states()
-
+    
     def close_pdf(self):
         if self.pdf_document is not None and len(self.undo_stack) > 0:
             response = custom_messagebox(
@@ -6077,7 +6078,7 @@ class SelectablePDFViewer:
                 page.set_rotation(new_rotation)
                 rotated_count += 1
                 self.update_progressbar(idx + 1)
-            self.hide_progressbar()
+
             self.tk_images.clear()
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
@@ -6086,6 +6087,7 @@ class SelectablePDFViewer:
             self.update_tool_button_states()
             self.update_focus_display()
             self._update_status(f"Obrócono {rotated_count} stron o {angle} stopni.")
+            self.hide_progressbar()
         except Exception as e:
             self.hide_progressbar()
             self._update_status(f"BŁĄD: Wystąpił błąd podczas obracania: {e}")
