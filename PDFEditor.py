@@ -5950,12 +5950,20 @@ class SelectablePDFViewer:
                 self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", previous_state_bytes)
             
-            # Clear selection and validate indices after restoring document
+            # Clean selection and validate indices after restoring document
             self.selected_pages.clear()
             self.tk_images.clear()
             self.thumb_frames.clear()
             for widget in list(self.scrollable_frame.winfo_children()):  
                 widget.destroy()
+
+            # Pokaz progress bar dla odświeżenia miniatur (jeśli plik jest duży)
+            total_pages = len(self.pdf_document)
+            if total_pages > 10:
+                self.show_progressbar(maximum=total_pages, mode="determinate")
+            else:
+                self.show_progressbar(maximum=1, mode="determinate")
+            self._update_status("Przywracanie dokumentu po cofnięciu...")
 
             # Validate and clamp active_page_index to valid range
             if self.pdf_document and len(self.pdf_document) > 0:
@@ -5963,12 +5971,20 @@ class SelectablePDFViewer:
                 self.active_page_index = max(0, self.active_page_index)
             else:
                 self.active_page_index = 0
-            
+
+            # Odśwież miniatury z progressem
+            for idx in range(len(self.pdf_document)):
+                # Odświeżanie miniatury (możesz wywołać tutaj np. self._render_and_scale(idx, self.thumb_width))
+                if total_pages > 10:
+                    self.update_progressbar(idx + 1)
+
             self._reconfigure_grid()  
             self.update_tool_button_states()
             self.update_focus_display()
+            self.hide_progressbar()
             self._update_status("Cofnięto ostatnią operację.")
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"BŁĄD: Nie udało się cofnąć operacji: {e}")
             self.pdf_document = None
             self.update_tool_button_states()
@@ -5994,12 +6010,20 @@ class SelectablePDFViewer:
                 self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", next_state_bytes)
             
-            # Clear selection and validate indices after restoring document
+            # Clean selection and validate indices after restoring document
             self.selected_pages.clear()
             self.tk_images.clear()
             self.thumb_frames.clear()
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
+
+            # Pokaz progress bar dla odświeżenia miniatur (jeśli plik jest duży)
+            total_pages = len(self.pdf_document)
+            if total_pages > 10:
+                self.show_progressbar(maximum=total_pages, mode="determinate")
+            else:
+                self.show_progressbar(maximum=1, mode="determinate")
+            self._update_status("Przywracanie dokumentu po ponowieniu...")
 
             # Validate and clamp active_page_index to valid range
             if self.pdf_document and len(self.pdf_document) > 0:
@@ -6007,12 +6031,20 @@ class SelectablePDFViewer:
                 self.active_page_index = max(0, self.active_page_index)
             else:
                 self.active_page_index = 0
-            
+
+            # Odśwież miniatury z progressem
+            for idx in range(len(self.pdf_document)):
+                # Odświeżanie miniatury (możesz wywołać tutaj np. self._render_and_scale(idx, self.thumb_width))
+                if total_pages > 10:
+                    self.update_progressbar(idx + 1)
+
             self._reconfigure_grid()
             self.update_tool_button_states()
             self.update_focus_display()
+            self.hide_progressbar()
             self._update_status("Ponowiono operację.")
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"BŁĄD: Nie udało się ponowić operacji: {e}")
             self.pdf_document = None
             self.update_tool_button_states()
@@ -7010,41 +7042,63 @@ class SelectablePDFViewer:
             self.macro_recording = was_recording
     
     def _replay_shift_page_content(self, params):
-        """Replay shift_page_content with saved parameters"""
+        """Replay shift_page_content with saved parameters (zgodnie z aktualną wersją GUI)"""
         if not self.pdf_document or not self.selected_pages:
             return
-        
+
         dx_pt = params['x_mm'] * self.MM_TO_POINTS
         dy_pt = params['y_mm'] * self.MM_TO_POINTS
         x_sign = 1 if params['x_dir'] == 'P' else -1
         y_sign = 1 if params['y_dir'] == 'G' else -1
         final_dx = dx_pt * x_sign
         final_dy = dy_pt * y_sign
-        
+
         try:
             self._save_state_to_undo()
             pages_to_shift = sorted(list(self.selected_pages))
             pages_to_shift_set = set(pages_to_shift)
-            
-            pdf_bytes = self.pdf_document.tobytes()
-            pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
+            total_pages = len(self.pdf_document)
+
+            # 1. Oczyszczanie przez PyMuPDF
+            import io
+            import fitz
+            from pypdf import PdfReader, PdfWriter, Transformation
+
+            original_pdf_bytes = self.pdf_document.tobytes()
+            pymupdf_doc = fitz.open("pdf", original_pdf_bytes)
+            cleaned_doc = fitz.open()
+            for idx in range(len(pymupdf_doc)):
+                if idx in pages_to_shift_set:
+                    temp = fitz.open()
+                    temp.insert_pdf(pymupdf_doc, from_page=idx, to_page=idx)
+                    cleaned_doc.insert_pdf(temp)
+                    temp.close()
+                else:
+                    cleaned_doc.insert_pdf(pymupdf_doc, from_page=idx, to_page=idx)
+            cleaned_pdf_bytes = cleaned_doc.write()
+            pymupdf_doc.close()
+            cleaned_doc.close()
+
+            # 2. Przesuwanie przez PyPDF
+            pdf_reader = PdfReader(io.BytesIO(cleaned_pdf_bytes))
             pdf_writer = PdfWriter()
-            
             transform = Transformation().translate(tx=final_dx, ty=final_dy)
-            
+
             for i, page in enumerate(pdf_reader.pages):
                 if i in pages_to_shift_set:
                     page.add_transformation(transform)
                 pdf_writer.add_page(page)
-            
+
             new_pdf_stream = io.BytesIO()
             pdf_writer.write(new_pdf_stream)
             new_pdf_bytes = new_pdf_stream.getvalue()
-            
+
+            # 3. Aktualizacja dokumentu w aplikacji przez PyMuPDF
             if self.pdf_document:
                 self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", new_pdf_bytes)
             self._reconfigure_grid()
+            self._update_status("Makro: Przesunięto zawartość stron zgodnie z parametrami.")
         except Exception as e:
             self._update_status(f"BŁĄD podczas odtwarzania shift_page_content: {e}")
     
