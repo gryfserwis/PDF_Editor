@@ -37,7 +37,7 @@ FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
  
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
-PROGRAM_VERSION = "5.5.3"
+PROGRAM_VERSION = "5.5.4"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
 # === STAŁE DLA A4 [w punktach PDF i mm] ===
@@ -3229,11 +3229,16 @@ class SelectablePDFViewer:
         self.master.drop_target_register(self.DND_FILES)
         self.master.dnd_bind('<<Drop>>', self._on_drop_file)
 
+    import re
+
     def _on_drop_file(self, event):
         filepath = event.data.strip()
-        if filepath.startswith('{') and filepath.endswith('}'):  # Windows
-            filepath = filepath[1:-1]
-        paths = [p.strip() for p in filepath.split()]
+        # Rozbij na ścieżki w klamrach lub bez klamr
+        # Obsługuje: {ścieżka 1} {ścieżka 2} lub ścieżka1 ścieżka2
+        # Działa też dla pojedynczego pliku ze spacją
+        pattern = r'\{[^}]+\}|[^\s]+'
+        paths = re.findall(pattern, filepath)
+        paths = [p[1:-1] if p.startswith('{') and p.endswith('}') else p for p in paths]
         for path in paths:
             if path.lower().endswith('.pdf'):
                 if self.pdf_document is None:
@@ -3247,7 +3252,6 @@ class SelectablePDFViewer:
                 else:
                     self.import_image_to_new_page(filepath=path)
                 return
-        # ZAMIANA messagebox na pasek statusu:
         self._update_status(f"Można przeciągać tylko pliki PDF lub obrazy! Otrzymano: {filepath}")
 
     def _crop_pages(self, pdf_bytes, selected_indices, top_mm, bottom_mm, left_mm, right_mm, reposition=False, pos_mode="center", offset_x_mm=0, offset_y_mm=0):
@@ -3846,18 +3850,16 @@ class SelectablePDFViewer:
 
         dialog.focus_force()
  
- 
-        
     def shift_page_content(self):
         """
-        Otwiera okno dialogowe i przesuwa zawartość zaznaczonych stron,
-        używając PyPDF do transformacji macierzowej.
+        Otwiera okno dialogowe i przesuwa zawartość zaznaczonych stron.
+        Najpierw czyści/odświeża wybrane strony (resave przez PyMuPDF), potem wykonuje przesunięcie przez pypdf.
+        Dzięki temu unika białych stron w trudnych PDF.
         """
         if not self.pdf_document or not self.selected_pages:
             self._update_status("Musisz zaznaczyć przynajmniej jedną stronę PDF.")
             return
 
-        # 1. Uruchomienie okna dialogowego i pobranie wyników
         dialog = ShiftContentDialog(self.master, self.prefs_manager)
         result = dialog.result
 
@@ -3865,54 +3867,66 @@ class SelectablePDFViewer:
             self._update_status("Anulowano lub zerowe przesunięcie.")
             return
 
-        # 2. Konwersja i określenie transformacji
         dx_pt = result['x_mm'] * self.MM_TO_POINTS
         dy_pt = result['y_mm'] * self.MM_TO_POINTS
 
-        # Określenie znaku przesunięcia
-        x_sign = 1 if result['x_dir'] == 'P' else -1 # Prawo (+), Lewo (-)
-        y_sign = 1 if result['y_dir'] == 'G' else -1 # Góra (+), Dół (-)
+        x_sign = 1 if result['x_dir'] == 'P' else -1
+        y_sign = 1 if result['y_dir'] == 'G' else -1
 
         final_dx = dx_pt * x_sign
-        final_dy = dy_pt * y_sign # Pamiętaj, że w PDF Y rośnie w górę
+        final_dy = dy_pt * y_sign
 
         try:
-            self._save_state_to_undo()  # <-- najpierw zapisujemy stan przed modyfikacją
+            self._save_state_to_undo()
+
+            import io
+            from pypdf import PdfReader, PdfWriter, Transformation
+            import fitz
 
             pages_to_shift = sorted(list(self.selected_pages))
-            # --- Zabezpieczenie przed przesuwaniem złych stron ---
-            # Przed serializacją zapisz aktualne indeksy stron do przesunięcia:
             pages_to_shift_set = set(pages_to_shift)
 
-            # Krok 1: Zapisz aktualny dokument PyMuPDF do bufora, żeby PyPDF mógł go wczytać
-            pdf_bytes = self.pdf_document.tobytes()
-            pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
-            pdf_writer = PdfWriter()
+            # --- 1. Resave wybranych stron przez PyMuPDF (oczyszczenie) ---
+            original_pdf_bytes = self.pdf_document.tobytes()
+            pymupdf_doc = fitz.open("pdf", original_pdf_bytes)
+            cleaned_doc = fitz.open()
+            for idx in range(len(pymupdf_doc)):
+                if idx in pages_to_shift_set:
+                    # Dodajemy nową stronę (oczyszczamy ją "zapisz i wczytaj")
+                    temp = fitz.open()
+                    temp.insert_pdf(pymupdf_doc, from_page=idx, to_page=idx)
+                    cleaned_doc.insert_pdf(temp)
+                    temp.close()
+                else:
+                    # Dodajemy oryginalną stronę bez zmian
+                    cleaned_doc.insert_pdf(pymupdf_doc, from_page=idx, to_page=idx)
 
-            # Krok 2: Tworzenie macierzy transformacji (przesunięcie)
+            cleaned_pdf_bytes = cleaned_doc.write()
+            pymupdf_doc.close()
+            cleaned_doc.close()
+
+            # --- 2. Przesuwanie przez PyPDF ---
+            pdf_reader = PdfReader(io.BytesIO(cleaned_pdf_bytes))
+            pdf_writer = PdfWriter()
             transform = Transformation().translate(tx=final_dx, ty=final_dy)
 
-            # Krok 3: Iteracja przez strony i stosowanie macierzy
             for i, page in enumerate(pdf_reader.pages):
                 if i in pages_to_shift_set:
                     page.add_transformation(transform)
                 pdf_writer.add_page(page)
 
-            # Krok 4: Zapisanie nowego dokumentu do bufora
             new_pdf_stream = io.BytesIO()
             pdf_writer.write(new_pdf_stream)
             new_pdf_bytes = new_pdf_stream.getvalue()
 
-            # Krok 5: Aktualizacja stanu aplikacji za pomocą PyMuPDF
+            # --- 3. Aktualizacja dokumentu w aplikacji przez PyMuPDF ---
             if self.pdf_document:
                 self.pdf_document.close()
+            import fitz
             self.pdf_document = fitz.open("pdf", new_pdf_bytes)
 
-            # 3. Odświeżenie GUI i statusu
             self._reconfigure_grid()
-            self._update_status(f"Przesunięto zawartość na {len(pages_to_shift)} stronach o {result['x_mm']} mm (X) i {result['y_mm']} mm (Y) za pomocą PyPDF.")
-            
-            # Record action with parameters
+            self._update_status(f"Przesunięto zawartość na {len(pages_to_shift)} stronach o {result['x_mm']} mm (X) i {result['y_mm']} mm (Y) – automatyczne oczyszczenie stron.")
             self._record_action('shift_page_content',
                 x_mm=result['x_mm'],
                 y_mm=result['y_mm'],
@@ -3920,8 +3934,8 @@ class SelectablePDFViewer:
                 y_dir=result['y_dir'])
 
         except Exception as e:
-            self._update_status(f"BŁĄD PyPDF: Nie udało się przesunąć zawartości: {e}")
-            
+            self._update_status(f"BŁĄD (pypdf): Nie udało się przesunąć zawartości: {e}")
+                
     def _reverse_pages(self):
         """Odwraca kolejność wszystkich stron w bieżącym dokumencie PDF."""
         if not self.pdf_document:
