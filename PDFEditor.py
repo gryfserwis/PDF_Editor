@@ -4124,6 +4124,283 @@ class SelectablePDFViewer:
         self._apply_selection_by_indices(indices)
         self._record_action('select_landscape')
 
+    # === PDF ANALYSIS FUNCTIONS ===
+    
+    def _analyze_pdf_content(self):
+        """
+        Przeprowadza pełną analizę zawartości PDF: kolory, formaty, orientację, marginesy.
+        Zwraca słownik z wynikami analizy.
+        """
+        if not self.pdf_document:
+            return None
+        
+        doc = self.pdf_document
+        total_pages = len(doc)
+        
+        # Wyniki analizy
+        color_pages = []
+        bw_pages = []
+        format_counts = {}
+        portrait_pages = []
+        landscape_pages = []
+        
+        # Marginesy (top, bottom, left, right) dla wszystkich stron
+        margins_data = []
+        
+        # Definicje formatów (szerokość x wysokość w punktach, z tolerancją ±5pt)
+        FORMATS = {
+            'A4': (595.276, 841.89),
+            'A3': (841.89, 1190.55),
+            'A5': (419.53, 595.276),
+            'Letter': (612, 792),
+            'Legal': (612, 1008),
+            'Tabloid': (792, 1224),
+        }
+        TOLERANCE = 5.0
+        
+        for page_idx in range(total_pages):
+            page = doc.load_page(page_idx)
+            
+            # 1. Detekcja koloru (próbkowanie pikseli)
+            is_color = self._is_page_color(page)
+            if is_color:
+                color_pages.append(page_idx)
+            else:
+                bw_pages.append(page_idx)
+            
+            # 2. Detekcja formatu
+            width = page.rect.width
+            height = page.rect.height
+            
+            detected_format = None
+            for format_name, (fmt_w, fmt_h) in FORMATS.items():
+                # Sprawdź obie orientacje (pionowa i pozioma)
+                if (abs(width - fmt_w) <= TOLERANCE and abs(height - fmt_h) <= TOLERANCE) or \
+                   (abs(width - fmt_h) <= TOLERANCE and abs(height - fmt_w) <= TOLERANCE):
+                    detected_format = format_name
+                    break
+            
+            if not detected_format:
+                detected_format = 'Inny'
+            
+            format_counts[detected_format] = format_counts.get(detected_format, 0) + 1
+            
+            # 3. Detekcja orientacji
+            if height > width:
+                portrait_pages.append(page_idx)
+            else:
+                landscape_pages.append(page_idx)
+            
+            # 4. Detekcja marginesów
+            margins = self._detect_page_margins(page)
+            margins_data.append(margins)
+        
+        # Oblicz średnie marginesy
+        avg_margins = self._calculate_average_margins(margins_data)
+        
+        # Wykryj marginesy lustrzane
+        mirrored_margins = self._detect_mirrored_margins(margins_data)
+        
+        return {
+            'color_pages': color_pages,
+            'bw_pages': bw_pages,
+            'format_counts': format_counts,
+            'portrait_pages': portrait_pages,
+            'landscape_pages': landscape_pages,
+            'avg_margins': avg_margins,
+            'mirrored_margins': mirrored_margins,
+        }
+    
+    def _is_page_color(self, page, sample_size=1000):
+        """
+        Sprawdza czy strona zawiera kolory (oprócz odcieni szarości).
+        Używa próbkowania pikseli dla wydajności.
+        """
+        try:
+            # Renderuj stronę w niskiej rozdzielczości dla szybkości
+            pix = page.get_pixmap(matrix=fitz.Matrix(0.2, 0.2))
+            
+            # Sprawdź tryb koloru
+            if pix.n < 3:  # Grayscale lub mniej
+                return False
+            
+            # Próbkowanie pikseli
+            width = pix.width
+            height = pix.height
+            samples = min(sample_size, width * height)
+            
+            step = max(1, (width * height) // samples)
+            
+            for i in range(0, width * height, step):
+                if i >= len(pix.samples):
+                    break
+                
+                # Pobierz wartości RGB
+                idx = i * pix.n
+                if idx + 2 < len(pix.samples):
+                    r = pix.samples[idx]
+                    g = pix.samples[idx + 1]
+                    b = pix.samples[idx + 2]
+                    
+                    # Jeśli wartości RGB się różnią (nie jest to odcień szarości), to jest kolor
+                    if not (r == g == b):
+                        return True
+            
+            return False
+        except:
+            # W przypadku błędu zakładamy B&W
+            return False
+    
+    def _detect_page_margins(self, page):
+        """
+        Wykrywa marginesy strony poprzez analizę białych obszarów na brzegach.
+        Zwraca (top, bottom, left, right) w punktach.
+        """
+        try:
+            # Renderuj stronę w niskiej rozdzielczości
+            pix = page.get_pixmap(matrix=fitz.Matrix(0.5, 0.5))
+            width = pix.width
+            height = pix.height
+            
+            # Wykryj górny margines (skanuj od góry)
+            top_margin = 0
+            for y in range(min(height // 4, height)):  # Max 25% strony
+                # Sprawdź kilka pikseli w linii
+                white_count = 0
+                for x in [width // 4, width // 2, 3 * width // 4]:
+                    idx = (y * width + x) * pix.n
+                    if idx + 2 < len(pix.samples):
+                        r = pix.samples[idx]
+                        g = pix.samples[idx + 1]
+                        b = pix.samples[idx + 2]
+                        # Biały = wszystkie składowe > 240
+                        if r > 240 and g > 240 and b > 240:
+                            white_count += 1
+                
+                if white_count >= 2:  # Większość pikseli jest biała
+                    top_margin = y
+                else:
+                    break
+            
+            # Podobnie dla dolnego marginesu
+            bottom_margin = 0
+            for y in range(height - 1, max(3 * height // 4, 0), -1):
+                white_count = 0
+                for x in [width // 4, width // 2, 3 * width // 4]:
+                    idx = (y * width + x) * pix.n
+                    if idx + 2 < len(pix.samples):
+                        r = pix.samples[idx]
+                        g = pix.samples[idx + 1]
+                        b = pix.samples[idx + 2]
+                        if r > 240 and g > 240 and b > 240:
+                            white_count += 1
+                
+                if white_count >= 2:
+                    bottom_margin = height - y
+                else:
+                    break
+            
+            # Lewy margines
+            left_margin = 0
+            for x in range(min(width // 4, width)):
+                white_count = 0
+                for y in [height // 4, height // 2, 3 * height // 4]:
+                    idx = (y * width + x) * pix.n
+                    if idx + 2 < len(pix.samples):
+                        r = pix.samples[idx]
+                        g = pix.samples[idx + 1]
+                        b = pix.samples[idx + 2]
+                        if r > 240 and g > 240 and b > 240:
+                            white_count += 1
+                
+                if white_count >= 2:
+                    left_margin = x
+                else:
+                    break
+            
+            # Prawy margines
+            right_margin = 0
+            for x in range(width - 1, max(3 * width // 4, 0), -1):
+                white_count = 0
+                for y in [height // 4, height // 2, 3 * height // 4]:
+                    idx = (y * width + x) * pix.n
+                    if idx + 2 < len(pix.samples):
+                        r = pix.samples[idx]
+                        g = pix.samples[idx + 1]
+                        b = pix.samples[idx + 2]
+                        if r > 240 and g > 240 and b > 240:
+                            white_count += 1
+                
+                if white_count >= 2:
+                    right_margin = width - x
+                else:
+                    break
+            
+            # Przelicz z pikseli na punkty (renderowaliśmy z matrix 0.5)
+            scale = 2.0  # Bo użyliśmy matrix 0.5
+            return (top_margin * scale, bottom_margin * scale, left_margin * scale, right_margin * scale)
+        
+        except:
+            return (0, 0, 0, 0)
+    
+    def _calculate_average_margins(self, margins_data):
+        """Oblicza średnie marginesy z wszystkich stron."""
+        if not margins_data:
+            return (0, 0, 0, 0)
+        
+        total = len(margins_data)
+        sum_top = sum(m[0] for m in margins_data)
+        sum_bottom = sum(m[1] for m in margins_data)
+        sum_left = sum(m[2] for m in margins_data)
+        sum_right = sum(m[3] for m in margins_data)
+        
+        return (
+            sum_top / total,
+            sum_bottom / total,
+            sum_left / total,
+            sum_right / total
+        )
+    
+    def _detect_mirrored_margins(self, margins_data):
+        """
+        Sprawdza czy marginesy są lustrzane (różne dla stron parzystych i nieparzystych).
+        Zwraca True jeśli wykryto marginesy lustrzane.
+        """
+        if len(margins_data) < 4:  # Za mało stron do analizy
+            return False
+        
+        # Zbierz marginesy dla stron parzystych i nieparzystych
+        odd_left = []
+        odd_right = []
+        even_left = []
+        even_right = []
+        
+        for idx, margins in enumerate(margins_data):
+            if idx % 2 == 0:  # Strona nieparzysta (indeks 0, 2, 4...)
+                odd_left.append(margins[2])
+                odd_right.append(margins[3])
+            else:  # Strona parzysta (indeks 1, 3, 5...)
+                even_left.append(margins[2])
+                even_right.append(margins[3])
+        
+        if not odd_left or not even_left:
+            return False
+        
+        # Oblicz średnie
+        avg_odd_left = sum(odd_left) / len(odd_left)
+        avg_odd_right = sum(odd_right) / len(odd_right)
+        avg_even_left = sum(even_left) / len(even_left)
+        avg_even_right = sum(even_right) / len(even_right)
+        
+        # Sprawdź czy marginesy są "lustrzane" - lewy nieparzysty ≈ prawy parzysty
+        # i prawy nieparzysty ≈ lewy parzysty
+        threshold = 10.0  # Tolerancja w punktach
+        
+        left_mirrored = abs(avg_odd_left - avg_even_right) < threshold
+        right_mirrored = abs(avg_odd_right - avg_even_left) < threshold
+        
+        return left_mirrored and right_mirrored
+
     def export_selected_pages_to_image(self):
         """Eksportuje wybrane strony do plików PNG o wysokiej rozdzielczości."""
         
@@ -4374,6 +4651,26 @@ class SelectablePDFViewer:
         if not isinstance(self.icons['zoom_out'], ImageTk.PhotoImage):
              self.zoom_out_button.config(width=ZOOM_WIDTH, height=1, font=ZOOM_FONT)
         
+        # PRZYCISK PANELU ANALIZY (>>>) - dodany na końcu panelu narzędziowego
+        self.analysis_panel_visible = False
+        analysis_toggle_frame = tk.Frame(main_control_panel, bg=BG_SECONDARY)
+        analysis_toggle_frame.pack(side=tk.RIGHT, padx=(5, 10))
+        
+        self.analysis_toggle_btn = tk.Button(
+            analysis_toggle_frame,
+            text=">>>",
+            command=self._toggle_analysis_panel,
+            bg=ZOOM_BG,
+            fg=GRAY_FG,
+            font=("Arial", 12, "bold"),
+            width=3,
+            relief=tk.RAISED,
+            bd=1,
+            state=tk.DISABLED
+        )
+        self.analysis_toggle_btn.pack(side=tk.LEFT)
+        Tooltip(self.analysis_toggle_btn, "Pokaż/ukryj panel analizy PDF")
+        
         
         # Pasek statusu z paskiem postępu
         status_frame = tk.Frame(master, bd=1, relief=tk.SUNKEN, bg="#f0f0f0")
@@ -4388,6 +4685,14 @@ class SelectablePDFViewer:
         self.progress_bar.pack_forget()  # Ukryj na starcie
 
 
+        # === PANEL BOCZNY ANALIZY ===
+        # Kontener dla panelu analizy (początkowo ukryty)
+        self.analysis_panel_container = tk.Frame(master, bg=BG_PRIMARY, width=300)
+        # Panel nie jest packowany na starcie - zostanie pokazany po kliknięciu przycisku
+        
+        self._create_analysis_panel()
+        
+        # === GŁÓWNY OBSZAR Z MINIATURAMI ===
         self.canvas = tk.Canvas(master, bg="#F5F5F5") 
         self.scrollbar = tk.Scrollbar(master, orient="vertical", command=self.canvas.yview)
         
@@ -4407,6 +4712,289 @@ class SelectablePDFViewer:
         
         self.update_tool_button_states() 
         self._setup_drag_and_drop_file()
+
+    # --- Panel analizy PDF ---
+    
+    def _create_analysis_panel(self):
+        """Tworzy strukturę panelu analizy PDF."""
+        # Nagłówek panelu z przyciskiem zamknięcia
+        header_frame = tk.Frame(self.analysis_panel_container, bg=BG_SECONDARY, height=40)
+        header_frame.pack(side=tk.TOP, fill=tk.X)
+        header_frame.pack_propagate(False)
+        
+        title_label = tk.Label(
+            header_frame,
+            text="Analiza PDF",
+            bg=BG_SECONDARY,
+            fg=FG_TEXT,
+            font=("Arial", 12, "bold")
+        )
+        title_label.pack(side=tk.LEFT, padx=10, pady=8)
+        
+        close_btn = tk.Button(
+            header_frame,
+            text="<<<",
+            command=self._toggle_analysis_panel,
+            bg=BG_BUTTON_DEFAULT,
+            fg=FG_TEXT,
+            font=("Arial", 10, "bold"),
+            width=3,
+            relief=tk.RAISED,
+            bd=1
+        )
+        close_btn.pack(side=tk.RIGHT, padx=5, pady=5)
+        
+        # Obszar przewijany z danymi
+        canvas_analysis = tk.Canvas(self.analysis_panel_container, bg=BG_PRIMARY)
+        scrollbar_analysis = tk.Scrollbar(
+            self.analysis_panel_container,
+            orient="vertical",
+            command=canvas_analysis.yview
+        )
+        
+        self.analysis_content_frame = tk.Frame(canvas_analysis, bg=BG_PRIMARY)
+        
+        canvas_analysis.create_window((0, 0), window=self.analysis_content_frame, anchor="nw")
+        canvas_analysis.configure(yscrollcommand=scrollbar_analysis.set)
+        
+        scrollbar_analysis.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas_analysis.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Aktualizuj scroll region
+        def update_scroll_region(event=None):
+            canvas_analysis.configure(scrollregion=canvas_analysis.bbox("all"))
+        
+        self.analysis_content_frame.bind("<Configure>", update_scroll_region)
+        
+        # Dodaj wiadomość "Brak danych"
+        self.analysis_no_data_label = tk.Label(
+            self.analysis_content_frame,
+            text="Otwórz plik PDF, aby zobaczyć analizę",
+            bg=BG_PRIMARY,
+            fg="gray",
+            font=("Arial", 10, "italic")
+        )
+        self.analysis_no_data_label.pack(pady=20, padx=10)
+    
+    def _toggle_analysis_panel(self):
+        """Pokazuje/ukrywa panel analizy."""
+        if self.analysis_panel_visible:
+            # Ukryj panel
+            self.analysis_panel_container.pack_forget()
+            self.analysis_panel_visible = False
+            self.analysis_toggle_btn.config(text=">>>")
+        else:
+            # Pokaż panel
+            self.analysis_panel_container.pack(side=tk.RIGHT, fill=tk.Y, before=self.scrollbar)
+            self.analysis_panel_visible = True
+            self.analysis_toggle_btn.config(text="<<<")
+            # Jeśli jest otwarty PDF, zaktualizuj dane
+            if self.pdf_document:
+                self._update_analysis_panel()
+    
+    def _update_analysis_panel(self):
+        """Aktualizuje zawartość panelu analizy na podstawie bieżącego PDF."""
+        if not self.pdf_document:
+            return
+        
+        # Usuń poprzednią zawartość (oprócz "brak danych")
+        for widget in self.analysis_content_frame.winfo_children():
+            if widget != self.analysis_no_data_label:
+                widget.destroy()
+        
+        self.analysis_no_data_label.pack_forget()
+        
+        # Pokaż komunikat "Analizowanie..."
+        loading_label = tk.Label(
+            self.analysis_content_frame,
+            text="Analizowanie PDF...",
+            bg=BG_PRIMARY,
+            fg="gray",
+            font=("Arial", 10, "italic")
+        )
+        loading_label.pack(pady=20, padx=10)
+        self.master.update_idletasks()
+        
+        # Przeprowadź analizę
+        analysis_result = self._analyze_pdf_content()
+        
+        # Usuń komunikat "Analizowanie..."
+        loading_label.destroy()
+        
+        if not analysis_result:
+            self.analysis_no_data_label.pack(pady=20, padx=10)
+            return
+        
+        # === SEKCJA 1: KOLORY ===
+        self._add_analysis_section(
+            "Kolory stron",
+            [
+                ("Strony kolorowe:", len(analysis_result['color_pages']), analysis_result['color_pages']),
+                ("Strony czarno-białe:", len(analysis_result['bw_pages']), analysis_result['bw_pages']),
+            ]
+        )
+        
+        # === SEKCJA 2: FORMATY ===
+        format_items = []
+        for format_name, count in sorted(analysis_result['format_counts'].items()):
+            # Znajdź strony tego formatu
+            pages_of_format = []
+            for idx in range(len(self.pdf_document)):
+                page = self.pdf_document.load_page(idx)
+                width = page.rect.width
+                height = page.rect.height
+                
+                FORMATS = {
+                    'A4': (595.276, 841.89),
+                    'A3': (841.89, 1190.55),
+                    'A5': (419.53, 595.276),
+                    'Letter': (612, 792),
+                    'Legal': (612, 1008),
+                    'Tabloid': (792, 1224),
+                }
+                TOLERANCE = 5.0
+                
+                detected = None
+                if format_name in FORMATS:
+                    fmt_w, fmt_h = FORMATS[format_name]
+                    if (abs(width - fmt_w) <= TOLERANCE and abs(height - fmt_h) <= TOLERANCE) or \
+                       (abs(width - fmt_h) <= TOLERANCE and abs(height - fmt_w) <= TOLERANCE):
+                        detected = format_name
+                elif format_name == 'Inny':
+                    # Sprawdź czy to NIE jest żaden znany format
+                    is_known = False
+                    for fname, (fmt_w, fmt_h) in FORMATS.items():
+                        if (abs(width - fmt_w) <= TOLERANCE and abs(height - fmt_h) <= TOLERANCE) or \
+                           (abs(width - fmt_h) <= TOLERANCE and abs(height - fmt_w) <= TOLERANCE):
+                            is_known = True
+                            break
+                    if not is_known:
+                        detected = 'Inny'
+                
+                if detected == format_name:
+                    pages_of_format.append(idx)
+            
+            format_items.append((f"Format {format_name}:", count, pages_of_format))
+        
+        self._add_analysis_section("Formaty stron", format_items)
+        
+        # === SEKCJA 3: ORIENTACJA ===
+        self._add_analysis_section(
+            "Orientacja",
+            [
+                ("Strony pionowe:", len(analysis_result['portrait_pages']), analysis_result['portrait_pages']),
+                ("Strony poziome:", len(analysis_result['landscape_pages']), analysis_result['landscape_pages']),
+            ]
+        )
+        
+        # === SEKCJA 4: MARGINESY ===
+        avg_margins = analysis_result['avg_margins']
+        top_mm = avg_margins[0] / self.MM_TO_POINTS
+        bottom_mm = avg_margins[1] / self.MM_TO_POINTS
+        left_mm = avg_margins[2] / self.MM_TO_POINTS
+        right_mm = avg_margins[3] / self.MM_TO_POINTS
+        
+        margin_frame = tk.LabelFrame(
+            self.analysis_content_frame,
+            text="Marginesy (średnie)",
+            bg=BG_PRIMARY,
+            fg=FG_TEXT,
+            font=("Arial", 10, "bold"),
+            padx=10,
+            pady=5
+        )
+        margin_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        margin_info = tk.Label(
+            margin_frame,
+            text=f"Górny: {top_mm:.1f} mm\n"
+                 f"Dolny: {bottom_mm:.1f} mm\n"
+                 f"Lewy: {left_mm:.1f} mm\n"
+                 f"Prawy: {right_mm:.1f} mm",
+            bg=BG_PRIMARY,
+            fg=FG_TEXT,
+            font=("Arial", 9),
+            justify=tk.LEFT
+        )
+        margin_info.pack(anchor=tk.W, padx=5, pady=2)
+        
+        # Informacja o marginesach lustrzanych
+        if analysis_result['mirrored_margins']:
+            mirrored_label = tk.Label(
+                margin_frame,
+                text="✓ Wykryto marginesy lustrzane",
+                bg=BG_PRIMARY,
+                fg="green",
+                font=("Arial", 9, "bold")
+            )
+            mirrored_label.pack(anchor=tk.W, padx=5, pady=(5, 2))
+        else:
+            no_mirrored_label = tk.Label(
+                margin_frame,
+                text="○ Brak marginesów lustrzanych",
+                bg=BG_PRIMARY,
+                fg="gray",
+                font=("Arial", 9)
+            )
+            no_mirrored_label.pack(anchor=tk.W, padx=5, pady=(5, 2))
+    
+    def _add_analysis_section(self, title, items):
+        """
+        Dodaje sekcję z danymi do panelu analizy.
+        items: lista krotek (label, value, page_indices)
+        """
+        section_frame = tk.LabelFrame(
+            self.analysis_content_frame,
+            text=title,
+            bg=BG_PRIMARY,
+            fg=FG_TEXT,
+            font=("Arial", 10, "bold"),
+            padx=10,
+            pady=5
+        )
+        section_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        for label_text, value, page_indices in items:
+            item_frame = tk.Frame(section_frame, bg=BG_PRIMARY)
+            item_frame.pack(fill=tk.X, pady=2)
+            
+            label = tk.Label(
+                item_frame,
+                text=label_text,
+                bg=BG_PRIMARY,
+                fg=FG_TEXT,
+                font=("Arial", 9),
+                anchor=tk.W
+            )
+            label.pack(side=tk.LEFT)
+            
+            # Klikalna liczba
+            value_label = tk.Label(
+                item_frame,
+                text=str(value),
+                bg=BG_PRIMARY,
+                fg="blue",
+                font=("Arial", 9, "bold", "underline"),
+                cursor="hand2"
+            )
+            value_label.pack(side=tk.LEFT, padx=(5, 0))
+            
+            # Obsługa kliknięcia - zaznacz strony
+            def on_click(event, indices=page_indices):
+                self._select_pages_by_indices(indices)
+            
+            value_label.bind("<Button-1>", on_click)
+            
+            # Tooltip
+            Tooltip(value_label, f"Kliknij, aby zaznaczyć {value} stron")
+    
+    def _select_pages_by_indices(self, indices):
+        """Zaznacza strony według podanych indeksów (używane przez panel analizy)."""
+        if not indices:
+            return
+        
+        self._apply_selection_by_indices(indices)
+        self._update_status(f"Zaznaczono {len(indices)} stron z analizy.")
 
     # --- Metody obsługi GUI i zdarzeń (Bez zmian) ---
     def _get_render_dpi_factor(self):
@@ -4995,6 +5583,9 @@ class SelectablePDFViewer:
              
         self.zoom_in_button.config(state=zoom_in_state)
         self.zoom_out_button.config(state=zoom_out_state)
+        
+        # Przycisk panelu analizy - aktywny tylko gdy PDF jest załadowany
+        self.analysis_toggle_btn.config(state=tk.NORMAL if doc_loaded else tk.DISABLED)
 
         # 2. Aktualizacja pozycji w menu
         menus_to_update = [self.file_menu, self.edit_menu, self.select_menu]
@@ -5161,7 +5752,12 @@ class SelectablePDFViewer:
             self.file_menu.entryconfig("Zapisz jako...", state=tk.NORMAL)
             self.update_tool_button_states()
             self.update_focus_display()
-            self.prefs_manager.set('last_opened_file', filepath)   
+            self.prefs_manager.set('last_opened_file', filepath)
+            
+            # Włącz przycisk panelu analizy i zaktualizuj panel jeśli jest widoczny
+            self.analysis_toggle_btn.config(state=tk.NORMAL)
+            if self.analysis_panel_visible:
+                self._update_analysis_panel()
             
         except Exception as e:
             self.hide_progressbar()
@@ -5203,6 +5799,11 @@ class SelectablePDFViewer:
         self._update_status("Zamknięto plik PDF. Wybierz plik z menu, aby rozpocząć pracę.")
         self.update_tool_button_states()
         self.update_focus_display()
+        
+        # Wyłącz przycisk panelu analizy i ukryj panel jeśli był widoczny
+        self.analysis_toggle_btn.config(state=tk.DISABLED)
+        if self.analysis_panel_visible:
+            self._toggle_analysis_panel()
     def open_image_as_new_pdf(self, filepath=None):
         """
         Otwiera obraz jako nowy PDF. 
