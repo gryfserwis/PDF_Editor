@@ -254,7 +254,6 @@ class PreferencesManager:
             'PageNumberingDialog.start_number': '1',
             'PageNumberingDialog.font_name': 'Times-Roman',
             'PageNumberingDialog.font_size': '12',
-            'PageNumberingDialog.mirror_margins': 'False',
             'PageNumberingDialog.format_type': 'simple',
             
             # ShiftContentDialog
@@ -908,7 +907,6 @@ class PageNumberingDialog(tk.Toplevel):
         'start_number': '1',
         'font_name': 'Times-Roman',
         'font_size': '12',
-        'mirror_margins': 'False',
         'format_type': 'simple',
     }
     
@@ -952,7 +950,6 @@ class PageNumberingDialog(tk.Toplevel):
         self.size_options = ["6", "8", "10", "11", "12", "13", "14"]
         self.v_font_name = tk.StringVar(value=self._get_pref('font_name'))
         self.v_font_size = tk.StringVar(value=self._get_pref('font_size'))
-        self.v_mirror_margins = tk.BooleanVar(value=self._get_pref('mirror_margins') == 'True')
         self.v_format_type = tk.StringVar(value=self._get_pref('format_type'))
     
     def _get_pref(self, key):
@@ -974,7 +971,6 @@ class PageNumberingDialog(tk.Toplevel):
             self.prefs_manager.set('PageNumberingDialog.start_number', self.v_start_number.get())
             self.prefs_manager.set('PageNumberingDialog.font_name', self.v_font_name.get())
             self.prefs_manager.set('PageNumberingDialog.font_size', self.v_font_size.get())
-            self.prefs_manager.set('PageNumberingDialog.mirror_margins', str(self.v_mirror_margins.get()))
             self.prefs_manager.set('PageNumberingDialog.format_type', self.v_format_type.get())
     
     def restore_defaults(self):
@@ -989,7 +985,6 @@ class PageNumberingDialog(tk.Toplevel):
         self.v_start_number.set(self.DEFAULTS['start_number'])
         self.v_font_name.set(self.DEFAULTS['font_name'])
         self.v_font_size.set(self.DEFAULTS['font_size'])
-        self.v_mirror_margins.set(self.DEFAULTS['mirror_margins'] == 'True')
         self.v_format_type.set(self.DEFAULTS['format_type'])
 
     def center_window(self):
@@ -1015,7 +1010,7 @@ class PageNumberingDialog(tk.Toplevel):
         PADY_GROUP = (8, 0)
         ENTRY_WIDTH = 4
 
-        # 1. Marginesy poziome i lustrzane
+        # 1. Marginesy poziome
         config_frame = ttk.LabelFrame(left_frame, text="Marginesy poziome [mm]")
         config_frame.pack(fill="x", padx=PADX_GROUP, pady=PADY_GROUP)
         config_inner = ttk.Frame(config_frame)
@@ -1028,7 +1023,6 @@ class PageNumberingDialog(tk.Toplevel):
         right_entry.pack(side='left', padx=(0,10))
         # Wspólny komunikat w tej samej linii z polami marginesów
         #ttk.Label(config_inner, text="(zakres 1–200 mm)", foreground="gray").pack(side='left', padx=(8,0))
-        ttk.Checkbutton(config_frame, text="Plik ma marginesy lustrzane", variable=self.v_mirror_margins).pack(anchor='w', padx=2, pady=(6,6))
 
         # 2. Położenie
         pos_frame = ttk.LabelFrame(left_frame, text="Położenie numeru strony")
@@ -1150,7 +1144,6 @@ class PageNumberingDialog(tk.Toplevel):
                 'start_page_idx': start_page_val - 1,
                 'font_name': self.v_font_name.get().strip(),
                 'font_size': float(self.v_font_size.get().replace(',', '.')),
-                'mirror_margins': self.v_mirror_margins.get(),
                 'format_type': self.v_format_type.get()
             }
             self.result = result
@@ -1177,7 +1170,6 @@ class PageNumberingDialog(tk.Toplevel):
             'start_number': self.v_start_number.get(),
             'font_name': self.v_font_name.get(),
             'font_size': self.v_font_size.get(),
-            'mirror_margins': str(self.v_mirror_margins.get()),
             'format_type': self.v_format_type.get(),
         }
     
@@ -1193,7 +1185,6 @@ class PageNumberingDialog(tk.Toplevel):
         self.v_start_number.set(settings.get('start_number', self.DEFAULTS['start_number']))
         self.v_font_name.set(settings.get('font_name', self.DEFAULTS['font_name']))
         self.v_font_size.set(settings.get('font_size', self.DEFAULTS['font_size']))
-        self.v_mirror_margins.set(settings.get('mirror_margins', self.DEFAULTS['mirror_margins']) == 'True')
         self.v_format_type.set(settings.get('format_type', self.DEFAULTS['format_type']))
     
     def refresh_profile_list(self):
@@ -3528,14 +3519,13 @@ class SelectablePDFViewer:
             mode = settings['mode']                 
             direction = settings['alignment']        
             position = settings['vertical_pos']      
-            mirror_margins = settings['mirror_margins']
             format_mode = settings['format_type']    
             
             left_mm = settings['margin_left_mm']
             right_mm = settings['margin_right_mm']
 
-            left_pt_base = left_mm * MM_PT
-            right_pt_base = right_mm * MM_PT
+            left_pt = left_mm * MM_PT
+            right_pt = right_mm * MM_PT
             margin_v = settings['margin_vertical_mm'] * MM_PT
             font_size = settings['font_size']
             font = settings['font_name']
@@ -3571,15 +3561,7 @@ class SelectablePDFViewer:
                 # if rotation == 270 and align in ("lewa", "prawa"):
                 #align = "prawa" if align == "lewa" else "lewa"
 
-                # 3. Pozycjonowanie numeru
-                if mirror_margins:
-                    if numerowana_strona % 2 == 1:
-                        left_pt, right_pt = right_pt_base, left_pt_base
-                    else:
-                        left_pt, right_pt = left_pt_base, right_pt_base
-                else:
-                    left_pt, right_pt = left_pt_base, right_pt_base
-
+                # 3. Pozycjonowanie numeru (marginesy są stałe dla wszystkich stron)
                 # --- LOGIKA POZYCJONOWANIA ---
                 if rotation == 0:
                     if align == "lewa":
@@ -3648,7 +3630,7 @@ class SelectablePDFViewer:
                     rotate=angle
                 )
 
-                print(f"✅ Strona {i+1}: numer {text}, align={align}, mirror={mirror_margins}, x={x:.2f}, y={y:.2f}, rotacja={rotation}°")
+                print(f"✅ Strona {i+1}: numer {text}, align={align}, x={x:.2f}, y={y:.2f}, rotacja={rotation}°")
                 current_number += 1
                 self.update_progressbar(idx + 1)
 
@@ -3660,7 +3642,6 @@ class SelectablePDFViewer:
                 mode=mode,
                 alignment=direction,
                 vertical_pos=position,
-                mirror_margins=mirror_margins,
                 format_type=format_mode,
                 margin_left_mm=left_mm,
                 margin_right_mm=right_mm,
@@ -7119,7 +7100,6 @@ class SelectablePDFViewer:
             mode = params.get('mode', 'zwykla')
             direction = params.get('alignment', 'prawa')
             position = params.get('vertical_pos', 'dol')
-            mirror_margins = params.get('mirror_margins', False)
             format_mode = params.get('format_type', 'simple')
             left_mm = params.get('margin_left_mm', 10)
             right_mm = params.get('margin_right_mm', 10)
@@ -7127,8 +7107,8 @@ class SelectablePDFViewer:
             font_size = params.get('font_size', 10)
             font = params.get('font_name', 'helv')
             
-            left_pt_base = left_mm * MM_PT
-            right_pt_base = right_mm * MM_PT
+            left_pt = left_mm * MM_PT
+            right_pt = right_mm * MM_PT
             margin_v = margin_v_mm * MM_PT
             
             selected_indices = sorted(self.selected_pages)
@@ -7161,17 +7141,7 @@ class SelectablePDFViewer:
                 else:
                     align = direction
                 
-                # Mirror margins for physical pages
-                is_physical_odd = (i + 1) % 2 == 1
-                
-                if mirror_margins:
-                    if is_physical_odd:
-                        left_pt, right_pt = left_pt_base, right_pt_base
-                    else:
-                        left_pt, right_pt = right_pt_base, left_pt_base
-                else:
-                    left_pt, right_pt = left_pt_base, right_pt_base
-                
+                # Margins are constant for all pages
                 # Calculate position based on rotation
                 if rotation == 0:
                     if align == "lewa":
