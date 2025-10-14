@@ -3259,8 +3259,9 @@ class SelectablePDFViewer:
         writer = PdfWriter()
         total_pages = len(reader.pages)
         
-        self.show_progressbar(maximum=total_pages)
+        # Update status first to ensure it's visible immediately
         self._update_status("Kadrowanie stron...")
+        self.show_progressbar(maximum=total_pages)
         
         for i, page in enumerate(reader.pages):
             if i not in selected_indices:
@@ -3309,8 +3310,9 @@ class SelectablePDFViewer:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         MM_TO_PT = 72 / 25.4
         
-        self.show_progressbar(maximum=len(selected_indices))
+        # Update status first to ensure it's visible immediately
         self._update_status("Maskowanie marginesów...")
+        self.show_progressbar(maximum=len(selected_indices))
         
         for idx_progress, i in enumerate(selected_indices):
             page = doc[i]
@@ -3353,8 +3355,9 @@ class SelectablePDFViewer:
         target_height = mm2pt(height_mm)
         total_pages = len(reader.pages)
         
-        self.show_progressbar(maximum=total_pages)
+        # Update status first to ensure it's visible immediately
         self._update_status("Zmiana rozmiaru stron ze skalowaniem...")
+        self.show_progressbar(maximum=total_pages)
         
         for i, page in enumerate(reader.pages):
             if i not in selected_indices:
@@ -3386,8 +3389,9 @@ class SelectablePDFViewer:
         target_height = mm2pt(height_mm)
         total_pages = len(reader.pages)
         
-        self.show_progressbar(maximum=total_pages)
+        # Update status first to ensure it's visible immediately
         self._update_status("Zmiana rozmiaru stron bez skalowania...")
+        self.show_progressbar(maximum=total_pages)
         
         for i, page in enumerate(reader.pages):
             if i not in selected_indices:
@@ -3717,8 +3721,9 @@ class SelectablePDFViewer:
                 self._save_state_to_undo()
             modified_count = 0
             
-            self.show_progressbar(maximum=len(pages_to_process))
+            # Update status first to ensure it's visible immediately
             self._update_status("Usuwanie numerów stron...")
+            self.show_progressbar(maximum=len(pages_to_process))
             
             for idx, page_index in enumerate(pages_to_process):
                 page = self.pdf_document.load_page(page_index)
@@ -3943,8 +3948,9 @@ class SelectablePDFViewer:
             pages_to_shift_set = set(pages_to_shift)
             total_pages = len(self.pdf_document)
             
-            self.show_progressbar(maximum=total_pages * 2)  # 2 etapy: oczyszczanie i przesuwanie
+            # Update status first to ensure it's visible immediately
             self._update_status("Przesuwanie zawartości stron...")
+            self.show_progressbar(maximum=total_pages * 2)  # 2 etapy: oczyszczanie i przesuwanie
 
             # --- 1. Resave wybranych stron przez PyMuPDF (oczyszczenie) ---
             original_pdf_bytes = self.pdf_document.tobytes()
@@ -4020,8 +4026,9 @@ class SelectablePDFViewer:
             # Tworzenie nowego, pustego dokumentu z odwróconą kolejnością
             new_doc = fitz.open()
             
-            self.show_progressbar(maximum=page_count)
+            # Update status first to ensure it's visible immediately
             self._update_status("Odwracanie kolejności stron...")
+            self.show_progressbar(maximum=page_count)
             
             for idx, i in enumerate(range(page_count - 1, -1, -1)):
                 new_doc.insert_pdf(doc, from_page=i, to_page=i)
@@ -5115,17 +5122,18 @@ class SelectablePDFViewer:
         try:
             if self.pdf_document: self.pdf_document.close()
             
-            # Krok 1: inicjalizacja progresu
-            self.show_progressbar(maximum=3, mode="determinate")
+            # Krok 1: inicjalizacja progresu i status
+            # Update status FIRST, then show progress bar to ensure message is visible
             self._update_status("Otwieranie pliku PDF... (krok 1/2)")
-            self.master.update_idletasks()
+            self.show_progressbar(maximum=3, mode="determinate")
             self.update_progressbar(1)
             
             # Krok 2: otwieranie pliku (może potrwać)
-            doc = fitz.open(filepath)
+            # Ensure status is visible BEFORE the blocking fitz.open() call
             self._update_status("Otwieranie pliku PDF...")
-            self.update_progressbar(1)
-            self.master.update_idletasks()
+            # fitz.open() is a blocking operation - status must be shown before it starts
+            doc = fitz.open(filepath)
+            self.update_progressbar(2)
             
             # Krok 3: obsługa hasła
             if doc.is_encrypted:
@@ -5135,9 +5143,10 @@ class SelectablePDFViewer:
                 if password is None:
                     self._update_status("Anulowano otwieranie pliku.")
                     return
-                self.show_progressbar(maximum=3, mode="determinate")
+                # Show status BEFORE blocking operations
                 self._update_status("Otwieranie pliku PDF z hasłem...")
-                self.master.update_idletasks()
+                self.show_progressbar(maximum=3, mode="determinate")
+                # fitz.open() is a blocking operation - status must be visible before it
                 doc = fitz.open(filepath)
                 if not doc.authenticate(password):
                     doc.close()
@@ -5150,10 +5159,10 @@ class SelectablePDFViewer:
                     )
                     self._update_status("BŁĄD: Nieprawidłowe hasło do pliku PDF.")
                     return
-            self.update_progressbar(2)
-            self.master.update_idletasks()
+                self.update_progressbar(2)
             
             # Krok 4: czyszczenie i GUI
+            # Status is updated and visible immediately thanks to _update_status() calling update_idletasks()
             self._update_status("Wczytywanie dokumentu i czyszczenie widoku...")
             self.pdf_document = doc
             self.selected_pages = set()
@@ -5171,9 +5180,9 @@ class SelectablePDFViewer:
             self.thumb_width = 205  # Reset to default thumbnail width
             self._reconfigure_grid()
             self.update_progressbar(3)
-            self.master.update_idletasks()
             
             self.hide_progressbar()
+            # Final status update - will be immediately visible
             self._update_status(f"Wczytano {len(self.pdf_document)} stron. Gotowy do edycji.")
             self.save_button_icon.config(state=tk.NORMAL)
             self.file_menu.entryconfig("Zapisz jako...", state=tk.NORMAL)
@@ -5291,6 +5300,8 @@ class SelectablePDFViewer:
         imported_doc = None
         selected_indices = None 
         try:
+            # Show status before the potentially blocking fitz.open() operation
+            self._update_status("Importowanie pliku PDF...")
             imported_doc = fitz.open(import_path)
             
             # Sprawdź czy dokument jest zaszyfrowany
@@ -5533,7 +5544,14 @@ class SelectablePDFViewer:
                 imported_doc.close()
                 
     def _update_status(self, message):
+        """
+        Updates the status bar with a message and ensures immediate GUI refresh.
+        This method forces the GUI to update immediately so status messages are
+        always visible, even before blocking operations.
+        """
         self.status_bar.config(text=message, fg="black")
+        # Force immediate GUI update so the status is visible before any blocking operation
+        self.master.update_idletasks()
     
     def show_progressbar(self, maximum=100, mode="determinate"):
         """
