@@ -3476,9 +3476,11 @@ class SelectablePDFViewer:
             self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", new_pdf_bytes)
             self._update_status(msg)
-            # Odśwież widok/miniatury:
-            if hasattr(self, "_reconfigure_grid"):
-                self._reconfigure_grid()
+            
+            # Optymalizacja: odśwież tylko zmienione miniatury (nie zmienia się liczba stron)
+            for page_index in indices:
+                self.update_single_thumbnail(page_index)
+            
             if hasattr(self, "update_selection_display"):
                 self.update_selection_display()
             if hasattr(self, "update_focus_display"):
@@ -3653,7 +3655,11 @@ class SelectablePDFViewer:
                 self.update_progressbar(idx + 1)
 
             self.hide_progressbar()
-            self._reconfigure_grid()
+            
+            # Optymalizacja: odśwież tylko zmienione miniatury
+            for page_index in selected_indices:
+                self.update_single_thumbnail(page_index)
+            
             self._update_status(f"Numeracja wstawiona na {len(selected_indices)} stronach. Plik gotowy do zapisu.")
             self._record_action('insert_page_numbers', 
                 start_num=start_number,
@@ -3759,7 +3765,10 @@ class SelectablePDFViewer:
             self.hide_progressbar()
             if modified_count > 0:
           #      self._save_state_to_undo()
-                self._reconfigure_grid() 
+                # Optymalizacja: odśwież tylko zmienione miniatury
+                for page_index in pages_to_process:
+                    self.update_single_thumbnail(page_index)
+                
                 self._update_status(f"Usunięto numery stron na {modified_count} stronach, używając marginesów: G={top_mm:.1f}mm, D={bottom_mm:.1f}mm.")
                 self._record_action('remove_page_numbers', top_mm=top_mm, bottom_mm=bottom_mm)
             else:
@@ -3979,7 +3988,11 @@ class SelectablePDFViewer:
             self.pdf_document = fitz.open("pdf", new_pdf_bytes)
 
             self.hide_progressbar()
-            self._reconfigure_grid()
+            
+            # Optymalizacja: odśwież tylko zmienione miniatury (nie zmienia się liczba stron)
+            for page_index in pages_to_shift:
+                self.update_single_thumbnail(page_index)
+            
             self._update_status(f"Przesunięto zawartość na {len(pages_to_shift)} stronach o {result['x_mm']} mm (X) i {result['y_mm']} mm (Y) – automatyczne oczyszczenie stron.")
             self._record_action('shift_page_content',
                 x_mm=result['x_mm'],
@@ -6116,11 +6129,10 @@ class SelectablePDFViewer:
                 rotated_count += 1
                 self.update_progressbar(idx + 1)
 
-            self.tk_images.clear()
-            for widget in list(self.scrollable_frame.winfo_children()):
-                widget.destroy()
-            self.thumb_frames.clear()
-            self._reconfigure_grid()  
+            # Optymalizacja: odśwież tylko zmienione miniatury
+            for page_index in pages_to_rotate:
+                self.update_single_thumbnail(page_index)
+            
             self.update_tool_button_states()
             self.update_focus_display()
             self._update_status(f"Obrócono {rotated_count} stron o {angle} stopni.")
@@ -6673,6 +6685,50 @@ class SelectablePDFViewer:
         
         return img_tk
 
+    def _clear_thumbnail_cache(self, page_index):
+        """
+        Usuwa cache miniatury dla konkretnej strony.
+        """
+        if page_index in self.tk_images:
+            del self.tk_images[page_index]
+
+    def update_single_thumbnail(self, page_index, column_width=None):
+        """
+        Odświeża tylko konkretną miniaturę bez przebudowy całej siatki.
+        Używane dla operacji, które zmieniają zawartość strony, ale nie liczbę stron.
+        
+        Args:
+            page_index: Indeks strony do odświeżenia
+            column_width: Szerokość kolumny (jeśli None, używa bieżącej self.thumb_width)
+        """
+        if not self.pdf_document or page_index >= len(self.pdf_document):
+            return
+        
+        if page_index not in self.thumb_frames:
+            return
+        
+        # Użyj bieżącej szerokości miniatur, jeśli nie podano
+        if column_width is None:
+            column_width = self.thumb_width
+        
+        # Usuń cache dla tej strony
+        self._clear_thumbnail_cache(page_index)
+        
+        # Renderuj nową miniaturę
+        img_tk = self._render_and_scale(page_index, column_width)
+        
+        # Zaktualizuj obraz w istniejącym ThumbnailFrame
+        page_frame = self.thumb_frames[page_index]
+        if page_frame.img_label:
+            page_frame.img_label.config(image=img_tk)
+            page_frame.img_label.image = img_tk
+        
+        # Zaktualizuj etykietę rozmiaru strony (może się zmienić przy kadracji/zmianie rozmiaru)
+        outer_frame_children = page_frame.outer_frame.winfo_children()
+        if len(outer_frame_children) > 2:
+            frame_bg = page_frame.bg_selected if page_index in self.selected_pages else page_frame.bg_normal
+            outer_frame_children[2].config(text=self._get_page_size_label(page_index), bg=frame_bg)
+
     def update_selection_display(self):
         # Clean up selected_pages to remove any invalid indices
         if self.pdf_document:
@@ -7125,7 +7181,11 @@ class SelectablePDFViewer:
             if self.pdf_document:
                 self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", new_pdf_bytes)
-            self._reconfigure_grid()
+            
+            # Optymalizacja: odśwież tylko zmienione miniatury
+            for page_index in pages_to_shift:
+                self.update_single_thumbnail(page_index)
+            
             self._update_status("Makro: Przesunięto zawartość stron zgodnie z parametrami.")
         except Exception as e:
             self._update_status(f"BŁĄD podczas odtwarzania shift_page_content: {e}")
@@ -7261,7 +7321,10 @@ class SelectablePDFViewer:
                 
                 current_number += 1
             
-            self._reconfigure_grid()
+            # Optymalizacja: odśwież tylko zmienione miniatury
+            for page_index in selected_indices:
+                self.update_single_thumbnail(page_index)
+            
             self._update_status(f"Makro: Numeracja wstawiona na {len(selected_indices)} stronach.")
             
         except Exception as e:
@@ -7326,7 +7389,10 @@ class SelectablePDFViewer:
                     modified_count += 1
             
             if modified_count > 0:
-                self._reconfigure_grid()
+                # Optymalizacja: odśwież tylko zmienione miniatury
+                for page_index in pages_to_process:
+                    self.update_single_thumbnail(page_index)
+                
                 self._update_status(f"Makro: Usunięto numery stron na {modified_count} stronach.")
             else:
                 self._update_status("Makro: Nie znaleziono numerów stron do usunięcia.")
@@ -7389,8 +7455,10 @@ class SelectablePDFViewer:
             self.pdf_document = fitz.open("pdf", new_pdf_bytes)
             self._update_status(msg)
             
-            if hasattr(self, "_reconfigure_grid"):
-                self._reconfigure_grid()
+            # Optymalizacja: odśwież tylko zmienione miniatury
+            for page_index in indices:
+                self.update_single_thumbnail(page_index)
+            
             if hasattr(self, "update_selection_display"):
                 self.update_selection_display()
             if hasattr(self, "update_focus_display"):
