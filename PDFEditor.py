@@ -3259,8 +3259,9 @@ class SelectablePDFViewer:
         writer = PdfWriter()
         total_pages = len(reader.pages)
         
-        self.show_progressbar(maximum=total_pages)
+        # Update status first to ensure it's visible immediately
         self._update_status("Kadrowanie stron...")
+        self.show_progressbar(maximum=total_pages)
         
         for i, page in enumerate(reader.pages):
             if i not in selected_indices:
@@ -3309,8 +3310,9 @@ class SelectablePDFViewer:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         MM_TO_PT = 72 / 25.4
         
-        self.show_progressbar(maximum=len(selected_indices))
+        # Update status first to ensure it's visible immediately
         self._update_status("Maskowanie marginesów...")
+        self.show_progressbar(maximum=len(selected_indices))
         
         for idx_progress, i in enumerate(selected_indices):
             page = doc[i]
@@ -3353,8 +3355,9 @@ class SelectablePDFViewer:
         target_height = mm2pt(height_mm)
         total_pages = len(reader.pages)
         
-        self.show_progressbar(maximum=total_pages)
+        # Update status first to ensure it's visible immediately
         self._update_status("Zmiana rozmiaru stron ze skalowaniem...")
+        self.show_progressbar(maximum=total_pages)
         
         for i, page in enumerate(reader.pages):
             if i not in selected_indices:
@@ -3386,8 +3389,9 @@ class SelectablePDFViewer:
         target_height = mm2pt(height_mm)
         total_pages = len(reader.pages)
         
-        self.show_progressbar(maximum=total_pages)
+        # Update status first to ensure it's visible immediately
         self._update_status("Zmiana rozmiaru stron bez skalowania...")
+        self.show_progressbar(maximum=total_pages)
         
         for i, page in enumerate(reader.pages):
             if i not in selected_indices:
@@ -3717,8 +3721,9 @@ class SelectablePDFViewer:
                 self._save_state_to_undo()
             modified_count = 0
             
-            self.show_progressbar(maximum=len(pages_to_process))
+            # Update status first to ensure it's visible immediately
             self._update_status("Usuwanie numerów stron...")
+            self.show_progressbar(maximum=len(pages_to_process))
             
             for idx, page_index in enumerate(pages_to_process):
                 page = self.pdf_document.load_page(page_index)
@@ -3943,8 +3948,9 @@ class SelectablePDFViewer:
             pages_to_shift_set = set(pages_to_shift)
             total_pages = len(self.pdf_document)
             
-            self.show_progressbar(maximum=total_pages * 2)  # 2 etapy: oczyszczanie i przesuwanie
+            # Update status first to ensure it's visible immediately
             self._update_status("Przesuwanie zawartości stron...")
+            self.show_progressbar(maximum=total_pages * 2)  # 2 etapy: oczyszczanie i przesuwanie
 
             # --- 1. Resave wybranych stron przez PyMuPDF (oczyszczenie) ---
             original_pdf_bytes = self.pdf_document.tobytes()
@@ -4020,8 +4026,9 @@ class SelectablePDFViewer:
             # Tworzenie nowego, pustego dokumentu z odwróconą kolejnością
             new_doc = fitz.open()
             
-            self.show_progressbar(maximum=page_count)
+            # Update status first to ensure it's visible immediately
             self._update_status("Odwracanie kolejności stron...")
+            self.show_progressbar(maximum=page_count)
             
             for idx, i in enumerate(range(page_count - 1, -1, -1)):
                 new_doc.insert_pdf(doc, from_page=i, to_page=i)
