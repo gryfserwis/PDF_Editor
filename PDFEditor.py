@@ -6503,22 +6503,24 @@ class SelectablePDFViewer:
             print(f"Zoom out: thumb_width = {self.thumb_width}")
 
     def _reconfigure_grid(self, event=None):
-        if not self.pdf_document:  
-             self.canvas.config(scrollregion=self.canvas.bbox("all"))
-             return
-        
+        # Poprawka: sprawdzanie, czy dokument istnieje i nie jest zamknięty (NIE używaj "not self.pdf_document"!)
+        if self.pdf_document is None or getattr(self.pdf_document, "is_closed", False):
+            self.canvas.config(scrollregion=self.canvas.bbox("all"))
+            return
+
         # Debouncing: cancel previous timer if exists
         if self._resize_timer is not None:
             self.master.after_cancel(self._resize_timer)
-        
+
         # Schedule the actual reconfiguration after a delay
         self._resize_timer = self.master.after(self._resize_delay, self._do_reconfigure_grid)
-    
+
     def _do_reconfigure_grid(self):
         """Actual grid reconfiguration logic (debounced)"""
         self._resize_timer = None
-        
-        if not self.pdf_document:
+
+        # Poprawka: sprawdzanie, czy dokument istnieje i nie jest zamknięty (NIE używaj "not self.pdf_document"!)
+        if self.pdf_document is None or getattr(self.pdf_document, "is_closed", False):
             self.canvas.config(scrollregion=self.canvas.bbox("all"))
             return
 
@@ -6526,22 +6528,17 @@ class SelectablePDFViewer:
         actual_canvas_width = self.canvas.winfo_width()
         scrollbar_safety = 25  
         available_width = max(100, actual_canvas_width - scrollbar_safety)
-        
+
         # Calculate number of columns based on current thumbnail width
-        # Each thumbnail needs: thumb_width + padding on each side
         thumb_with_padding = self.thumb_width + (2 * self.THUMB_PADDING)
-        
-        # Calculate how many thumbnails fit in available width
         num_cols = max(self.min_cols, int(available_width / thumb_with_padding))
         num_cols = min(self.max_cols, num_cols)  # Cap at max_cols
-        
-        # Ensure at least one column
+
         if num_cols < 1:
             num_cols = 1
-        
-        # Use the current thumb_width directly (no recalculation)
+
         column_width = self.thumb_width
-        
+
         # Clean up non-thumbnail widgets
         for widget in list(self.scrollable_frame.grid_slaves()):
              if not isinstance(widget, ThumbnailFrame):
@@ -6559,7 +6556,7 @@ class SelectablePDFViewer:
              self._create_widgets(num_cols, column_width)
         else:
              self._update_widgets(num_cols, column_width)
-            
+
         self.scrollable_frame.update_idletasks()  
         bbox = self.canvas.bbox("all")
         if bbox is not None:
@@ -6569,6 +6566,7 @@ class SelectablePDFViewer:
               self.canvas.yview_moveto(0.0)
         else:
               self.canvas.config(scrollregion=(0, 0, actual_canvas_width, 10))
+
 
     def _get_page_size_label(self, page_index):
         if not self.pdf_document: return ""
