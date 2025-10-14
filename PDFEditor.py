@@ -16,6 +16,9 @@ from pypdf.generic import RectangleObject, FloatObject, ArrayObject
 # wystarczyłoby, jeśli pypdf je konwertuje. Zostawiam dla pełnej kompatybilności.
 from pypdf.generic import NameObject # Dodaj import dla NameObject
 import json
+import threading
+from collections import OrderedDict
+import queue
 
 # Definicja BASE_DIR i inne stałe
 if getattr(sys, 'frozen', False):
@@ -211,6 +214,70 @@ def custom_messagebox(parent, title, message, typ="info"):
     dialog.geometry(f"+{x}+{y}")
     dialog.wait_window()
     return result[0]
+
+# === LRU CACHE FOR THUMBNAILS ===
+class ThumbnailLRUCache:
+    """LRU Cache for thumbnail images with size limit"""
+    def __init__(self, max_items=100, max_memory_mb=200):
+        self.cache = OrderedDict()
+        self.max_items = max_items
+        self.max_memory_bytes = max_memory_mb * 1024 * 1024
+        self.current_memory = 0
+        self.lock = threading.Lock()
+    
+    def _estimate_size(self, img_tk):
+        """Estimate memory size of ImageTk.PhotoImage"""
+        try:
+            # Rough estimate: width * height * 3 (RGB) or 4 (RGBA)
+            return img_tk.width() * img_tk.height() * 4
+        except:
+            return 0
+    
+    def get(self, page_index, width):
+        """Get thumbnail from cache"""
+        key = (page_index, width)
+        with self.lock:
+            if key in self.cache:
+                # Move to end (most recently used)
+                self.cache.move_to_end(key)
+                return self.cache[key]
+        return None
+    
+    def put(self, page_index, width, img_tk):
+        """Put thumbnail in cache"""
+        key = (page_index, width)
+        img_size = self._estimate_size(img_tk)
+        
+        with self.lock:
+            # If key exists, remove old entry first
+            if key in self.cache:
+                old_img = self.cache.pop(key)
+                self.current_memory -= self._estimate_size(old_img)
+            
+            # Evict items if cache is too large
+            while (len(self.cache) >= self.max_items or 
+                   self.current_memory + img_size > self.max_memory_bytes) and self.cache:
+                # Remove oldest item (first item in OrderedDict)
+                old_key, old_img = self.cache.popitem(last=False)
+                self.current_memory -= self._estimate_size(old_img)
+            
+            # Add new item
+            self.cache[key] = img_tk
+            self.current_memory += img_size
+    
+    def clear(self):
+        """Clear entire cache"""
+        with self.lock:
+            self.cache.clear()
+            self.current_memory = 0
+    
+    def remove_page(self, page_index):
+        """Remove all cached thumbnails for a specific page"""
+        with self.lock:
+            keys_to_remove = [k for k in self.cache.keys() if k[0] == page_index]
+            for key in keys_to_remove:
+                img = self.cache.pop(key)
+                self.current_memory -= self._estimate_size(img)
 
 # === SYSTEM ZARZĄDZANIA PREFERENCJAMI ===
 class PreferencesManager:
@@ -2053,6 +2120,7 @@ class ThumbnailFrame(tk.Frame):
         self.column_width = column_width
         self.bg_normal = "#F5F5F5"
         self.bg_selected = "#B3E5FC"
+        self.is_loaded = False
         self.outer_frame = tk.Frame(
             self, 
             bg=self.bg_normal, 
@@ -2074,16 +2142,14 @@ class ThumbnailFrame(tk.Frame):
                  for grandchild in child.winfo_children():
                      grandchild.bind(sequence, func)
 
-
     def setup_ui(self, parent_frame):
-        img_tk = self.viewer_app._render_and_scale(self.page_index, self.column_width)
-        # Cache is now handled inside _render_and_scale
-        
+        # Create placeholder initially for lazy loading
         image_container = tk.Frame(parent_frame, bg="white") 
         image_container.pack(padx=5, pady=(5, 0))
         
-        self.img_label = tk.Label(image_container, image=img_tk, bg="white")
-        self.img_label.pack() 
+        # Create label with placeholder or load thumbnail
+        self.img_label = tk.Label(image_container, text="", bg="white")
+        self.img_label.pack()
         
         tk.Label(parent_frame, text=f"Strona {self.page_index + 1}", bg=self.bg_normal, font=("Helvetica", 10, "bold")).pack(pady=(5, 0))
         
@@ -2091,9 +2157,20 @@ class ThumbnailFrame(tk.Frame):
         tk.Label(parent_frame, text=format_label, fg="gray", bg=self.bg_normal, font=("Helvetica", 9)).pack(pady=(0, 5))
 
         self._bind_all_children("<Button-1>", lambda event, idx=self.page_index: self.viewer_app._handle_lpm_click(idx, event))
-
         self._bind_all_children("<Button-3>", lambda event, idx=self.page_index: self._handle_ppm_click(event, idx))
-       # parent_frame.bind("<Enter>", lambda event, idx=self.page_index: self.viewer_app._focus_by_mouse(idx))
+
+    def load_thumbnail(self, column_width=None):
+        """Load or update the thumbnail image"""
+        if column_width is None:
+            column_width = self.column_width
+        else:
+            self.column_width = column_width
+        
+        img_tk = self.viewer_app._render_and_scale(self.page_index, column_width)
+        if img_tk and self.img_label:
+            self.img_label.config(image=img_tk)
+            self.img_label.image = img_tk
+            self.is_loaded = True
 
     def _handle_ppm_click(self, event, page_index):
         self.viewer_app.active_page_index = page_index
@@ -4208,7 +4285,9 @@ class SelectablePDFViewer:
 
         self.pdf_document = None
         self.selected_pages: Set[int] = set()
-        # Multi-width thumbnail cache: {page_index: {width: ImageTk.PhotoImage}}
+        # Use LRU cache for thumbnails
+        self.thumbnail_cache = ThumbnailLRUCache(max_items=100, max_memory_mb=200)
+        # Legacy support - keep for backward compatibility but use cache instead
         self.tk_images: Dict[int, Dict[int, ImageTk.PhotoImage]] = {}
         self.icons: Dict[str, Union[ImageTk.PhotoImage, str]] = {}
         
@@ -4228,6 +4307,12 @@ class SelectablePDFViewer:
         self.max_cols = 10              # Maximum columns (for safety)
         self.MIN_WINDOW_WIDTH = 950
         self.render_dpi_factor = self._get_render_dpi_factor()
+        
+        # Async thumbnail loading support
+        self.preload_queue = queue.Queue()
+        self.preload_thread = None
+        self.preload_stop_flag = threading.Event()
+        self.visible_range = (0, 0)  # Track visible thumbnail range
         
         self.undo_stack: List[bytes] = []
         self.redo_stack: List[bytes] = []
@@ -4410,6 +4495,10 @@ class SelectablePDFViewer:
         self.canvas.bind_all("<Button-4>", self._on_mousewheel)
         self.canvas.bind_all("<Button-5>", self._on_mousewheel)
         
+        # Bind scroll events for lazy loading
+        self.canvas.bind("<Configure>", self._on_canvas_scroll)
+        self.scrollbar.config(command=self._on_scrollbar_move)
+        
         self.update_tool_button_states() 
         self._setup_drag_and_drop_file()
 
@@ -4425,6 +4514,9 @@ class SelectablePDFViewer:
         return quality_map.get(quality, 0.8)
     
     def on_close_window(self):
+        # Stop preload thread
+        self._stop_preload_thread()
+        
         # Sprawdź czy są niezapisane zmiany (niepusty stos undo)
         if self.pdf_document is not None and len(self.undo_stack) > 0:
             response = custom_messagebox(
@@ -5142,9 +5234,14 @@ class SelectablePDFViewer:
             
             # Krok 4: czyszczenie i GUI
             self._update_status("Wczytywanie dokumentu i czyszczenie widoku...")
+            
+            # Stop preload thread if running
+            self._stop_preload_thread()
+            
             self.pdf_document = doc
             self.selected_pages = set()
             self.tk_images = {}
+            self.thumbnail_cache.clear()  # Clear LRU cache
             self.undo_stack.clear()
             self.redo_stack.clear()
             self.clipboard = None
@@ -6470,6 +6567,24 @@ class SelectablePDFViewer:
         elif event.num == 5 or event.delta < 0:
             new_pos = min(1, current_top + step)
             self.canvas.yview_moveto(new_pos)
+        
+        # Trigger lazy loading after scroll
+        self._schedule_lazy_load()
+
+    def _on_canvas_scroll(self, event=None):
+        """Handle canvas scroll events for lazy loading"""
+        self._schedule_lazy_load()
+
+    def _on_scrollbar_move(self, *args):
+        """Handle scrollbar movement for lazy loading"""
+        self.canvas.yview(*args)
+        self._schedule_lazy_load()
+
+    def _schedule_lazy_load(self):
+        """Schedule lazy loading with debouncing"""
+        if hasattr(self, '_lazy_load_timer') and self._lazy_load_timer:
+            self.master.after_cancel(self._lazy_load_timer)
+        self._lazy_load_timer = self.master.after(150, self._load_visible_thumbnails)
             
     def _get_current_num_cols(self):
         """Calculate current number of columns based on canvas width and thumb_width"""
@@ -6621,7 +6736,10 @@ class SelectablePDFViewer:
             )
             page_frame.grid(row=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")  
             self.thumb_frames[i] = page_frame  
-            
+        
+        # Load visible thumbnails immediately and schedule preloading
+        self.master.after(100, self._load_visible_thumbnails)
+        
         self.update_selection_display()
         self.update_focus_display()
 
@@ -6632,21 +6750,27 @@ class SelectablePDFViewer:
         for i, page_frame in enumerate(page_frames):
             page_frame.grid(row=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")  
             idx = page_frame.page_index
-            img_tk = self._render_and_scale(idx, column_width)
-            # Cache is now handled inside _render_and_scale
-            page_frame.img_label.config(image=img_tk)
-            page_frame.img_label.image = img_tk
+            page_frame.column_width = column_width
+            page_frame.is_loaded = False  # Mark as needing reload
             outer_frame_children = page_frame.outer_frame.winfo_children()
             if len(outer_frame_children) > 2:
                   outer_frame_children[1].config(text=f"Strona {idx + 1}", bg=frame_bg)
                   outer_frame_children[2].config(text=self._get_page_size_label(idx), bg=frame_bg)
-            
+        
+        # Load visible thumbnails and schedule preloading
+        self.master.after(100, self._load_visible_thumbnails)
+        
         self.update_selection_display()
         self.update_focus_display()
 
     
     def _render_and_scale(self, page_index, column_width):
-        # Check if we have a cached thumbnail for this width
+        # Check LRU cache first
+        cached = self.thumbnail_cache.get(page_index, column_width)
+        if cached:
+            return cached
+        
+        # Check legacy cache for backward compatibility
         if page_index in self.tk_images and column_width in self.tk_images[page_index]:
             return self.tk_images[page_index][column_width]
         
@@ -6659,21 +6783,167 @@ class SelectablePDFViewer:
         if final_thumb_width <= 0: final_thumb_width = 1
         if final_thumb_height <= 0: final_thumb_height = 1
 
-        mat = fitz.Matrix(self.render_dpi_factor, self.render_dpi_factor)
+        # Optimized rendering: use lower DPI for thumbnails, scale with Pillow
+        # Instead of rendering at high DPI and downscaling, render closer to target size
+        scale_factor = final_thumb_width / page_width
+        # Use minimal DPI for rendering (faster)
+        render_scale = min(scale_factor * 1.5, self.render_dpi_factor)  # 1.5x for quality
+        
+        mat = fitz.Matrix(render_scale, render_scale)
         pix = page.get_pixmap(matrix=mat, alpha=False)
         
         img_data = pix.tobytes("ppm")
         image = Image.open(io.BytesIO(img_data))
         
-        resized_image = image.resize((final_thumb_width, final_thumb_height), Image.LANCZOS)  
+        # Only resize if needed
+        if image.size != (final_thumb_width, final_thumb_height):
+            resized_image = image.resize((final_thumb_width, final_thumb_height), Image.LANCZOS)  
+        else:
+            resized_image = image
+            
         img_tk = ImageTk.PhotoImage(resized_image)
         
-        # Cache the thumbnail for this width
+        # Store in LRU cache
+        self.thumbnail_cache.put(page_index, column_width, img_tk)
+        
+        # Also store in legacy cache for compatibility
         if page_index not in self.tk_images:
             self.tk_images[page_index] = {}
         self.tk_images[page_index][column_width] = img_tk
         
         return img_tk
+
+    def _get_visible_thumbnail_range(self):
+        """Calculate which thumbnails are currently visible in viewport"""
+        if not self.pdf_document or not self.thumb_frames:
+            return (0, 0)
+        
+        try:
+            # Get canvas viewport bounds
+            canvas_top = self.canvas.canvasy(0)
+            canvas_bottom = self.canvas.canvasy(self.canvas.winfo_height())
+            
+            # Find visible frames
+            visible_indices = []
+            for idx, frame in self.thumb_frames.items():
+                try:
+                    frame_y = frame.winfo_rooty() - self.canvas.winfo_rooty()
+                    frame_height = frame.winfo_height()
+                    
+                    # Check if frame is in viewport (with some buffer)
+                    buffer = 200  # Load slightly beyond viewport
+                    if (frame_y + frame_height + buffer >= canvas_top and 
+                        frame_y - buffer <= canvas_bottom):
+                        visible_indices.append(idx)
+                except:
+                    pass
+            
+            if visible_indices:
+                return (min(visible_indices), max(visible_indices))
+            return (0, min(len(self.pdf_document) - 1, 20))
+        except:
+            return (0, min(len(self.pdf_document) - 1, 20) if self.pdf_document else 0)
+
+    def _load_visible_thumbnails(self):
+        """Load thumbnails that are currently visible"""
+        if not self.pdf_document:
+            return
+        
+        start_idx, end_idx = self._get_visible_thumbnail_range()
+        self.visible_range = (start_idx, end_idx)
+        
+        # Load visible thumbnails immediately
+        for idx in range(start_idx, end_idx + 1):
+            if idx in self.thumb_frames:
+                frame = self.thumb_frames[idx]
+                if not frame.is_loaded:
+                    frame.load_thumbnail(self.thumb_width)
+        
+        # Schedule preloading of nearby thumbnails
+        self._schedule_preload(start_idx, end_idx)
+
+    def _schedule_preload(self, visible_start, visible_end):
+        """Schedule async preloading of thumbnails near visible area"""
+        if not self.pdf_document:
+            return
+        
+        # Preload buffer: load thumbnails before and after visible range
+        preload_buffer = 10
+        preload_start = max(0, visible_start - preload_buffer)
+        preload_end = min(len(self.pdf_document) - 1, visible_end + preload_buffer)
+        
+        # Clear old preload queue
+        while not self.preload_queue.empty():
+            try:
+                self.preload_queue.get_nowait()
+            except:
+                break
+        
+        # Add pages to preload queue (prioritize closer pages)
+        for offset in range(preload_buffer + 1):
+            # Load pages before visible area
+            idx_before = visible_start - offset - 1
+            if idx_before >= preload_start and idx_before in self.thumb_frames:
+                self.preload_queue.put(idx_before)
+            
+            # Load pages after visible area
+            idx_after = visible_end + offset + 1
+            if idx_after <= preload_end and idx_after in self.thumb_frames:
+                self.preload_queue.put(idx_after)
+        
+        # Start preload thread if not running
+        if self.preload_thread is None or not self.preload_thread.is_alive():
+            self._start_preload_thread()
+
+    def _start_preload_thread(self):
+        """Start background thread for preloading thumbnails"""
+        self.preload_stop_flag.clear()
+        self.preload_thread = threading.Thread(target=self._preload_worker, daemon=True)
+        self.preload_thread.start()
+
+    def _preload_worker(self):
+        """Background worker for preloading thumbnails"""
+        while not self.preload_stop_flag.is_set():
+            try:
+                # Get next page to preload (with timeout)
+                page_idx = self.preload_queue.get(timeout=0.5)
+                
+                # Check if already loaded
+                if page_idx in self.thumb_frames:
+                    frame = self.thumb_frames[page_idx]
+                    if not frame.is_loaded:
+                        # Render thumbnail in background
+                        img_tk = self._render_and_scale(page_idx, self.thumb_width)
+                        
+                        # Schedule UI update in main thread
+                        if img_tk:
+                            self.master.after(0, lambda idx=page_idx, img=img_tk: self._apply_preloaded_thumbnail(idx, img))
+                
+                self.preload_queue.task_done()
+            except queue.Empty:
+                # No more items to preload
+                break
+            except Exception as e:
+                # Silently handle errors in background thread
+                pass
+
+    def _apply_preloaded_thumbnail(self, page_idx, img_tk):
+        """Apply preloaded thumbnail to frame (called from main thread)"""
+        try:
+            if page_idx in self.thumb_frames:
+                frame = self.thumb_frames[page_idx]
+                if not frame.is_loaded and frame.img_label:
+                    frame.img_label.config(image=img_tk)
+                    frame.img_label.image = img_tk
+                    frame.is_loaded = True
+        except:
+            pass
+
+    def _stop_preload_thread(self):
+        """Stop the preload thread"""
+        self.preload_stop_flag.set()
+        if self.preload_thread and self.preload_thread.is_alive():
+            self.preload_thread.join(timeout=1.0)
 
     def update_selection_display(self):
         # Clean up selected_pages to remove any invalid indices
