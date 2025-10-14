@@ -37,7 +37,7 @@ FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
  
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
-PROGRAM_VERSION = "5.5.6"
+PROGRAM_VERSION = "5.5.7"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
 # === STAŁE DLA A4 [w punktach PDF i mm] ===
@@ -2077,7 +2077,7 @@ class ThumbnailFrame(tk.Frame):
 
     def setup_ui(self, parent_frame):
         img_tk = self.viewer_app._render_and_scale(self.page_index, self.column_width)
-        self.viewer_app.tk_images[self.page_index] = img_tk
+        # Cache is now handled inside _render_and_scale
         
         image_container = tk.Frame(parent_frame, bg="white") 
         image_container.pack(padx=5, pady=(5, 0))
@@ -4208,7 +4208,8 @@ class SelectablePDFViewer:
 
         self.pdf_document = None
         self.selected_pages: Set[int] = set()
-        self.tk_images: Dict[int, ImageTk.PhotoImage] = {}
+        # Multi-width thumbnail cache: {page_index: {width: ImageTk.PhotoImage}}
+        self.tk_images: Dict[int, Dict[int, ImageTk.PhotoImage]] = {}
         self.icons: Dict[str, Union[ImageTk.PhotoImage, str]] = {}
         
         self.thumb_frames: Dict[int, 'ThumbnailFrame'] = {}
@@ -4231,6 +4232,10 @@ class SelectablePDFViewer:
         self.undo_stack: List[bytes] = []
         self.redo_stack: List[bytes] = []
         self.max_stack_size = 50
+        
+        # Debouncing for window resize events
+        self._resize_timer = None
+        self._resize_delay = 300  # milliseconds
         
         self._set_initial_geometry()
         self._load_icons_or_fallback(size=28) 
@@ -6501,6 +6506,21 @@ class SelectablePDFViewer:
         if not self.pdf_document:  
              self.canvas.config(scrollregion=self.canvas.bbox("all"))
              return
+        
+        # Debouncing: cancel previous timer if exists
+        if self._resize_timer is not None:
+            self.master.after_cancel(self._resize_timer)
+        
+        # Schedule the actual reconfiguration after a delay
+        self._resize_timer = self.master.after(self._resize_delay, self._do_reconfigure_grid)
+    
+    def _do_reconfigure_grid(self):
+        """Actual grid reconfiguration logic (debounced)"""
+        self._resize_timer = None
+        
+        if not self.pdf_document:
+            self.canvas.config(scrollregion=self.canvas.bbox("all"))
+            return
 
         self.master.update_idletasks()
         actual_canvas_width = self.canvas.winfo_width()
@@ -6613,7 +6633,7 @@ class SelectablePDFViewer:
             page_frame.grid(row=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")  
             idx = page_frame.page_index
             img_tk = self._render_and_scale(idx, column_width)
-            self.tk_images[idx] = img_tk
+            # Cache is now handled inside _render_and_scale
             page_frame.img_label.config(image=img_tk)
             page_frame.img_label.image = img_tk
             outer_frame_children = page_frame.outer_frame.winfo_children()
@@ -6626,6 +6646,10 @@ class SelectablePDFViewer:
 
     
     def _render_and_scale(self, page_index, column_width):
+        # Check if we have a cached thumbnail for this width
+        if page_index in self.tk_images and column_width in self.tk_images[page_index]:
+            return self.tk_images[page_index][column_width]
+        
         page = self.pdf_document.load_page(page_index)
         page_width = page.rect.width
         page_height = page.rect.height
@@ -6642,8 +6666,14 @@ class SelectablePDFViewer:
         image = Image.open(io.BytesIO(img_data))
         
         resized_image = image.resize((final_thumb_width, final_thumb_height), Image.LANCZOS)  
+        img_tk = ImageTk.PhotoImage(resized_image)
         
-        return ImageTk.PhotoImage(resized_image)
+        # Cache the thumbnail for this width
+        if page_index not in self.tk_images:
+            self.tk_images[page_index] = {}
+        self.tk_images[page_index][column_width] = img_tk
+        
+        return img_tk
 
     def update_selection_display(self):
         # Clean up selected_pages to remove any invalid indices
