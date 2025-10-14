@@ -5964,39 +5964,52 @@ class SelectablePDFViewer:
         previous_state_bytes = self.undo_stack.pop()
         
         try:
-            if self.pdf_document: 
+            old_page_count = len(self.pdf_document) if self.pdf_document else 0
+
+            if self.pdf_document:
                 self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", previous_state_bytes)
-            
-            # Clean selection and validate indices after restoring document
+            new_page_count = len(self.pdf_document)
+
+            # Przywróć selekcję i indeks aktywnej strony
             self.selected_pages.clear()
-            self.tk_images.clear()
-            self.thumb_frames.clear()
-            for widget in list(self.scrollable_frame.winfo_children()):  
-                widget.destroy()
 
-            # Pokaz progress bar dla odświeżenia miniatur (jeśli plik jest duży)
-            total_pages = len(self.pdf_document)
-            if total_pages > 10:
-                self.show_progressbar(maximum=total_pages, mode="determinate")
+            # Jeśli liczba stron się nie zmieniła – nie czyść ramek/widgetów!
+            if old_page_count == new_page_count and self.thumb_frames:
+                self.tk_images.clear()
+                # Pokaz progress bar dla odświeżenia miniatur (jeśli plik jest duży)
+                if new_page_count > 10:
+                    self.show_progressbar(maximum=new_page_count, mode="determinate")
+                else:
+                    self.show_progressbar(maximum=1, mode="determinate")
+                self._update_status("Przywracanie dokumentu po cofnięciu...")
+
+                # Validate and clamp active_page_index to valid range
+                if self.pdf_document and new_page_count > 0:
+                    self.active_page_index = min(self.active_page_index, new_page_count - 1)
+                    self.active_page_index = max(0, self.active_page_index)
+                else:
+                    self.active_page_index = 0
+
+                for idx in range(new_page_count):
+                    self.update_single_thumbnail(idx)
+                    if new_page_count > 10:
+                        self.update_progressbar(idx + 1)
             else:
-                self.show_progressbar(maximum=1, mode="determinate")
-            self._update_status("Przywracanie dokumentu po cofnięciu...")
+                # Liczba stron się zmieniła: czyść wszystko i przebuduj siatkę
+                self.selected_pages.clear()
+                self.tk_images.clear()
+                self.thumb_frames.clear()
+                for widget in list(self.scrollable_frame.winfo_children()):
+                    widget.destroy()
+                self._reconfigure_grid()
+                # Validate and clamp active_page_index to valid range
+                if self.pdf_document and new_page_count > 0:
+                    self.active_page_index = min(self.active_page_index, new_page_count - 1)
+                    self.active_page_index = max(0, self.active_page_index)
+                else:
+                    self.active_page_index = 0
 
-            # Validate and clamp active_page_index to valid range
-            if self.pdf_document and len(self.pdf_document) > 0:
-                self.active_page_index = min(self.active_page_index, len(self.pdf_document) - 1)
-                self.active_page_index = max(0, self.active_page_index)
-            else:
-                self.active_page_index = 0
-
-            # Odśwież miniatury z progressem
-            for idx in range(len(self.pdf_document)):
-                # Odświeżanie miniatury (możesz wywołać tutaj np. self._render_and_scale(idx, self.thumb_width))
-                if total_pages > 10:
-                    self.update_progressbar(idx + 1)
-
-            self._reconfigure_grid()  
             self.update_tool_button_states()
             self.update_focus_display()
             self.hide_progressbar()
@@ -6024,39 +6037,52 @@ class SelectablePDFViewer:
         next_state_bytes = self.redo_stack.pop()
         
         try:
+            old_page_count = len(self.pdf_document) if self.pdf_document else 0
+
             if self.pdf_document:
                 self.pdf_document.close()
             self.pdf_document = fitz.open("pdf", next_state_bytes)
-            
-            # Clean selection and validate indices after restoring document
+            new_page_count = len(self.pdf_document)
+
+            # Przywróć selekcję i indeks aktywnej strony
             self.selected_pages.clear()
-            self.tk_images.clear()
-            self.thumb_frames.clear()
-            for widget in list(self.scrollable_frame.winfo_children()):
-                widget.destroy()
 
-            # Pokaz progress bar dla odświeżenia miniatur (jeśli plik jest duży)
-            total_pages = len(self.pdf_document)
-            if total_pages > 10:
-                self.show_progressbar(maximum=total_pages, mode="determinate")
+            # Jeśli liczba stron się nie zmieniła – nie czyść ramek/widgetów!
+            if old_page_count == new_page_count and self.thumb_frames:
+                self.tk_images.clear()
+                # Pokaz progress bar dla odświeżenia miniatur (jeśli plik jest duży)
+                if new_page_count > 10:
+                    self.show_progressbar(maximum=new_page_count, mode="determinate")
+                else:
+                    self.show_progressbar(maximum=1, mode="determinate")
+                self._update_status("Przywracanie dokumentu po ponowieniu...")
+
+                # Validate and clamp active_page_index to valid range
+                if self.pdf_document and new_page_count > 0:
+                    self.active_page_index = min(self.active_page_index, new_page_count - 1)
+                    self.active_page_index = max(0, self.active_page_index)
+                else:
+                    self.active_page_index = 0
+
+                for idx in range(new_page_count):
+                    self.update_single_thumbnail(idx)
+                    if new_page_count > 10:
+                        self.update_progressbar(idx + 1)
             else:
-                self.show_progressbar(maximum=1, mode="determinate")
-            self._update_status("Przywracanie dokumentu po ponowieniu...")
+                # Liczba stron się zmieniła: czyść wszystko i przebuduj siatkę
+                self.selected_pages.clear()
+                self.tk_images.clear()
+                self.thumb_frames.clear()
+                for widget in list(self.scrollable_frame.winfo_children()):
+                    widget.destroy()
+                self._reconfigure_grid()
+                # Validate and clamp active_page_index to valid range
+                if self.pdf_document and new_page_count > 0:
+                    self.active_page_index = min(self.active_page_index, new_page_count - 1)
+                    self.active_page_index = max(0, self.active_page_index)
+                else:
+                    self.active_page_index = 0
 
-            # Validate and clamp active_page_index to valid range
-            if self.pdf_document and len(self.pdf_document) > 0:
-                self.active_page_index = min(self.active_page_index, len(self.pdf_document) - 1)
-                self.active_page_index = max(0, self.active_page_index)
-            else:
-                self.active_page_index = 0
-
-            # Odśwież miniatury z progressem
-            for idx in range(len(self.pdf_document)):
-                # Odświeżanie miniatury (możesz wywołać tutaj np. self._render_and_scale(idx, self.thumb_width))
-                if total_pages > 10:
-                    self.update_progressbar(idx + 1)
-
-            self._reconfigure_grid()
             self.update_tool_button_states()
             self.update_focus_display()
             self.hide_progressbar()
@@ -6066,7 +6092,7 @@ class SelectablePDFViewer:
             self._update_status(f"BŁĄD: Nie udało się ponowić operacji: {e}")
             self.pdf_document = None
             self.update_tool_button_states()
-            
+        
     def save_document(self):
         if not self.pdf_document: return
         
@@ -6329,19 +6355,13 @@ class SelectablePDFViewer:
             temp_doc1.close()
             temp_doc2.close()
             
-            # Keep the same pages selected (they've just swapped positions)
-            # No need to update selected_pages as the indices remain the same
+            # Odśwież tylko zamienione miniatury
+            self.update_single_thumbnail(page1_idx)
+            self.update_single_thumbnail(page2_idx)
             
-            # Refresh GUI
-            self.tk_images.clear()
-            for widget in list(self.scrollable_frame.winfo_children()):
-                widget.destroy()
-            self.thumb_frames.clear()
-            self._reconfigure_grid()
             self.update_selection_display()
             self.update_tool_button_states()
             self.update_focus_display()
-            
             self.hide_progressbar()
             self._update_status(f"Zamieniono strony {page1_idx + 1} i {page2_idx + 1} miejscami.")
         except Exception as e:
