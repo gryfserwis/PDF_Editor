@@ -2088,18 +2088,17 @@ class ThumbnailFrame(tk.Frame):
         aspect_ratio = page_height / page_width if page_width != 0 else 1
         placeholder_height = int(self.column_width * aspect_ratio)
         
+        # Create a placeholder image (1x1 gray pixel stretched)
+        from PIL import Image, ImageTk
+        placeholder_img = Image.new('RGB', (self.column_width, placeholder_height), color='#E0E0E0')
+        placeholder_tk = ImageTk.PhotoImage(placeholder_img)
+        
         image_container = tk.Frame(parent_frame, bg="white") 
         image_container.pack(padx=5, pady=(5, 0))
         
-        # Create placeholder label with gray background
-        self.img_label = tk.Label(
-            image_container, 
-            bg="#E0E0E0", 
-            width=self.column_width,
-            height=placeholder_height,
-            text="",
-            relief=tk.FLAT
-        )
+        # Create placeholder label with placeholder image
+        self.img_label = tk.Label(image_container, image=placeholder_tk, bg="white")
+        self.img_label.image = placeholder_tk  # Keep a reference
         self.img_label.pack()
         
         tk.Label(parent_frame, text=f"Strona {self.page_index + 1}", bg=self.bg_normal, font=("Helvetica", 10, "bold")).pack(pady=(5, 0))
@@ -2155,9 +2154,14 @@ class ThumbnailFrame(tk.Frame):
         aspect_ratio = page_height / page_width if page_width != 0 else 1
         placeholder_height = int(self.column_width * aspect_ratio)
         
+        # Create a placeholder image
+        from PIL import Image, ImageTk
+        placeholder_img = Image.new('RGB', (self.column_width, placeholder_height), color='#E0E0E0')
+        placeholder_tk = ImageTk.PhotoImage(placeholder_img)
+        
         if self.img_label:
-            self.img_label.config(image="", bg="#E0E0E0", width=self.column_width, height=placeholder_height)
-            self.img_label.image = None
+            self.img_label.config(image=placeholder_tk, bg="white")
+            self.img_label.image = placeholder_tk
         
         # Clear cache for this page
         self.viewer_app._clear_thumbnail_cache(self.page_index)
