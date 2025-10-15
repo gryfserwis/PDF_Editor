@@ -3484,7 +3484,7 @@ class SelectablePDFViewer:
             # Optymalizacja: odśwież tylko zmienione miniatury (nie zmienia się liczba stron)
             self.show_progressbar(maximum=len(indices))
             for i, page_index in enumerate(indices):
-                self._update_status("Odświeżanie miniatur...")
+                self._update_status("Operacja zakończona. Odświeżanie miniatur...")
                 self.update_single_thumbnail(page_index)
                 self.update_progressbar(i + 1)
             self.hide_progressbar()
@@ -3667,12 +3667,13 @@ class SelectablePDFViewer:
             # Optymalizacja: odśwież tylko zmienione miniatury
             self.show_progressbar(maximum=len(selected_indices))
             for i, page_index in enumerate(selected_indices):
-                self._update_status("Odświeżanie miniatur...")
+                self._update_status(f"Numeracja wstawiona na {len(selected_indices)} stronach. Odświeżanie miniatur...")
+               
                 self.update_single_thumbnail(page_index)
                 self.update_progressbar(i + 1)
             self.hide_progressbar()
             
-            self._update_status(f"Numeracja wstawiona na {len(selected_indices)} stronach. Plik gotowy do zapisu.")
+            self._update_status(f"Numeracja wstawiona na {len(selected_indices)} stronach.")
             self._record_action('insert_page_numbers', 
                 start_num=start_number,
                 mode=mode,
@@ -3781,7 +3782,8 @@ class SelectablePDFViewer:
                 # Optymalizacja: odśwież tylko zmienione miniatury
                 self.show_progressbar(maximum=len(pages_to_process))
                 for i, page_index in enumerate(pages_to_process):
-                    self._update_status("Odświeżanie miniatur...")
+                    self._update_status(f"Usunięto numery stron na {modified_count} stronach, używając marginesów: G={top_mm:.1f}mm, D={bottom_mm:.1f}mm. Odświeżanie miniatur...")
+
                     self.update_single_thumbnail(page_index)
                     self.update_progressbar(i + 1)
                 self.hide_progressbar()
@@ -4010,12 +4012,12 @@ class SelectablePDFViewer:
             # Optymalizacja: odśwież tylko zmienione miniatury (nie zmienia się liczba stron)
             self.show_progressbar(maximum=len(pages_to_shift))
             for i, page_index in enumerate(pages_to_shift):
-                self._update_status("Odświeżanie miniatur...")
+                self._update_status(f"Przesunięto zawartość na {len(pages_to_shift)} stronach o {result['x_mm']} mm (X) i {result['y_mm']} mm (Y). Odświeżanie miniatur...")
                 self.update_single_thumbnail(page_index)
                 self.update_progressbar(i + 1)
             self.hide_progressbar()
             
-            self._update_status(f"Przesunięto zawartość na {len(pages_to_shift)} stronach o {result['x_mm']} mm (X) i {result['y_mm']} mm (Y) – automatyczne oczyszczenie stron.")
+            self._update_status(f"Przesunięto zawartość na {len(pages_to_shift)} stronach o {result['x_mm']} mm (X) i {result['y_mm']} mm (Y).")
             self._record_action('shift_page_content',
                 x_mm=result['x_mm'],
                 y_mm=result['y_mm'],
@@ -4072,7 +4074,7 @@ class SelectablePDFViewer:
             self.update_focus_display()
             # -----------------------------------------------
             
-            self._update_status(f"Pomyślnie odwrócono kolejność {page_count} stron.")
+            self._update_status(f"Pomyślnie odwrócono kolejność {page_count} stron. Odswieżanie miniatur...")
             
         except Exception as e:
             self.hide_progressbar()
@@ -5285,7 +5287,7 @@ class SelectablePDFViewer:
         self._reconfigure_grid()
         self.update_tool_button_states()
         self.update_focus_display()
-        self._update_status("Utworzono nowy PDF ze stroną dopasowaną do obrazu.")
+        self._update_status("Utworzono nowy PDF ze stroną dopasowaną do obrazu. Odświeżanie miniatur...")
     
     def import_pdf_after_active_page(self, event=None, filepath=None):
         if self.pdf_document is None:
@@ -5384,7 +5386,7 @@ class SelectablePDFViewer:
             self.update_selection_display()
             self.update_tool_button_states()
             self.update_focus_display()
-            self._update_status(f"Zaimportowano {num_inserted} wybranych stron i wstawiono w pozycji {insert_index}.")
+            self._update_status(f"Zaimportowano {num_inserted} wybranych stron i wstawiono w pozycji {insert_index}. Odświeżanie miniatur...")
 
         except Exception as e:
             self.hide_progressbar()
@@ -5542,7 +5544,7 @@ class SelectablePDFViewer:
             self.update_tool_button_states()
             self.update_focus_display()
 
-            self.status_bar.config(text=f"Zaimportowano obraz jako stronę na pozycji {insert_index + 1}. Aktualna liczba stron: {len(self.pdf_document)}.")
+            self.status_bar.config(text=f"Zaimportowano obraz jako stronę na pozycji {insert_index + 1}. Aktualna liczba stron: {len(self.pdf_document)}. Odświeżanie miniatur...")
 
         except Exception as e:
             custom_messagebox(self.master, "Błąd Wklejania", f"Nie udało się wkleić obrazu: {e}", typ="error")
@@ -5659,7 +5661,7 @@ class SelectablePDFViewer:
             self._reconfigure_grid()
             self.update_tool_button_states()
             self.update_focus_display()
-            self._update_status(f"Wycięto {deleted_count} stron i skopiowano do schowka.")
+            self._update_status(f"Wycięto {deleted_count} stron i skopiowano do schowka. Odświeżanie miniatur...")
         except Exception as e:
             self._update_status(f"BŁĄD Wycinania: {e}")
             
@@ -5738,9 +5740,9 @@ class SelectablePDFViewer:
                 
                 num_inserted = pages_per_paste * num_selected
                 if num_selected == 1:
-                    self._update_status(f"Wklejono {pages_per_paste} stron.")
+                    self._update_status(f"Wklejono {pages_per_paste} stron. Odświeżanie miniatur...")
                 else:
-                    self._update_status(f"Wklejono {num_inserted} stron razem.")
+                    self._update_status(f"Wklejono {num_inserted} stron razem. Odświeżanie miniatur...")
             except Exception as e:
                 self.hide_progressbar()
                 self._update_status(f"BŁĄD Wklejania: {e}")
@@ -5771,7 +5773,7 @@ class SelectablePDFViewer:
             self.update_focus_display()
             
             self.hide_progressbar()
-            self._update_status(f"Wklejono {num_inserted} stron w pozycji {target_index}.")
+            self._update_status(f"Wklejono {num_inserted} stron w pozycji {target_index}. Odświeżanie miniatur...")
         except Exception as e:
             self.hide_progressbar()
             self._update_status(f"BŁĄD Wklejania: {e}")
@@ -5827,7 +5829,7 @@ class SelectablePDFViewer:
             self.update_focus_display()  
             if save_state:
                 self._update_status(
-                    f"Usunięto {deleted_count} stron. Aktualna liczba stron: {self.total_pages}."
+                    f"Usunięto {deleted_count} stron. Aktualna liczba stron: {self.total_pages}. Odświeżanie miniatur..."
                 )
         except Exception as e:
             self.hide_progressbar()
@@ -6017,7 +6019,7 @@ class SelectablePDFViewer:
                     self.active_page_index = 0
 
                 for idx in range(new_page_count):
-                    self._update_status("Odświeżanie miniatur...")
+                    self._update_status("Cofnięto ostatnią operację. Odświeżanie miniatur...")
                     self.update_single_thumbnail(idx)
                     if new_page_count > 10:
                         self.update_progressbar(idx + 1)
@@ -6039,7 +6041,7 @@ class SelectablePDFViewer:
             self.update_tool_button_states()
             self.update_focus_display()
             self.hide_progressbar()
-            self._update_status("Cofnięto ostatnią operację.")
+            self._update_status("Cofnięto ostatnią operację. Odświeżanie miniatur...")
         except Exception as e:
             self.hide_progressbar()
             self._update_status(f"BŁĄD: Nie udało się cofnąć operacji: {e}")
@@ -6091,7 +6093,7 @@ class SelectablePDFViewer:
                     self.active_page_index = 0
 
                 for idx in range(new_page_count):
-                    self._update_status("Odświeżanie miniatur...")
+                    self._update_status("Ponowiono operację. Odświeżanie miniatur...")
                     self.update_single_thumbnail(idx)
                     if new_page_count > 10:
                         self.update_progressbar(idx + 1)
@@ -6113,7 +6115,7 @@ class SelectablePDFViewer:
             self.update_tool_button_states()
             self.update_focus_display()
             self.hide_progressbar()
-            self._update_status("Ponowiono operację.")
+            self._update_status("Ponowiono operację. Odświeżanie miniatur...")
         except Exception as e:
             self.hide_progressbar()
             self._update_status(f"BŁĄD: Nie udało się ponowić operacji: {e}")
@@ -6187,7 +6189,8 @@ class SelectablePDFViewer:
             # Optymalizacja: odśwież tylko zmienione miniatury
             self.show_progressbar(maximum=len(pages_to_rotate))
             for i, page_index in enumerate(pages_to_rotate):
-                self._update_status("Odświeżanie miniatur...")
+                self._update_status(f"Obrócono {rotated_count} stron o {angle} stopni. Odświeżanie miniatur...")
+               
                 self.update_single_thumbnail(page_index)
                 self.update_progressbar(i + 1)
             self.hide_progressbar()
@@ -6271,9 +6274,9 @@ class SelectablePDFViewer:
             self.hide_progressbar()
             
             if num_selected == 1:
-                self._update_status(f"Wstawiono nową, pustą stronę. Aktualna liczba stron: {len(self.pdf_document)}.")
+                self._update_status(f"Wstawiono nową, pustą stronę. Aktualna liczba stron: {len(self.pdf_document)}. Odświeżanie miniatur...")
             else:
-                self._update_status(f"Wstawiono {num_selected} nowych, pustych stron. Aktualna liczba stron: {len(self.pdf_document)}.")
+                self._update_status(f"Wstawiono {num_selected} nowych, pustych stron. Aktualna liczba stron: {len(self.pdf_document)}. Odświeżanie miniatur...")
         except Exception as e:
             self.hide_progressbar()
             self._update_status(f"BŁĄD: Wystąpił błąd podczas wstawiania: {e}")
@@ -6340,9 +6343,9 @@ class SelectablePDFViewer:
             self.update_focus_display()
 
             if num_selected == 1:
-                self._update_status(f"Zduplikowano 1 stronę.")
+                self._update_status(f"Zduplikowano 1 stronę. Odświeżanie miniatur...")
             else:
-                self._update_status(f"Zduplikowano {num_selected} stron.")
+                self._update_status(f"Zduplikowano {num_selected} stron. Odświeżanie miniatur...")
         except Exception as e:
             self.hide_progressbar()
             self._update_status(f"BŁĄD: Wystąpił błąd podczas duplikowania strony: {e}")
@@ -6515,7 +6518,7 @@ class SelectablePDFViewer:
             self.update_tool_button_states()
             self.update_focus_display()
             self._update_status(
-                f"Scalono {num_pages} stron w siatkę {rows}x{cols} na nowym arkuszu {params['format_name']} (bitmapy 600dpi)."
+                f"Scalono {num_pages} stron w siatkę {rows}x{cols} na nowym arkuszu {params['format_name']} (bitmapy 600dpi). Odświeżanie miniatur..."
             )
         except Exception as e:
             self.hide_progressbar()
@@ -6549,6 +6552,7 @@ class SelectablePDFViewer:
         return max(1, num_cols)
 
     def zoom_in(self):
+        self.master.state('zoomed')
         """Increase thumbnail size (zoom in)"""
         if self.pdf_document:
             new_width = int(self.thumb_width * (1 + self.zoom_step))
@@ -6558,6 +6562,7 @@ class SelectablePDFViewer:
             print(f"Zoom in: thumb_width = {self.thumb_width}")
 
     def zoom_out(self):
+        self.master.state('normal')
         """Decrease thumbnail size (zoom out)"""
         if self.pdf_document:
             new_width = int(self.thumb_width * (1 - self.zoom_step))
@@ -7104,13 +7109,7 @@ class SelectablePDFViewer:
             
             self.hide_progressbar()
             
-            custom_messagebox(
-                self.master,
-                "Sukces",
-                f"Usunięto {len(empty_pages)} pustych stron.",
-                typ="info"
-            )
-            self._update_status(f"Usunięto {len(empty_pages)} pustych stron.")
+            self._update_status(f"Usunięto {len(empty_pages)} pustych stron. Odswieżanie miniatur...")
         except Exception as e:
             self.hide_progressbar()
             custom_messagebox(self.master, "Błąd", f"Nie udało się usunąć pustych stron:\n{e}", typ="error")
@@ -7273,7 +7272,8 @@ class SelectablePDFViewer:
             # Optymalizacja: odśwież tylko zmienione miniatury
             self.show_progressbar(maximum=len(pages_to_shift))
             for i, page_index in enumerate(pages_to_shift):
-                self._update_status("Odświeżanie miniatur...")
+                self._update_status("Makro: Przesunięto zawartość stron zgodnie z parametrami. Odświeżanie miniatur...")
+                
                 self.update_single_thumbnail(page_index)
                 self.update_progressbar(i + 1)
             self.hide_progressbar()
@@ -7416,7 +7416,8 @@ class SelectablePDFViewer:
             # Optymalizacja: odśwież tylko zmienione miniatury
             self.show_progressbar(maximum=len(selected_indices))
             for i, page_index in enumerate(selected_indices):
-                self._update_status("Odświeżanie miniatur...")
+                self._update_status(f"Makro: Numeracja wstawiona na {len(selected_indices)} stronach. Odświeżanie miniatur...")
+              
                 self.update_single_thumbnail(page_index)
                 self.update_progressbar(i + 1)
             self.hide_progressbar()
@@ -7488,7 +7489,8 @@ class SelectablePDFViewer:
                 # Optymalizacja: odśwież tylko zmienione miniatury
                 self.show_progressbar(maximum=len(pages_to_process))
                 for i, page_index in enumerate(pages_to_process):
-                    self._update_status("Odświeżanie miniatur...")
+                    self._update_status(f"Makro: Usunięto numery stron na {modified_count} stronach. Odświeżanie miniatur...")
+
                     self.update_single_thumbnail(page_index)
                     self.update_progressbar(i + 1)
                 self.hide_progressbar()
@@ -7558,7 +7560,7 @@ class SelectablePDFViewer:
             # Optymalizacja: odśwież tylko zmienione miniatury
             self.show_progressbar(maximum=len(indices))
             for i, page_index in enumerate(indices):
-                self._update_status("Odświeżanie miniatur...")
+                self._update_status("Operacja zakończona. Odświeżanie miniatur...")
                 self.update_single_thumbnail(page_index)
                 self.update_progressbar(i + 1)
             self.hide_progressbar()
