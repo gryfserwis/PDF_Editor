@@ -37,7 +37,7 @@ FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
  
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
-PROGRAM_VERSION = "5.5.7"
+PROGRAM_VERSION = "5.5.8"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
 # === STAŁE DLA A4 [w punktach PDF i mm] ===
@@ -4241,11 +4241,11 @@ class SelectablePDFViewer:
         # Thumbnail zoom settings - now based on width, not column count
         self.thumb_width = 205          # Current thumbnail width (controlled by zoom)
         self.min_thumb_width = 205      # Minimum thumbnail width
-        self.max_thumb_width = 440      # Maximum thumbnail width
-        self.zoom_step = 0.15           # Zoom step (10% change)
+        self.max_thumb_width = 410      # Maximum thumbnail width
+        self.zoom_step = 1           # Zoom step (10% change)
         self.THUMB_PADDING = 0         # Padding between thumbnails
         self.min_cols = 2               # Minimum columns (for safety)
-        self.max_cols = 10              # Maximum columns (for safety)
+        self.max_cols = 8              # Maximum columns (for safety)
         self.MIN_WINDOW_WIDTH = 950
         self.render_dpi_factor = self._get_render_dpi_factor()
         
