@@ -16,6 +16,8 @@ from pypdf.generic import RectangleObject, FloatObject, ArrayObject
 # wystarczyłoby, jeśli pypdf je konwertuje. Zostawiam dla pełnej kompatybilności.
 from pypdf.generic import NameObject # Dodaj import dla NameObject
 import json
+import threading
+import queue
 
 # Definicja BASE_DIR i inne stałe
 if getattr(sys, 'frozen', False):
@@ -2046,7 +2048,7 @@ class EnhancedPageRangeDialog(tk.Toplevel):
 # ====================================================================
 
 class ThumbnailFrame(tk.Frame):
-    def __init__(self, parent, viewer_app, page_index, column_width):
+    def __init__(self, parent, viewer_app, page_index, column_width, use_async=False):
         super().__init__(parent, bg="#F5F5F5") 
         self.page_index = page_index
         self.viewer_app = viewer_app
@@ -2063,7 +2065,7 @@ class ThumbnailFrame(tk.Frame):
         )
         self.outer_frame.pack(fill="both", expand=True, padx=0, pady=0)
         self.img_label = None 
-        self.setup_ui(self.outer_frame)
+        self.setup_ui(self.outer_frame, use_async=use_async)
 
     def _bind_all_children(self, sequence, func):
         self.bind(sequence, func)
@@ -2075,15 +2077,49 @@ class ThumbnailFrame(tk.Frame):
                      grandchild.bind(sequence, func)
 
 
-    def setup_ui(self, parent_frame):
-        img_tk = self.viewer_app._render_and_scale(self.page_index, self.column_width)
-        # Cache is now handled inside _render_and_scale
+    def setup_ui(self, parent_frame, use_async=False):
+        """
+        Setup the thumbnail UI.
         
+        Args:
+            parent_frame: Parent frame for the thumbnail
+            use_async: If True, request async thumbnail generation. If False, render synchronously.
+        """
         image_container = tk.Frame(parent_frame, bg="white") 
         image_container.pack(padx=5, pady=(5, 0))
         
-        self.img_label = tk.Label(image_container, image=img_tk, bg="white")
-        self.img_label.pack() 
+        if use_async:
+            # Create a placeholder image for async loading
+            # Calculate placeholder size based on column width
+            page = self.viewer_app.pdf_document.load_page(self.page_index)
+            page_width = page.rect.width
+            page_height = page.rect.height
+            aspect_ratio = page_height / page_width if page_width != 0 else 1
+            final_thumb_width = self.column_width
+            final_thumb_height = int(final_thumb_width * aspect_ratio)
+            if final_thumb_width <= 0:
+                final_thumb_width = 1
+            if final_thumb_height <= 0:
+                final_thumb_height = 1
+            
+            # Create a simple gray placeholder
+            placeholder_img = Image.new('RGB', (final_thumb_width, final_thumb_height), color='#E0E0E0')
+            img_tk = ImageTk.PhotoImage(placeholder_img)
+            
+            self.img_label = tk.Label(image_container, image=img_tk, bg="white")
+            self.img_label.image = img_tk  # Keep a reference
+            self.img_label.pack()
+            
+            # Request async thumbnail generation
+            self.viewer_app.thumbnail_requests.put({
+                'page_index': self.page_index,
+                'column_width': self.column_width
+            })
+        else:
+            # Synchronous rendering (old behavior)
+            img_tk = self.viewer_app._render_and_scale(self.page_index, self.column_width)
+            self.img_label = tk.Label(image_container, image=img_tk, bg="white")
+            self.img_label.pack()
         
         tk.Label(parent_frame, text=f"Strona {self.page_index + 1}", bg=self.bg_normal, font=("Helvetica", 10, "bold")).pack(pady=(5, 0))
         
@@ -4253,6 +4289,13 @@ class SelectablePDFViewer:
         self.redo_stack: List[bytes] = []
         self.max_stack_size = 50
         
+        # Asynchronous thumbnail generation
+        self.thumbnail_queue = queue.Queue()  # Queue for passing PIL Images from worker thread
+        self.thumbnail_requests = queue.Queue()  # Queue for thumbnail generation requests
+        self.thumbnail_worker_running = False
+        self.thumbnail_worker_thread = None
+        self.thumbnail_update_after_id = None  # ID for the after() call
+        
         # Debouncing for window resize events
         self._resize_timer = None
         self._resize_delay = 300  # milliseconds
@@ -4445,6 +4488,9 @@ class SelectablePDFViewer:
         return quality_map.get(quality, 0.8)
     
     def on_close_window(self):
+        # Stop the thumbnail worker thread before closing
+        self._stop_thumbnail_worker()
+        
         # Sprawdź czy są niezapisane zmiany (niepusty stos undo)
         if self.pdf_document is not None and len(self.undo_stack) > 0:
             response = custom_messagebox(
@@ -5120,6 +5166,9 @@ class SelectablePDFViewer:
                 self.prefs_manager.set('last_open_path', os.path.dirname(filepath))
 
         try:
+            # Stop any running thumbnail worker before opening new document
+            self._stop_thumbnail_worker()
+            
             if self.pdf_document: self.pdf_document.close()
             
             # Krok 1: inicjalizacja progresu i status
@@ -6653,28 +6702,34 @@ class SelectablePDFViewer:
     def _create_widgets(self, num_cols, column_width):
         """Tworzy wszystkie ramki miniatur dla aktualnego dokumentu PDF."""
         page_count = len(self.pdf_document)
-        # Dodaj pasek postępu tylko przy większej liczbie stron (np. 10+), by nie przeszkadzać przy szybkim ładowaniu
-        if page_count > 10:
-            self.show_progressbar(maximum=page_count, mode="determinate")
+        
+        # Use async thumbnail generation for large documents (10+ pages)
+        use_async = page_count > 10
+        
+        if use_async:
+            # Start the worker thread for async thumbnail generation
+            self._start_thumbnail_worker()
+        
         for i in range(page_count):
             page_frame = ThumbnailFrame(
                 parent=self.scrollable_frame,  
                 viewer_app=self,  
                 page_index=i,  
-                column_width=column_width
+                column_width=column_width,
+                use_async=use_async
             )
             page_frame.grid(row=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")  
-            self.thumb_frames[i] = page_frame  
-            if page_count > 10:
-                self.update_progressbar(i + 1)
-        if page_count > 10:
-            self.hide_progressbar()
+            self.thumb_frames[i] = page_frame
+        
         self.update_selection_display()
         self.update_focus_display()
 
     def _update_widgets(self, num_cols, column_width):
         page_count = len(self.pdf_document)
         frame_bg = "#F5F5F5"
+        
+        # Use async thumbnail generation for large documents (10+ pages)
+        use_async = page_count > 10
 
         # Dodaj brakujące ramki miniaturek
         for i in range(page_count):
@@ -6683,7 +6738,8 @@ class SelectablePDFViewer:
                     parent=self.scrollable_frame,
                     viewer_app=self,
                     page_index=i,
-                    column_width=column_width
+                    column_width=column_width,
+                    use_async=use_async
                 )
                 self.thumb_frames[i] = page_frame
 
@@ -6693,16 +6749,44 @@ class SelectablePDFViewer:
             self.thumb_frames[idx].destroy()
             del self.thumb_frames[idx]
 
-        for i in range(page_count):
-            page_frame = self.thumb_frames[i]
-            page_frame.grid(row=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")
-            img_tk = self._render_and_scale(i, column_width)
-            page_frame.img_label.config(image=img_tk)
-            page_frame.img_label.image = img_tk
-            outer_frame_children = page_frame.outer_frame.winfo_children()
-            if len(outer_frame_children) > 2:
-                outer_frame_children[1].config(text=f"Strona {i + 1}", bg=frame_bg)
-                outer_frame_children[2].config(text=self._get_page_size_label(i), bg=frame_bg)
+        if use_async:
+            # Start the worker thread for async thumbnail generation
+            self._start_thumbnail_worker()
+            
+            # Request thumbnails for all pages that need updating
+            for i in range(page_count):
+                page_frame = self.thumb_frames[i]
+                page_frame.grid(row=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")
+                
+                # If thumbnail is not cached or width changed, request new thumbnail
+                if i not in self.tk_images or column_width not in self.tk_images[i]:
+                    self.thumbnail_requests.put({
+                        'page_index': i,
+                        'column_width': column_width
+                    })
+                else:
+                    # Use cached thumbnail
+                    img_tk = self.tk_images[i][column_width]
+                    page_frame.img_label.config(image=img_tk)
+                    page_frame.img_label.image = img_tk
+                
+                # Update labels
+                outer_frame_children = page_frame.outer_frame.winfo_children()
+                if len(outer_frame_children) > 2:
+                    outer_frame_children[1].config(text=f"Strona {i + 1}", bg=frame_bg)
+                    outer_frame_children[2].config(text=self._get_page_size_label(i), bg=frame_bg)
+        else:
+            # Synchronous rendering for small documents
+            for i in range(page_count):
+                page_frame = self.thumb_frames[i]
+                page_frame.grid(row=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")
+                img_tk = self._render_and_scale(i, column_width)
+                page_frame.img_label.config(image=img_tk)
+                page_frame.img_label.image = img_tk
+                outer_frame_children = page_frame.outer_frame.winfo_children()
+                if len(outer_frame_children) > 2:
+                    outer_frame_children[1].config(text=f"Strona {i + 1}", bg=frame_bg)
+                    outer_frame_children[2].config(text=self._get_page_size_label(i), bg=frame_bg)
 
         self.update_selection_display()
         self.update_focus_display()
@@ -6793,6 +6877,151 @@ class SelectablePDFViewer:
         if len(outer_frame_children) > 2:
             frame_bg = page_frame.bg_selected if page_index in self.selected_pages else page_frame.bg_normal
             outer_frame_children[2].config(text=self._get_page_size_label(page_index), bg=frame_bg)
+
+    def _thumbnail_worker(self):
+        """
+        Background worker thread that generates thumbnails.
+        Reads requests from thumbnail_requests queue and puts PIL Images into thumbnail_queue.
+        """
+        while self.thumbnail_worker_running:
+            try:
+                # Get request with timeout to allow checking the running flag
+                request = self.thumbnail_requests.get(timeout=0.1)
+                
+                page_index = request['page_index']
+                column_width = request['column_width']
+                
+                # Check if already cached
+                if page_index in self.tk_images and column_width in self.tk_images[page_index]:
+                    print(f"[ASYNC CACHE] Strona {page_index} już w cache, pomijam")
+                    self.thumbnail_requests.task_done()
+                    continue
+                
+                # Render thumbnail in background
+                print(f"[ASYNC RENDER] Generuję miniaturę dla strony {page_index}, szerokość {column_width}")
+                
+                page = self.pdf_document.load_page(page_index)
+                page_width = page.rect.width
+                page_height = page.rect.height
+                aspect_ratio = page_height / page_width if page_width != 0 else 1
+                final_thumb_width = column_width
+                final_thumb_height = int(final_thumb_width * aspect_ratio)
+                if final_thumb_width <= 0:
+                    final_thumb_width = 1
+                if final_thumb_height <= 0:
+                    final_thumb_height = 1
+
+                mat = fitz.Matrix(self.render_dpi_factor, self.render_dpi_factor)
+                pix = page.get_pixmap(matrix=mat, alpha=False)
+
+                img_data = pix.tobytes("ppm")
+                image = Image.open(io.BytesIO(img_data))
+                resized_image = image.resize((final_thumb_width, final_thumb_height), Image.BILINEAR)
+                
+                # Put the result in the queue for the main thread
+                self.thumbnail_queue.put({
+                    'page_index': page_index,
+                    'column_width': column_width,
+                    'pil_image': resized_image
+                })
+                
+                self.thumbnail_requests.task_done()
+                
+            except queue.Empty:
+                # No request available, continue loop to check running flag
+                continue
+            except Exception as e:
+                print(f"[ASYNC ERROR] Błąd podczas generowania miniatury: {e}")
+                import traceback
+                traceback.print_exc()
+                try:
+                    self.thumbnail_requests.task_done()
+                except:
+                    pass
+
+    def _process_thumbnail_queue(self):
+        """
+        Process thumbnails from the queue in the main thread.
+        Creates PhotoImage objects and updates the GUI.
+        Called periodically via after().
+        """
+        processed_count = 0
+        max_per_cycle = 5  # Process up to 5 thumbnails per cycle to keep UI responsive
+        
+        while processed_count < max_per_cycle:
+            try:
+                result = self.thumbnail_queue.get_nowait()
+                
+                page_index = result['page_index']
+                column_width = result['column_width']
+                pil_image = result['pil_image']
+                
+                # Create PhotoImage in main thread (required for Tkinter)
+                img_tk = ImageTk.PhotoImage(pil_image)
+                
+                # Cache the thumbnail
+                if page_index not in self.tk_images:
+                    self.tk_images[page_index] = {}
+                self.tk_images[page_index][column_width] = img_tk
+                
+                print(f"[ASYNC UPDATE] Zaktualizowano miniaturę dla strony {page_index}")
+                
+                # Update the thumbnail frame if it exists
+                if page_index in self.thumb_frames:
+                    page_frame = self.thumb_frames[page_index]
+                    if page_frame.img_label:
+                        page_frame.img_label.config(image=img_tk)
+                        page_frame.img_label.image = img_tk
+                
+                processed_count += 1
+                
+            except queue.Empty:
+                # No more thumbnails to process right now
+                break
+        
+        # Schedule next check if worker is still running or queue not empty
+        if self.thumbnail_worker_running or not self.thumbnail_queue.empty():
+            self.thumbnail_update_after_id = self.master.after(50, self._process_thumbnail_queue)
+        else:
+            self.thumbnail_update_after_id = None
+            print("[ASYNC] Zakończono przetwarzanie miniatur")
+
+    def _start_thumbnail_worker(self):
+        """Start the background thumbnail generation worker thread."""
+        if not self.thumbnail_worker_running:
+            self.thumbnail_worker_running = True
+            self.thumbnail_worker_thread = threading.Thread(target=self._thumbnail_worker, daemon=True)
+            self.thumbnail_worker_thread.start()
+            
+            # Start the queue processing in main thread
+            if self.thumbnail_update_after_id is None:
+                self.thumbnail_update_after_id = self.master.after(50, self._process_thumbnail_queue)
+
+    def _stop_thumbnail_worker(self):
+        """Stop the background thumbnail generation worker thread."""
+        self.thumbnail_worker_running = False
+        if self.thumbnail_worker_thread:
+            self.thumbnail_worker_thread.join(timeout=1.0)
+            self.thumbnail_worker_thread = None
+        
+        # Cancel the after callback if scheduled
+        if self.thumbnail_update_after_id is not None:
+            self.master.after_cancel(self.thumbnail_update_after_id)
+            self.thumbnail_update_after_id = None
+        
+        # Clear any pending requests and results
+        while not self.thumbnail_requests.empty():
+            try:
+                self.thumbnail_requests.get_nowait()
+                self.thumbnail_requests.task_done()
+            except queue.Empty:
+                break
+        
+        while not self.thumbnail_queue.empty():
+            try:
+                self.thumbnail_queue.get_nowait()
+            except queue.Empty:
+                break
 
     def update_selection_display(self):
         # Clean up selected_pages to remove any invalid indices
