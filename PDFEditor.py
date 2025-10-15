@@ -3482,8 +3482,12 @@ class SelectablePDFViewer:
             self._update_status(msg)
             
             # Optymalizacja: odśwież tylko zmienione miniatury (nie zmienia się liczba stron)
-            for page_index in indices:
+            self.show_progressbar(maximum=len(indices))
+            for i, page_index in enumerate(indices):
+                self._update_status("Odświeżanie miniatur...")
                 self.update_single_thumbnail(page_index)
+                self.update_progressbar(i + 1)
+            self.hide_progressbar()
             
             if hasattr(self, "update_selection_display"):
                 self.update_selection_display()
@@ -3661,8 +3665,12 @@ class SelectablePDFViewer:
             self.hide_progressbar()
             
             # Optymalizacja: odśwież tylko zmienione miniatury
-            for page_index in selected_indices:
+            self.show_progressbar(maximum=len(selected_indices))
+            for i, page_index in enumerate(selected_indices):
+                self._update_status("Odświeżanie miniatur...")
                 self.update_single_thumbnail(page_index)
+                self.update_progressbar(i + 1)
+            self.hide_progressbar()
             
             self._update_status(f"Numeracja wstawiona na {len(selected_indices)} stronach. Plik gotowy do zapisu.")
             self._record_action('insert_page_numbers', 
@@ -3771,8 +3779,12 @@ class SelectablePDFViewer:
             if modified_count > 0:
           #      self._save_state_to_undo()
                 # Optymalizacja: odśwież tylko zmienione miniatury
-                for page_index in pages_to_process:
+                self.show_progressbar(maximum=len(pages_to_process))
+                for i, page_index in enumerate(pages_to_process):
+                    self._update_status("Odświeżanie miniatur...")
                     self.update_single_thumbnail(page_index)
+                    self.update_progressbar(i + 1)
+                self.hide_progressbar()
                 
                 self._update_status(f"Usunięto numery stron na {modified_count} stronach, używając marginesów: G={top_mm:.1f}mm, D={bottom_mm:.1f}mm.")
                 self._record_action('remove_page_numbers', top_mm=top_mm, bottom_mm=bottom_mm)
@@ -3996,8 +4008,12 @@ class SelectablePDFViewer:
             self.hide_progressbar()
             
             # Optymalizacja: odśwież tylko zmienione miniatury (nie zmienia się liczba stron)
-            for page_index in pages_to_shift:
+            self.show_progressbar(maximum=len(pages_to_shift))
+            for i, page_index in enumerate(pages_to_shift):
+                self._update_status("Odświeżanie miniatur...")
                 self.update_single_thumbnail(page_index)
+                self.update_progressbar(i + 1)
+            self.hide_progressbar()
             
             self._update_status(f"Przesunięto zawartość na {len(pages_to_shift)} stronach o {result['x_mm']} mm (X) i {result['y_mm']} mm (Y) – automatyczne oczyszczenie stron.")
             self._record_action('shift_page_content',
@@ -6001,6 +6017,7 @@ class SelectablePDFViewer:
                     self.active_page_index = 0
 
                 for idx in range(new_page_count):
+                    self._update_status("Odświeżanie miniatur...")
                     self.update_single_thumbnail(idx)
                     if new_page_count > 10:
                         self.update_progressbar(idx + 1)
@@ -6074,6 +6091,7 @@ class SelectablePDFViewer:
                     self.active_page_index = 0
 
                 for idx in range(new_page_count):
+                    self._update_status("Odświeżanie miniatur...")
                     self.update_single_thumbnail(idx)
                     if new_page_count > 10:
                         self.update_progressbar(idx + 1)
@@ -6164,14 +6182,19 @@ class SelectablePDFViewer:
                 rotated_count += 1
                 self.update_progressbar(idx + 1)
 
+            self.hide_progressbar()
+            
             # Optymalizacja: odśwież tylko zmienione miniatury
-            for page_index in pages_to_rotate:
+            self.show_progressbar(maximum=len(pages_to_rotate))
+            for i, page_index in enumerate(pages_to_rotate):
+                self._update_status("Odświeżanie miniatur...")
                 self.update_single_thumbnail(page_index)
+                self.update_progressbar(i + 1)
+            self.hide_progressbar()
             
             self.update_tool_button_states()
             self.update_focus_display()
             self._update_status(f"Obrócono {rotated_count} stron o {angle} stopni.")
-            self.hide_progressbar()
         except Exception as e:
             self.hide_progressbar()
             self._update_status(f"BŁĄD: Wystąpił błąd podczas obracania: {e}")
@@ -7248,8 +7271,12 @@ class SelectablePDFViewer:
             self.pdf_document = fitz.open("pdf", new_pdf_bytes)
             
             # Optymalizacja: odśwież tylko zmienione miniatury
-            for page_index in pages_to_shift:
+            self.show_progressbar(maximum=len(pages_to_shift))
+            for i, page_index in enumerate(pages_to_shift):
+                self._update_status("Odświeżanie miniatur...")
                 self.update_single_thumbnail(page_index)
+                self.update_progressbar(i + 1)
+            self.hide_progressbar()
             
             self._update_status("Makro: Przesunięto zawartość stron zgodnie z parametrami.")
         except Exception as e:
@@ -7387,8 +7414,12 @@ class SelectablePDFViewer:
                 current_number += 1
             
             # Optymalizacja: odśwież tylko zmienione miniatury
-            for page_index in selected_indices:
+            self.show_progressbar(maximum=len(selected_indices))
+            for i, page_index in enumerate(selected_indices):
+                self._update_status("Odświeżanie miniatur...")
                 self.update_single_thumbnail(page_index)
+                self.update_progressbar(i + 1)
+            self.hide_progressbar()
             
             self._update_status(f"Makro: Numeracja wstawiona na {len(selected_indices)} stronach.")
             
@@ -7455,8 +7486,12 @@ class SelectablePDFViewer:
             
             if modified_count > 0:
                 # Optymalizacja: odśwież tylko zmienione miniatury
-                for page_index in pages_to_process:
+                self.show_progressbar(maximum=len(pages_to_process))
+                for i, page_index in enumerate(pages_to_process):
+                    self._update_status("Odświeżanie miniatur...")
                     self.update_single_thumbnail(page_index)
+                    self.update_progressbar(i + 1)
+                self.hide_progressbar()
                 
                 self._update_status(f"Makro: Usunięto numery stron na {modified_count} stronach.")
             else:
@@ -7521,8 +7556,12 @@ class SelectablePDFViewer:
             self._update_status(msg)
             
             # Optymalizacja: odśwież tylko zmienione miniatury
-            for page_index in indices:
+            self.show_progressbar(maximum=len(indices))
+            for i, page_index in enumerate(indices):
+                self._update_status("Odświeżanie miniatur...")
                 self.update_single_thumbnail(page_index)
+                self.update_progressbar(i + 1)
+            self.hide_progressbar()
             
             if hasattr(self, "update_selection_display"):
                 self.update_selection_display()
