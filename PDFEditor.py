@@ -4909,8 +4909,9 @@ class SelectablePDFViewer:
         
         self.external_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Programy", menu=self.external_menu)
-        self.external_menu.add_command(label="Porównianie PDF", command=self.run_compare_program)
         self.external_menu.add_command(label="Analiza PDF", command=self.show_pdf_analysis, state=tk.DISABLED, accelerator="F11")
+        self.external_menu.add_command(label="Porównianie PDF", command=self.run_compare_program)
+        
         
         self.help_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Pomoc", menu=self.help_menu)
@@ -5370,6 +5371,8 @@ class SelectablePDFViewer:
             menus_to_update.append(self.context_menu)
         if hasattr(self, 'modifications_menu'):
             menus_to_update.append(self.modifications_menu)
+        if hasattr(self, 'external_menu'):
+            menus_to_update.append(self.external_menu)
                 # --- DYNAMICZNIE: dezaktywuj CAŁE menu Makra jeśli nie ma pliku ---
         if hasattr(self, 'macros_menu'):
             doc_loaded = self.pdf_document is not None
