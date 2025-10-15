@@ -2046,13 +2046,14 @@ class EnhancedPageRangeDialog(tk.Toplevel):
 # ====================================================================
 
 class ThumbnailFrame(tk.Frame):
-    def __init__(self, parent, viewer_app, page_index, column_width):
+    def __init__(self, parent, viewer_app, page_index, column_width, lazy_load=False):
         super().__init__(parent, bg="#F5F5F5") 
         self.page_index = page_index
         self.viewer_app = viewer_app
         self.column_width = column_width
         self.bg_normal = "#F5F5F5"
         self.bg_selected = "#B3E5FC"
+        self.is_loaded = False  # Track if thumbnail is loaded
         self.outer_frame = tk.Frame(
             self, 
             bg=self.bg_normal, 
@@ -2063,7 +2064,10 @@ class ThumbnailFrame(tk.Frame):
         )
         self.outer_frame.pack(fill="both", expand=True, padx=0, pady=0)
         self.img_label = None 
-        self.setup_ui(self.outer_frame)
+        if lazy_load:
+            self.setup_ui_placeholder(self.outer_frame)
+        else:
+            self.setup_ui(self.outer_frame)
 
     def _bind_all_children(self, sequence, func):
         self.bind(sequence, func)
@@ -2074,6 +2078,38 @@ class ThumbnailFrame(tk.Frame):
                  for grandchild in child.winfo_children():
                      grandchild.bind(sequence, func)
 
+
+    def setup_ui_placeholder(self, parent_frame):
+        """Create UI with a placeholder instead of actual thumbnail"""
+        # Calculate approximate thumbnail height based on aspect ratio
+        page = self.viewer_app.pdf_document.load_page(self.page_index)
+        page_width = page.rect.width
+        page_height = page.rect.height
+        aspect_ratio = page_height / page_width if page_width != 0 else 1
+        placeholder_height = int(self.column_width * aspect_ratio)
+        
+        image_container = tk.Frame(parent_frame, bg="white") 
+        image_container.pack(padx=5, pady=(5, 0))
+        
+        # Create placeholder label with gray background
+        self.img_label = tk.Label(
+            image_container, 
+            bg="#E0E0E0", 
+            width=self.column_width,
+            height=placeholder_height,
+            text="",
+            relief=tk.FLAT
+        )
+        self.img_label.pack()
+        
+        tk.Label(parent_frame, text=f"Strona {self.page_index + 1}", bg=self.bg_normal, font=("Helvetica", 10, "bold")).pack(pady=(5, 0))
+        
+        format_label = self.viewer_app._get_page_size_label(self.page_index)
+        tk.Label(parent_frame, text=format_label, fg="gray", bg=self.bg_normal, font=("Helvetica", 9)).pack(pady=(0, 5))
+
+        self._bind_all_children("<Button-1>", lambda event, idx=self.page_index: self.viewer_app._handle_lpm_click(idx, event))
+        self._bind_all_children("<Button-3>", lambda event, idx=self.page_index: self._handle_ppm_click(event, idx))
+        self.is_loaded = False
 
     def setup_ui(self, parent_frame):
         img_tk = self.viewer_app._render_and_scale(self.page_index, self.column_width)
@@ -2094,6 +2130,38 @@ class ThumbnailFrame(tk.Frame):
 
         self._bind_all_children("<Button-3>", lambda event, idx=self.page_index: self._handle_ppm_click(event, idx))
        # parent_frame.bind("<Enter>", lambda event, idx=self.page_index: self.viewer_app._focus_by_mouse(idx))
+        self.is_loaded = True
+    
+    def load_thumbnail(self):
+        """Load the actual thumbnail if not already loaded"""
+        if self.is_loaded:
+            return
+        
+        img_tk = self.viewer_app._render_and_scale(self.page_index, self.column_width)
+        if self.img_label:
+            self.img_label.config(image=img_tk, bg="white")
+            self.img_label.image = img_tk
+        self.is_loaded = True
+    
+    def unload_thumbnail(self):
+        """Unload thumbnail to free memory"""
+        if not self.is_loaded:
+            return
+        
+        # Calculate placeholder dimensions
+        page = self.viewer_app.pdf_document.load_page(self.page_index)
+        page_width = page.rect.width
+        page_height = page.rect.height
+        aspect_ratio = page_height / page_width if page_width != 0 else 1
+        placeholder_height = int(self.column_width * aspect_ratio)
+        
+        if self.img_label:
+            self.img_label.config(image="", bg="#E0E0E0", width=self.column_width, height=placeholder_height)
+            self.img_label.image = None
+        
+        # Clear cache for this page
+        self.viewer_app._clear_thumbnail_cache(self.page_index)
+        self.is_loaded = False
 
     def _handle_ppm_click(self, event, page_index):
         self.viewer_app.active_page_index = page_index
@@ -4233,7 +4301,13 @@ class SelectablePDFViewer:
         self.icons: Dict[str, Union[ImageTk.PhotoImage, str]] = {}
         
         self.thumb_frames: Dict[int, 'ThumbnailFrame'] = {}
-        self.active_page_index = 0 
+        self.active_page_index = 0
+        
+        # Lazy loading settings
+        self.lazy_loading_enabled = True  # Enable lazy loading by default
+        self.lazy_buffer_pages = 2  # Number of pages to buffer above and below viewport
+        self._lazy_load_timer = None  # Timer for debouncing lazy load updates
+        self._lazy_load_delay = 100  # milliseconds
 
         self.clipboard: Optional[bytes] = None 
         self.pages_in_clipboard_count: int = 0 
@@ -4414,7 +4488,7 @@ class SelectablePDFViewer:
 
 
         self.canvas = tk.Canvas(master, bg="#F5F5F5") 
-        self.scrollbar = tk.Scrollbar(master, orient="vertical", command=self.canvas.yview)
+        self.scrollbar = tk.Scrollbar(master, orient="vertical", command=self._on_scrollbar)
         
         self.scrollable_frame = tk.Frame(self.canvas, bg="#F5F5F5") 
         
@@ -4422,7 +4496,7 @@ class SelectablePDFViewer:
         
         self.canvas.bind("<Configure>", self._reconfigure_grid) 
         
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.canvas.configure(yscrollcommand=self._on_canvas_scroll)
         self.scrollbar.pack(side="right", fill="y")
         self.canvas.pack(side="left", fill="both", expand=True) 
 
@@ -6511,6 +6585,22 @@ class SelectablePDFViewer:
         elif event.num == 5 or event.delta < 0:
             new_pos = min(1, current_top + step)
             self.canvas.yview_moveto(new_pos)
+        
+        # Trigger lazy loading update
+        if self.lazy_loading_enabled:
+            self._schedule_lazy_load_update()
+    
+    def _on_scrollbar(self, *args):
+        """Handle scrollbar movement and trigger lazy loading"""
+        self.canvas.yview(*args)
+        if self.lazy_loading_enabled:
+            self._schedule_lazy_load_update()
+    
+    def _on_canvas_scroll(self, *args):
+        """Handle canvas scroll updates (for scrollbar position) and trigger lazy loading"""
+        self.scrollbar.set(*args)
+        if self.lazy_loading_enabled:
+            self._schedule_lazy_load_update()
             
     def _get_current_num_cols(self):
         """Calculate current number of columns based on canvas width and thumb_width"""
@@ -6607,6 +6697,10 @@ class SelectablePDFViewer:
               self.canvas.yview_moveto(0.0)
         else:
               self.canvas.config(scrollregion=(0, 0, actual_canvas_width, 10))
+        
+        # Trigger lazy loading update after grid reconfiguration
+        if self.lazy_loading_enabled:
+            self.master.after(100, self._update_lazy_loaded_thumbnails)
 
 
     def _get_page_size_label(self, page_index):
@@ -6653,24 +6747,25 @@ class SelectablePDFViewer:
     def _create_widgets(self, num_cols, column_width):
         """Tworzy wszystkie ramki miniatur dla aktualnego dokumentu PDF."""
         page_count = len(self.pdf_document)
-        # Dodaj pasek postępu tylko przy większej liczbie stron (np. 10+), by nie przeszkadzać przy szybkim ładowaniu
-        if page_count > 10:
-            self.show_progressbar(maximum=page_count, mode="determinate")
+        # Nie pokazuj paska postępu przy lazy loading (tworzenie placeholder jest szybkie)
+        
         for i in range(page_count):
             page_frame = ThumbnailFrame(
                 parent=self.scrollable_frame,  
                 viewer_app=self,  
                 page_index=i,  
-                column_width=column_width
+                column_width=column_width,
+                lazy_load=self.lazy_loading_enabled
             )
             page_frame.grid(row=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")  
-            self.thumb_frames[i] = page_frame  
-            if page_count > 10:
-                self.update_progressbar(i + 1)
-        if page_count > 10:
-            self.hide_progressbar()
+            self.thumb_frames[i] = page_frame
+        
         self.update_selection_display()
         self.update_focus_display()
+        
+        # If lazy loading is enabled, load only visible thumbnails
+        if self.lazy_loading_enabled:
+            self.master.after(50, self._update_lazy_loaded_thumbnails)
 
     def _update_widgets(self, num_cols, column_width):
         page_count = len(self.pdf_document)
@@ -6683,7 +6778,8 @@ class SelectablePDFViewer:
                     parent=self.scrollable_frame,
                     viewer_app=self,
                     page_index=i,
-                    column_width=column_width
+                    column_width=column_width,
+                    lazy_load=self.lazy_loading_enabled
                 )
                 self.thumb_frames[i] = page_frame
 
@@ -6695,10 +6791,20 @@ class SelectablePDFViewer:
 
         for i in range(page_count):
             page_frame = self.thumb_frames[i]
+            page_frame.column_width = column_width  # Update column width
             page_frame.grid(row=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")
-            img_tk = self._render_and_scale(i, column_width)
-            page_frame.img_label.config(image=img_tk)
-            page_frame.img_label.image = img_tk
+            
+            # Only update thumbnails if lazy loading is disabled or if the thumbnail is already loaded
+            if not self.lazy_loading_enabled or page_frame.is_loaded:
+                # Clear cache for this width to force re-render at new size
+                if i in self.tk_images and column_width in self.tk_images[i]:
+                    del self.tk_images[i][column_width]
+                
+                img_tk = self._render_and_scale(i, column_width)
+                page_frame.img_label.config(image=img_tk)
+                page_frame.img_label.image = img_tk
+                page_frame.is_loaded = True
+            
             outer_frame_children = page_frame.outer_frame.winfo_children()
             if len(outer_frame_children) > 2:
                 outer_frame_children[1].config(text=f"Strona {i + 1}", bg=frame_bg)
@@ -6706,6 +6812,10 @@ class SelectablePDFViewer:
 
         self.update_selection_display()
         self.update_focus_display()
+        
+        # If lazy loading is enabled, update visible thumbnails
+        if self.lazy_loading_enabled:
+            self.master.after(50, self._update_lazy_loaded_thumbnails)
 
     
     def _render_and_scale(self, page_index, column_width):
@@ -6756,6 +6866,85 @@ class SelectablePDFViewer:
         """
         if page_index in self.tk_images:
             del self.tk_images[page_index]
+    
+    def _get_visible_page_indices(self):
+        """
+        Zwraca zestaw indeksów stron, które są aktualnie widoczne w viewport
+        plus bufor (lazy_buffer_pages stron powyżej i poniżej).
+        """
+        if not self.pdf_document or not self.thumb_frames:
+            return set()
+        
+        # Get canvas viewport coordinates
+        canvas_top = self.canvas.canvasy(0)
+        canvas_bottom = self.canvas.canvasy(self.canvas.winfo_height())
+        
+        visible_indices = set()
+        
+        for page_index, frame in self.thumb_frames.items():
+            if not frame.winfo_exists():
+                continue
+            
+            # Get frame position relative to canvas
+            try:
+                frame_y = frame.winfo_y()
+                frame_height = frame.winfo_height()
+                frame_bottom = frame_y + frame_height
+                
+                # Check if frame is in viewport or buffer zone
+                # Buffer is calculated as number of pages * approximate frame height
+                buffer_size = self.lazy_buffer_pages * (frame_height if frame_height > 0 else 300)
+                
+                if (frame_bottom >= canvas_top - buffer_size and 
+                    frame_y <= canvas_bottom + buffer_size):
+                    visible_indices.add(page_index)
+            except tk.TclError:
+                # Widget might have been destroyed
+                continue
+        
+        return visible_indices
+    
+    def _update_lazy_loaded_thumbnails(self):
+        """
+        Aktualizuje miniatury na podstawie widoczności:
+        - Ładuje miniatury dla widocznych stron
+        - Zwalnia miniatury dla niewidocznych stron
+        """
+        if not self.lazy_loading_enabled or not self.pdf_document:
+            return
+        
+        visible_indices = self._get_visible_page_indices()
+        
+        # Load visible thumbnails
+        for page_index in visible_indices:
+            if page_index in self.thumb_frames:
+                frame = self.thumb_frames[page_index]
+                if not frame.is_loaded:
+                    frame.load_thumbnail()
+        
+        # Unload non-visible thumbnails
+        for page_index, frame in self.thumb_frames.items():
+            if page_index not in visible_indices and frame.is_loaded:
+                frame.unload_thumbnail()
+    
+    def _schedule_lazy_load_update(self):
+        """
+        Planuje aktualizację lazy loading z debouncing
+        """
+        if self._lazy_load_timer is not None:
+            self.master.after_cancel(self._lazy_load_timer)
+        
+        self._lazy_load_timer = self.master.after(
+            self._lazy_load_delay, 
+            self._do_lazy_load_update
+        )
+    
+    def _do_lazy_load_update(self):
+        """
+        Wykonuje faktyczną aktualizację lazy loading (debounced)
+        """
+        self._lazy_load_timer = None
+        self._update_lazy_loaded_thumbnails()
 
     def update_single_thumbnail(self, page_index, column_width=None):
         """
