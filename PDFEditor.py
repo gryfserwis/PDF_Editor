@@ -5125,32 +5125,26 @@ class SelectablePDFViewer:
             # Krok 1: inicjalizacja progresu i status
             # Update status FIRST, then show progress bar to ensure message is visible
             self._update_status("Otwieranie pliku PDF... (krok 1/2)")
-            self.show_progressbar(maximum=3, mode="determinate")
-            self.update_progressbar(1)
             
             # Krok 2: otwieranie pliku (może potrwać)
             # Ensure status is visible BEFORE the blocking fitz.open() call
             self._update_status("Otwieranie pliku PDF...")
             # fitz.open() is a blocking operation - status must be shown before it starts
             doc = fitz.open(filepath)
-            self.update_progressbar(2)
             
             # Krok 3: obsługa hasła
             if doc.is_encrypted:
                 doc.close()
-                self.hide_progressbar()
                 password = self._ask_for_password()
                 if password is None:
                     self._update_status("Anulowano otwieranie pliku.")
                     return
                 # Show status BEFORE blocking operations
                 self._update_status("Otwieranie pliku PDF z hasłem...")
-                self.show_progressbar(maximum=3, mode="determinate")
                 # fitz.open() is a blocking operation - status must be visible before it
                 doc = fitz.open(filepath)
                 if not doc.authenticate(password):
                     doc.close()
-                    self.hide_progressbar()
                     custom_messagebox(
                         self.master, 
                         "Błąd", 
@@ -5159,7 +5153,7 @@ class SelectablePDFViewer:
                     )
                     self._update_status("BŁĄD: Nieprawidłowe hasło do pliku PDF.")
                     return
-                self.update_progressbar(2)
+                
             
             # Krok 4: czyszczenie i GUI
             # Status is updated and visible immediately thanks to _update_status() calling update_idletasks()
@@ -5179,11 +5173,9 @@ class SelectablePDFViewer:
                 widget.destroy()
             self.thumb_width = 205  # Reset to default thumbnail width
             self._reconfigure_grid()
-            self.update_progressbar(3)
             
-            self.hide_progressbar()
             # Final status update - will be immediately visible
-            self._update_status(f"Wczytano {len(self.pdf_document)} stron. Gotowy do edycji.")
+            self._update_status(f"Wczytano {len(self.pdf_document)} stron. Generowanie miniatur...")
             self.save_button_icon.config(state=tk.NORMAL)
             self.file_menu.entryconfig("Zapisz jako...", state=tk.NORMAL)
             self.update_tool_button_states()
@@ -5191,7 +5183,6 @@ class SelectablePDFViewer:
             self.prefs_manager.set('last_opened_file', filepath)   
             
         except Exception as e:
-            self.hide_progressbar()
             self._update_status(f"BŁĄD: Nie udało się wczytać pliku PDF: {e}")
             self.pdf_document = None
             if hasattr(self, 'save_button_icon'):
@@ -6660,7 +6651,12 @@ class SelectablePDFViewer:
 
 
     def _create_widgets(self, num_cols, column_width):
-        for i in range(len(self.pdf_document)):
+        """Tworzy wszystkie ramki miniatur dla aktualnego dokumentu PDF."""
+        page_count = len(self.pdf_document)
+        # Dodaj pasek postępu tylko przy większej liczbie stron (np. 10+), by nie przeszkadzać przy szybkim ładowaniu
+        if page_count > 10:
+            self.show_progressbar(maximum=page_count, mode="determinate")
+        for i in range(page_count):
             page_frame = ThumbnailFrame(
                 parent=self.scrollable_frame,  
                 viewer_app=self,  
@@ -6669,58 +6665,89 @@ class SelectablePDFViewer:
             )
             page_frame.grid(row=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")  
             self.thumb_frames[i] = page_frame  
-            
+            if page_count > 10:
+                self.update_progressbar(i + 1)
+        if page_count > 10:
+            self.hide_progressbar()
         self.update_selection_display()
         self.update_focus_display()
 
     def _update_widgets(self, num_cols, column_width):
-        page_frames = [c for c in self.scrollable_frame.grid_slaves() if isinstance(c, ThumbnailFrame)]
-        page_frames.sort(key=lambda x: x.page_index)
-        frame_bg = "#F5F5F5"  
-        for i, page_frame in enumerate(page_frames):
-            page_frame.grid(row=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")  
-            idx = page_frame.page_index
-            img_tk = self._render_and_scale(idx, column_width)
-            # Cache is now handled inside _render_and_scale
+        page_count = len(self.pdf_document)
+        frame_bg = "#F5F5F5"
+
+        # Dodaj brakujące ramki miniaturek
+        for i in range(page_count):
+            if i not in self.thumb_frames:
+                page_frame = ThumbnailFrame(
+                    parent=self.scrollable_frame,
+                    viewer_app=self,
+                    page_index=i,
+                    column_width=column_width
+                )
+                self.thumb_frames[i] = page_frame
+
+        # Usuń nadmiarowe ramki (jeśli stron jest mniej niż widgetów)
+        to_remove = [idx for idx in self.thumb_frames if idx >= page_count]
+        for idx in to_remove:
+            self.thumb_frames[idx].destroy()
+            del self.thumb_frames[idx]
+
+        for i in range(page_count):
+            page_frame = self.thumb_frames[i]
+            page_frame.grid(row=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")
+            img_tk = self._render_and_scale(i, column_width)
             page_frame.img_label.config(image=img_tk)
             page_frame.img_label.image = img_tk
             outer_frame_children = page_frame.outer_frame.winfo_children()
             if len(outer_frame_children) > 2:
-                  outer_frame_children[1].config(text=f"Strona {idx + 1}", bg=frame_bg)
-                  outer_frame_children[2].config(text=self._get_page_size_label(idx), bg=frame_bg)
-            
+                outer_frame_children[1].config(text=f"Strona {i + 1}", bg=frame_bg)
+                outer_frame_children[2].config(text=self._get_page_size_label(i), bg=frame_bg)
+
         self.update_selection_display()
         self.update_focus_display()
 
     
     def _render_and_scale(self, page_index, column_width):
-        # Check if we have a cached thumbnail for this width
+        # Diagnostyka cache miniaturek
         if page_index in self.tk_images and column_width in self.tk_images[page_index]:
+            print(f"[CACHE] Używam cache dla strony {page_index}, szerokość {column_width}")
             return self.tk_images[page_index][column_width]
-        
+
+        print(f"[RENDER] Generuję miniaturę dla strony {page_index}, szerokość {column_width}")
         page = self.pdf_document.load_page(page_index)
         page_width = page.rect.width
         page_height = page.rect.height
         aspect_ratio = page_height / page_width if page_width != 0 else 1
-        final_thumb_width = column_width  
+        final_thumb_width = column_width
         final_thumb_height = int(final_thumb_width * aspect_ratio)
-        if final_thumb_width <= 0: final_thumb_width = 1
-        if final_thumb_height <= 0: final_thumb_height = 1
+        if final_thumb_width <= 0:
+            final_thumb_width = 1
+        if final_thumb_height <= 0:
+            final_thumb_height = 1
+
+        print(f"final_thumb_width={final_thumb_width}, final_thumb_height={final_thumb_height}")
 
         mat = fitz.Matrix(self.render_dpi_factor, self.render_dpi_factor)
         pix = page.get_pixmap(matrix=mat, alpha=False)
-        
+
         img_data = pix.tobytes("ppm")
         image = Image.open(io.BytesIO(img_data))
-        
-        resized_image = image.resize((final_thumb_width, final_thumb_height), Image.LANCZOS)  
+
+        print(f"Image.size (oryginalny render): {image.size}")
+
+        resized_image = image.resize((final_thumb_width, final_thumb_height), Image.BILINEAR)
+        print(f"Resized image size: {resized_image.size}")
+
         img_tk = ImageTk.PhotoImage(resized_image)
         
         # Cache the thumbnail for this width
         if page_index not in self.tk_images:
             self.tk_images[page_index] = {}
         self.tk_images[page_index][column_width] = img_tk
-        
+
+        print(f"[CACHE UPDATE] Dodano do cache: strona {page_index}, szerokość {column_width}")
+
         return img_tk
 
     def _clear_thumbnail_cache(self, page_index):
