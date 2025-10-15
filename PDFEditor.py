@@ -292,6 +292,11 @@ class PreferencesManager:
             'ImageImportSettingsDialog.custom_width': '',
             'ImageImportSettingsDialog.custom_height': '',
             'ImageImportSettingsDialog.keep_ratio': 'True',
+            
+            # Color detection settings
+            'color_detect_threshold': '5',
+            'color_detect_samples': '300',
+            'color_detect_scale': '0.2',
         }
         self.load_preferences()
     
@@ -426,6 +431,33 @@ class PreferencesDialog(tk.Toplevel):
         
         general_frame.columnconfigure(1, weight=1)
         
+        # Sekcja wykrywania stron kolorowych
+        color_detect_frame = ttk.LabelFrame(main_frame, text="Wykrywanie stron kolorowych", padding="8")
+        color_detect_frame.pack(fill="x", pady=(0, 8))
+        
+        # Próg wykrywania koloru
+        ttk.Label(color_detect_frame, text="Próg różnicy RGB:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
+        self.color_threshold_var = tk.StringVar()
+        threshold_entry = ttk.Entry(color_detect_frame, textvariable=self.color_threshold_var, width=10)
+        threshold_entry.grid(row=0, column=1, sticky="w", padx=4, pady=4)
+        ttk.Label(color_detect_frame, text="(1-255, domyślnie 5)", foreground="gray").grid(row=0, column=2, sticky="w", padx=4, pady=4)
+        
+        # Liczba próbkowanych pikseli
+        ttk.Label(color_detect_frame, text="Liczba próbkowanych pikseli:").grid(row=1, column=0, sticky="w", padx=4, pady=4)
+        self.color_samples_var = tk.StringVar()
+        samples_entry = ttk.Entry(color_detect_frame, textvariable=self.color_samples_var, width=10)
+        samples_entry.grid(row=1, column=1, sticky="w", padx=4, pady=4)
+        ttk.Label(color_detect_frame, text="(10-1000, domyślnie 300)", foreground="gray").grid(row=1, column=2, sticky="w", padx=4, pady=4)
+        
+        # Skala renderowania
+        ttk.Label(color_detect_frame, text="Skala renderowania:").grid(row=2, column=0, sticky="w", padx=4, pady=4)
+        self.color_scale_var = tk.StringVar()
+        scale_entry = ttk.Entry(color_detect_frame, textvariable=self.color_scale_var, width=10)
+        scale_entry.grid(row=2, column=1, sticky="w", padx=4, pady=4)
+        ttk.Label(color_detect_frame, text="(0.1-2.0, domyślnie 0.2)", foreground="gray").grid(row=2, column=2, sticky="w", padx=4, pady=4)
+        
+        color_detect_frame.columnconfigure(2, weight=1)
+        
         # Informacja
        # info_frame = ttk.Frame(main_frame)
        # info_frame.pack(fill="x", pady=8)
@@ -463,6 +495,9 @@ class PreferencesDialog(tk.Toplevel):
         self.thumbnail_quality_var.set(self.prefs_manager.get('thumbnail_quality'))
         self.confirm_delete_var.set(self.prefs_manager.get('confirm_delete') == 'True')
         self.export_image_dpi_var.set(self.prefs_manager.get('export_image_dpi'))
+        self.color_threshold_var.set(self.prefs_manager.get('color_detect_threshold'))
+        self.color_samples_var.set(self.prefs_manager.get('color_detect_samples'))
+        self.color_scale_var.set(self.prefs_manager.get('color_detect_scale'))
     
     def reset_all_defaults(self):
         """Przywraca domyślne wartości we wszystkich dialogach"""
@@ -491,11 +526,42 @@ class PreferencesDialog(tk.Toplevel):
     
     def ok(self, event=None):
         """Zapisuje preferencje"""
+        # Validate color detection settings
+        try:
+            threshold = int(self.color_threshold_var.get())
+            if threshold < 1 or threshold > 255:
+                custom_messagebox(self, "Błąd", "Próg różnicy RGB musi być z zakresu 1-255.", typ="error")
+                return
+        except ValueError:
+            custom_messagebox(self, "Błąd", "Próg różnicy RGB musi być liczbą całkowitą.", typ="error")
+            return
+        
+        try:
+            samples = int(self.color_samples_var.get())
+            if samples < 10 or samples > 1000:
+                custom_messagebox(self, "Błąd", "Liczba próbkowanych pikseli musi być z zakresu 10-1000.", typ="error")
+                return
+        except ValueError:
+            custom_messagebox(self, "Błąd", "Liczba próbkowanych pikseli musi być liczbą całkowitą.", typ="error")
+            return
+        
+        try:
+            scale = float(self.color_scale_var.get().replace(',', '.'))
+            if scale < 0.1 or scale > 2.0:
+                custom_messagebox(self, "Błąd", "Skala renderowania musi być z zakresu 0.1-2.0.", typ="error")
+                return
+        except ValueError:
+            custom_messagebox(self, "Błąd", "Skala renderowania musi być liczbą.", typ="error")
+            return
+        
         self.prefs_manager.set('default_read_path', self.default_read_path_var.get())
         self.prefs_manager.set('default_save_path', self.default_path_var.get())
         self.prefs_manager.set('thumbnail_quality', self.thumbnail_quality_var.get())
         self.prefs_manager.set('confirm_delete', 'True' if self.confirm_delete_var.get() else 'False')
         self.prefs_manager.set('export_image_dpi', self.export_image_dpi_var.get())
+        self.prefs_manager.set('color_detect_threshold', str(threshold))
+        self.prefs_manager.set('color_detect_samples', str(samples))
+        self.prefs_manager.set('color_detect_scale', str(scale))
         self.result = True
         self.destroy()
     
@@ -3189,6 +3255,7 @@ class PDFAnalysisDialog(tk.Toplevel):
         super().__init__(parent)
         self.parent = parent
         self.viewer = viewer
+        self.prefs_manager = viewer.prefs_manager
         self.title("Analiza PDF")
         self.transient(parent)
         # Don't grab_set() - we want non-blocking dialog
@@ -3331,15 +3398,20 @@ class PDFAnalysisDialog(tk.Toplevel):
     def _detect_color(self, page):
         """Wykrywa czy strona jest kolorowa czy czarno-biała"""
         try:
-            # Render page at low resolution for speed
-            mat = fitz.Matrix(0.5, 0.5)  # Low resolution for speed
+            # Get settings from preferences
+            render_scale = float(self.prefs_manager.get('color_detect_scale', '0.2'))
+            max_samples = int(self.prefs_manager.get('color_detect_samples', '300'))
+            threshold = int(self.prefs_manager.get('color_detect_threshold', '5'))
+            
+            # Render page at configured resolution
+            mat = fitz.Matrix(render_scale, render_scale)
             pix = page.get_pixmap(matrix=mat, alpha=False, colorspace=fitz.csGRAY)
             
             # Get another pixmap in RGB
             pix_rgb = page.get_pixmap(matrix=mat, alpha=False, colorspace=fitz.csRGB)
             
             # Sample pixels - check if RGB differs from grayscale
-            samples = min(100, pix.width * pix.height)
+            samples = min(max_samples, pix.width * pix.height)
             step = max(1, (pix.width * pix.height) // samples)
             
             for i in range(0, pix.width * pix.height, step):
@@ -3357,8 +3429,8 @@ class PDFAnalysisDialog(tk.Toplevel):
                 g = pix_rgb.samples[offset + 1]
                 b = pix_rgb.samples[offset + 2]
                 
-                # If R, G, B are different, it's color
-                if abs(r - g) > 10 or abs(g - b) > 10 or abs(r - b) > 10:
+                # If R, G, B are different by more than threshold, it's color
+                if abs(r - g) > threshold or abs(g - b) > threshold or abs(r - b) > threshold:
                     return True
             
             return False
