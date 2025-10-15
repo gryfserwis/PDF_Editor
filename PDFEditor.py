@@ -6793,12 +6793,11 @@ class SelectablePDFViewer:
 
     
     def _render_and_scale(self, page_index, column_width):
-        # Diagnostyka cache miniaturek
+        # Check cache first
         if page_index in self.tk_images and column_width in self.tk_images[page_index]:
-            print(f"[CACHE] Używam cache dla strony {page_index}, szerokość {column_width}")
             return self.tk_images[page_index][column_width]
 
-        print(f"[RENDER] Generuję miniaturę dla strony {page_index}, szerokość {column_width}")
+        # Render thumbnail
         page = self.pdf_document.load_page(page_index)
         page_width = page.rect.width
         page_height = page.rect.height
@@ -6810,18 +6809,13 @@ class SelectablePDFViewer:
         if final_thumb_height <= 0:
             final_thumb_height = 1
 
-        print(f"final_thumb_width={final_thumb_width}, final_thumb_height={final_thumb_height}")
-
         mat = fitz.Matrix(self.render_dpi_factor, self.render_dpi_factor)
         pix = page.get_pixmap(matrix=mat, alpha=False)
 
         img_data = pix.tobytes("ppm")
         image = Image.open(io.BytesIO(img_data))
 
-        print(f"Image.size (oryginalny render): {image.size}")
-
         resized_image = image.resize((final_thumb_width, final_thumb_height), Image.BILINEAR)
-        print(f"Resized image size: {resized_image.size}")
 
         img_tk = ImageTk.PhotoImage(resized_image)
         
@@ -6829,8 +6823,6 @@ class SelectablePDFViewer:
         if page_index not in self.tk_images:
             self.tk_images[page_index] = {}
         self.tk_images[page_index][column_width] = img_tk
-
-        print(f"[CACHE UPDATE] Dodano do cache: strona {page_index}, szerokość {column_width}")
 
         return img_tk
 
@@ -6893,12 +6885,10 @@ class SelectablePDFViewer:
                 
                 # Check if already cached
                 if page_index in self.tk_images and column_width in self.tk_images[page_index]:
-                    print(f"[ASYNC CACHE] Strona {page_index} już w cache, pomijam")
                     self.thumbnail_requests.task_done()
                     continue
                 
                 # Render thumbnail in background
-                print(f"[ASYNC RENDER] Generuję miniaturę dla strony {page_index}, szerokość {column_width}")
                 
                 page = self.pdf_document.load_page(page_index)
                 page_width = page.rect.width
@@ -6931,9 +6921,7 @@ class SelectablePDFViewer:
                 # No request available, continue loop to check running flag
                 continue
             except Exception as e:
-                print(f"[ASYNC ERROR] Błąd podczas generowania miniatury: {e}")
-                import traceback
-                traceback.print_exc()
+                # Silently handle errors to avoid blocking the worker thread
                 try:
                     self.thumbnail_requests.task_done()
                 except:
@@ -6964,8 +6952,6 @@ class SelectablePDFViewer:
                     self.tk_images[page_index] = {}
                 self.tk_images[page_index][column_width] = img_tk
                 
-                print(f"[ASYNC UPDATE] Zaktualizowano miniaturę dla strony {page_index}")
-                
                 # Update the thumbnail frame if it exists
                 if page_index in self.thumb_frames:
                     page_frame = self.thumb_frames[page_index]
@@ -6984,7 +6970,6 @@ class SelectablePDFViewer:
             self.thumbnail_update_after_id = self.master.after(50, self._process_thumbnail_queue)
         else:
             self.thumbnail_update_after_id = None
-            print("[ASYNC] Zakończono przetwarzanie miniatur")
 
     def _start_thumbnail_worker(self):
         """Start the background thumbnail generation worker thread."""
