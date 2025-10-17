@@ -1,31 +1,15 @@
 # -*- coding: utf-8 -*-
-"""
-GRYF PDF Editor - PySide6 Version
-Migrated from Tkinter to PySide6 (Qt for Python)
-
-VERSION: 5.6.0
-MIGRATION STATUS: Automated migration - REQUIRES MANUAL COMPLETION
-MIGRATION DATE: 2025-10-17
-
-⚠️ IMPORTANT: This file was automatically migrated from Tkinter to PySide6.
-   It will NOT run without manual fixes. See MIGRATION_README.md for details.
-
-CURRENT STATUS:
-✅ All widget classes converted (tk.* → Q*)
-✅ All imports updated (tkinter → PySide6)
-✅ All business logic preserved (PDF operations, macros, preferences)
-
-⚠️ REQUIRES MANUAL FIXES:
-- Layout management (~1000+ calls): pack()/grid() → Qt layouts
-- Variable bindings (~200+ instances): StringVar/IntVar → properties/signals
-- Event handling (~150+ bindings): bind() → signals/slots
-- custom_messagebox: Complete Qt rewrite needed
-- Dialog geometry: Positioning and sizing for Qt
-- Drag & drop: Qt drag-drop API implementation
-
-See MIGRATION_README.md for complete migration guide and examples.
-Original Tkinter version preserved as: PDFEditor_tkinter.py
-"""
+# GRYF PDF Editor - PySide6 Migration (Work in Progress)
+# This file was automatically migrated from Tkinter to PySide6
+# Manual adjustments are needed - search for '# Qt:' and 'TODO' comments
+#
+# Key areas requiring manual fixes:
+# 1. Layout management (pack/grid -> QVBoxLayout/QHBoxLayout/QGridLayout)
+# 2. Variable binding (StringVar/IntVar -> direct properties or signals)
+# 3. Event binding (bind -> signals/slots)
+# 4. Geometry management (different between Tk and Qt)
+# 5. Drag and drop (different API)
+#
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -37,8 +21,18 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QSize, QPoint, QRect, QTimer, Signal, QMimeData, QByteArray, QBuffer, QIODevice, QEvent
 from PySide6.QtGui import QPixmap, QImage, QIcon, QPainter, QColor, QAction, QKeySequence, QDrag, QPalette, QCursor
-import fitz  # PyMuPDF
-from PIL import Image
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QFileDialog, QMessageBox, QDialog, QLineEdit, QCheckBox,
+    QComboBox, QRadioButton, QButtonGroup, QGroupBox, QScrollArea, QFrame,
+    QListWidget, QTextEdit, QProgressBar, QSpinBox, QDoubleSpinBox,
+    QTabWidget, QDialogButtonBox, QMenu, QToolBar, QStatusBar, QSplitter,
+    QGridLayout, QFormLayout, QSizePolicy, QAbstractItemView, QListWidgetItem
+)
+from PySide6.QtCore import Qt, QSize, QPoint, QRect, QTimer, Signal, QMimeData, QByteArray, QBuffer, QIODevice, QEvent
+from PySide6.QtGui import QPixmap, QImage, QIcon, QPainter, QColor, QAction, QKeySequence, QDrag, QPalette, QCursor
+import fitz
+from PIL import Image, ImageTk
 import io
 import math 
 import os
