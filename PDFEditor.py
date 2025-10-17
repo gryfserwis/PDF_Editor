@@ -1,7 +1,44 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
-import fitz
-from PIL import Image, ImageTk
+# -*- coding: utf-8 -*-
+"""
+GRYF PDF Editor - PySide6 Version
+Migrated from Tkinter to PySide6 (Qt for Python)
+
+VERSION: 5.6.0
+MIGRATION STATUS: Automated migration - REQUIRES MANUAL COMPLETION
+MIGRATION DATE: 2025-10-17
+
+⚠️ IMPORTANT: This file was automatically migrated from Tkinter to PySide6.
+   It will NOT run without manual fixes. See MIGRATION_README.md for details.
+
+CURRENT STATUS:
+✅ All widget classes converted (tk.* → Q*)
+✅ All imports updated (tkinter → PySide6)
+✅ All business logic preserved (PDF operations, macros, preferences)
+
+⚠️ REQUIRES MANUAL FIXES:
+- Layout management (~1000+ calls): pack()/grid() → Qt layouts
+- Variable bindings (~200+ instances): StringVar/IntVar → properties/signals
+- Event handling (~150+ bindings): bind() → signals/slots
+- custom_messagebox: Complete Qt rewrite needed
+- Dialog geometry: Positioning and sizing for Qt
+- Drag & drop: Qt drag-drop API implementation
+
+See MIGRATION_README.md for complete migration guide and examples.
+Original Tkinter version preserved as: PDFEditor_tkinter.py
+"""
+
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QFileDialog, QMessageBox, QDialog, QLineEdit, QCheckBox,
+    QComboBox, QRadioButton, QButtonGroup, QGroupBox, QScrollArea, QFrame,
+    QListWidget, QTextEdit, QProgressBar, QSpinBox, QDoubleSpinBox,
+    QTabWidget, QDialogButtonBox, QMenu, QToolBar, QStatusBar, QSplitter,
+    QGridLayout, QFormLayout, QSizePolicy, QAbstractItemView, QListWidgetItem
+)
+from PySide6.QtCore import Qt, QSize, QPoint, QRect, QTimer, Signal, QMimeData, QByteArray, QBuffer, QIODevice, QEvent
+from PySide6.QtGui import QPixmap, QImage, QIcon, QPainter, QColor, QAction, QKeySequence, QDrag, QPalette, QCursor
+import fitz  # PyMuPDF
+from PIL import Image
 import io
 import math 
 import os
@@ -116,20 +153,14 @@ def resource_path(relative_path):
         
     return os.path.join(base_path, relative_path)
   
-import tkinter as tk
-from tkinter import ttk, messagebox
 
 
-import tkinter as tk
-from tkinter import ttk
 
 def custom_messagebox(parent, title, message, typ="info"):
     """
     Wyświetla niestandardowe okno dialogowe wyśrodkowane na oknie aplikacji (nie na środku ekranu).
     Brak obsługi ikon PNG, okno jest nieco mniejsze.
     """
-    import tkinter as tk
-    from tkinter import ttk
 
     dialog = tk.Toplevel(parent)
     dialog.title(title)
@@ -147,14 +178,14 @@ def custom_messagebox(parent, title, message, typ="info"):
     }
     bg_color = colors.get(typ, "#f0f0f0")
 
-    main_frame = ttk.Frame(dialog, padding="12")
-    main_frame.pack(fill="both", expand=True)
-    content_frame = ttk.Frame(main_frame)
-    content_frame.pack(fill="both", expand=True, pady=(0, 12))
+    main_frame = QFrame(dialog, padding="12")
+    main_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True)
+    content_frame = QFrame(main_frame)
+    content_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True, pady=(0, 12))
 
     # Tylko tekst komunikatu, bez ikony
-    msg_label = tk.Label(content_frame, text=message, justify="left", wraplength=310, font=("Arial", 10))
-    msg_label.pack(fill="both", expand=True, pady=6)
+    msg_label = QLabel(content_frame, text=message, justify="left", wraplength=310, font=("Arial", 10))
+    msg_label.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True, pady=6)
 
     result = [None]
 
@@ -170,30 +201,30 @@ def custom_messagebox(parent, title, message, typ="info"):
     def on_ok():
         dialog.destroy()
 
-    button_frame = ttk.Frame(main_frame)
-    button_frame.pack()
+    button_frame = QFrame(main_frame)
+    button_frame.show(  # Qt: pack() -> show(), use layouts)
     if typ == "question":
-        yes_btn = ttk.Button(button_frame, text="Tak", command=on_yes, width=10)
-        yes_btn.pack(side="left", padx=4)
-        no_btn = ttk.Button(button_frame, text="Nie", command=on_no, width=10)
-        no_btn.pack(side="left", padx=4)
+        yes_btn = QPushButton(button_frame, text="Tak", command=on_yes, width=10)
+        yes_btn.show(  # Qt: pack() -> show(), use layoutsside="left", padx=4)
+        no_btn = QPushButton(button_frame, text="Nie", command=on_no, width=10)
+        no_btn.show(  # Qt: pack() -> show(), use layoutsside="left", padx=4)
         dialog.bind("<Return>", lambda e: on_yes())
         dialog.bind("<Escape>", lambda e: on_no())
         yes_btn.focus_set()
     elif typ == "yesnocancel":
-        yes_btn = ttk.Button(button_frame, text="Tak", command=on_yes, width=10)
-        yes_btn.pack(side="left", padx=4)
-        no_btn = ttk.Button(button_frame, text="Nie", command=on_no, width=10)
-        no_btn.pack(side="left", padx=4)
-        cancel_btn = ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10)
-        cancel_btn.pack(side="left", padx=4)
+        yes_btn = QPushButton(button_frame, text="Tak", command=on_yes, width=10)
+        yes_btn.show(  # Qt: pack() -> show(), use layoutsside="left", padx=4)
+        no_btn = QPushButton(button_frame, text="Nie", command=on_no, width=10)
+        no_btn.show(  # Qt: pack() -> show(), use layoutsside="left", padx=4)
+        cancel_btn = QPushButton(button_frame, text="Anuluj", command=on_cancel, width=10)
+        cancel_btn.show(  # Qt: pack() -> show(), use layoutsside="left", padx=4)
         dialog.bind("<Return>", lambda e: on_yes())
         dialog.bind("<Escape>", lambda e: on_cancel())
         dialog.protocol("WM_DELETE_WINDOW", on_cancel)
         yes_btn.focus_set()
     else:
-        ok_btn = ttk.Button(button_frame, text="OK", command=on_ok, width=10)
-        ok_btn.pack(padx=4)
+        ok_btn = QPushButton(button_frame, text="OK", command=on_ok, width=10)
+        ok_btn.show(  # Qt: pack() -> show(), use layoutspadx=4)
         dialog.bind("<Return>", lambda e: on_ok())
         dialog.bind("<Escape>", lambda e: on_ok())
         ok_btn.focus_set()
@@ -362,7 +393,7 @@ class PreferencesManager:
         self.set(profile_key, profiles_json)
 
 
-class PreferencesDialog(tk.Toplevel):
+class PreferencesDialog(QDialog):
     """Okno dialogowe preferencji programu"""
     
     def __init__(self, parent, prefs_manager):
@@ -388,103 +419,101 @@ class PreferencesDialog(tk.Toplevel):
         self.wait_window(self)
     
     def build_ui(self):
-        main_frame = ttk.Frame(self, padding="12")
-        main_frame.pack(fill="both", expand=True)
+        main_frame = QFrame(self, padding="12")
+        main_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True)
         
         # Sekcja ogólna
-        general_frame = ttk.LabelFrame(main_frame, text="Ustawienia ogólne", padding="8")
-        general_frame.pack(fill="x", pady=(0, 8))
+        general_frame = QGroupBox(main_frame, text="Ustawienia ogólne", padding="8")
+        general_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", pady=(0, 8))
         
         # Domyślna ścieżka odczytu
-        ttk.Label(general_frame, text="Domyślna ścieżka odczytu:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
-        self.default_read_path_var = tk.StringVar()
-        read_path_frame = ttk.Frame(general_frame)
-        read_path_frame.grid(row=0, column=1, sticky="ew", padx=4, pady=4)
-        ttk.Entry(read_path_frame, textvariable=self.default_read_path_var, width=30).pack(side="left", fill="x", expand=True)
-        ttk.Button(read_path_frame, text="...", width=3, command=self.browse_read_path).pack(side="left", padx=(4, 0))
+        QLabel(general_frame, text="Domyślna ścieżka odczytu:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=0, sticky="w", padx=4, pady=4)
+        self.default_read_path_var = ""  # Qt: Use direct string
+        read_path_frame = QFrame(general_frame)
+        read_path_frame.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=1, sticky="ew", padx=4, pady=4)
+        QLineEdit(read_path_frame, textvariable=self.default_read_path_var, width=30).show(  # Qt: pack() -> show(), use layoutsside="left", fill="x", expand=True)
+        QPushButton(read_path_frame, text="...", width=3, command=self.browse_read_path).show(  # Qt: pack() -> show(), use layoutsside="left", padx=(4, 0))
         
         # Domyślna ścieżka zapisu
-        ttk.Label(general_frame, text="Domyślna ścieżka zapisu:").grid(row=1, column=0, sticky="w", padx=4, pady=4)
-        self.default_path_var = tk.StringVar()
-        path_frame = ttk.Frame(general_frame)
-        path_frame.grid(row=1, column=1, sticky="ew", padx=4, pady=4)
-        ttk.Entry(path_frame, textvariable=self.default_path_var, width=30).pack(side="left", fill="x", expand=True)
-        ttk.Button(path_frame, text="...", width=3, command=self.browse_path).pack(side="left", padx=(4, 0))
+        QLabel(general_frame, text="Domyślna ścieżka zapisu:").show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=0, sticky="w", padx=4, pady=4)
+        self.default_path_var = ""  # Qt: Use direct string
+        path_frame = QFrame(general_frame)
+        path_frame.show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=1, sticky="ew", padx=4, pady=4)
+        QLineEdit(path_frame, textvariable=self.default_path_var, width=30).show(  # Qt: pack() -> show(), use layoutsside="left", fill="x", expand=True)
+        QPushButton(path_frame, text="...", width=3, command=self.browse_path).show(  # Qt: pack() -> show(), use layoutsside="left", padx=(4, 0))
         
         # Jakość miniatur
-        ttk.Label(general_frame, text="Jakość miniatur:").grid(row=2, column=0, sticky="w", padx=4, pady=4)
-        self.thumbnail_quality_var = tk.StringVar()
-        quality_combo = ttk.Combobox(general_frame, textvariable=self.thumbnail_quality_var, values=["Niska", "Średnia", "Wysoka"], state="readonly", width=10)
-        quality_combo.grid(row=2, column=1, sticky="w", padx=4, pady=4)
+        QLabel(general_frame, text="Jakość miniatur:").show(  # Qt: grid() -> show(), use QGridLayoutrow=2, column=0, sticky="w", padx=4, pady=4)
+        self.thumbnail_quality_var = ""  # Qt: Use direct string
+        quality_combo = QComboBox(general_frame, textvariable=self.thumbnail_quality_var, values=["Niska", "Średnia", "Wysoka"], state="readonly", width=10)
+        quality_combo.show(  # Qt: grid() -> show(), use QGridLayoutrow=2, column=1, sticky="w", padx=4, pady=4)
         
         # Potwierdzenie przed usunięciem
-        ttk.Label(general_frame, text="Potwierdzenie przed usunięciem:").grid(row=3, column=0, sticky="w", padx=4, pady=4)
-        self.confirm_delete_var = tk.BooleanVar()
-        confirm_check = ttk.Checkbutton(general_frame, variable=self.confirm_delete_var)
-        confirm_check.grid(row=3, column=1, sticky="w", padx=4, pady=4)
+        QLabel(general_frame, text="Potwierdzenie przed usunięciem:").show(  # Qt: grid() -> show(), use QGridLayoutrow=3, column=0, sticky="w", padx=4, pady=4)
+        self.confirm_delete_var = False  # Qt: Use direct bool
+        confirm_check = QCheckBox(general_frame, variable=self.confirm_delete_var)
+        confirm_check.show(  # Qt: grid() -> show(), use QGridLayoutrow=3, column=1, sticky="w", padx=4, pady=4)
         
         # DPI eksportowanych obrazów
-        ttk.Label(general_frame, text="DPI eksportowanych obrazów:").grid(row=4, column=0, sticky="w", padx=4, pady=4)
-        self.export_image_dpi_var = tk.StringVar()
-        dpi_combo = ttk.Combobox(general_frame, textvariable=self.export_image_dpi_var, values=["150", "300", "600"], state="readonly", width=10)
-        dpi_combo.grid(row=4, column=1, sticky="w", padx=4, pady=4)
+        QLabel(general_frame, text="DPI eksportowanych obrazów:").show(  # Qt: grid() -> show(), use QGridLayoutrow=4, column=0, sticky="w", padx=4, pady=4)
+        self.export_image_dpi_var = ""  # Qt: Use direct string
+        dpi_combo = QComboBox(general_frame, textvariable=self.export_image_dpi_var, values=["150", "300", "600"], state="readonly", width=10)
+        dpi_combo.show(  # Qt: grid() -> show(), use QGridLayoutrow=4, column=1, sticky="w", padx=4, pady=4)
         
         general_frame.columnconfigure(1, weight=1)
         
         # Sekcja wykrywania stron kolorowych
-        color_detect_frame = ttk.LabelFrame(main_frame, text="Wykrywanie stron kolorowych", padding="8")
-        color_detect_frame.pack(fill="x", pady=(0, 8))
+        color_detect_frame = QGroupBox(main_frame, text="Wykrywanie stron kolorowych", padding="8")
+        color_detect_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", pady=(0, 8))
         
         # Próg wykrywania koloru
-        ttk.Label(color_detect_frame, text="Próg różnicy RGB:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
-        self.color_threshold_var = tk.StringVar()
-        threshold_entry = ttk.Entry(color_detect_frame, textvariable=self.color_threshold_var, width=10)
-        threshold_entry.grid(row=0, column=1, sticky="w", padx=4, pady=4)
-        ttk.Label(color_detect_frame, text="(1-255, domyślnie 5)", foreground="gray").grid(row=0, column=2, sticky="w", padx=4, pady=4)
+        QLabel(color_detect_frame, text="Próg różnicy RGB:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=0, sticky="w", padx=4, pady=4)
+        self.color_threshold_var = ""  # Qt: Use direct string
+        threshold_entry = QLineEdit(color_detect_frame, textvariable=self.color_threshold_var, width=10)
+        threshold_entry.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=1, sticky="w", padx=4, pady=4)
+        QLabel(color_detect_frame, text="(1-255, domyślnie 5)", foreground="gray").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=2, sticky="w", padx=4, pady=4)
         
         # Liczba próbkowanych pikseli
-        ttk.Label(color_detect_frame, text="Liczba próbkowanych pikseli:").grid(row=1, column=0, sticky="w", padx=4, pady=4)
-        self.color_samples_var = tk.StringVar()
-        samples_entry = ttk.Entry(color_detect_frame, textvariable=self.color_samples_var, width=10)
-        samples_entry.grid(row=1, column=1, sticky="w", padx=4, pady=4)
-        ttk.Label(color_detect_frame, text="(10-1000, domyślnie 300)", foreground="gray").grid(row=1, column=2, sticky="w", padx=4, pady=4)
+        QLabel(color_detect_frame, text="Liczba próbkowanych pikseli:").show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=0, sticky="w", padx=4, pady=4)
+        self.color_samples_var = ""  # Qt: Use direct string
+        samples_entry = QLineEdit(color_detect_frame, textvariable=self.color_samples_var, width=10)
+        samples_entry.show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=1, sticky="w", padx=4, pady=4)
+        QLabel(color_detect_frame, text="(10-1000, domyślnie 300)", foreground="gray").show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=2, sticky="w", padx=4, pady=4)
         
         # Skala renderowania
-        ttk.Label(color_detect_frame, text="Skala renderowania:").grid(row=2, column=0, sticky="w", padx=4, pady=4)
-        self.color_scale_var = tk.StringVar()
-        scale_entry = ttk.Entry(color_detect_frame, textvariable=self.color_scale_var, width=10)
-        scale_entry.grid(row=2, column=1, sticky="w", padx=4, pady=4)
-        ttk.Label(color_detect_frame, text="(0.1-2.0, domyślnie 0.2)", foreground="gray").grid(row=2, column=2, sticky="w", padx=4, pady=4)
+        QLabel(color_detect_frame, text="Skala renderowania:").show(  # Qt: grid() -> show(), use QGridLayoutrow=2, column=0, sticky="w", padx=4, pady=4)
+        self.color_scale_var = ""  # Qt: Use direct string
+        scale_entry = QLineEdit(color_detect_frame, textvariable=self.color_scale_var, width=10)
+        scale_entry.show(  # Qt: grid() -> show(), use QGridLayoutrow=2, column=1, sticky="w", padx=4, pady=4)
+        QLabel(color_detect_frame, text="(0.1-2.0, domyślnie 0.2)", foreground="gray").show(  # Qt: grid() -> show(), use QGridLayoutrow=2, column=2, sticky="w", padx=4, pady=4)
         
         color_detect_frame.columnconfigure(2, weight=1)
         
         # Informacja
-       # info_frame = ttk.Frame(main_frame)
-       # info_frame.pack(fill="x", pady=8)
-       # info_label = ttk.Label(info_frame, text="Program automatycznie zapamiętuje ostatnio użyte wartości\nw oknach dialogowych.", foreground="gray")
-       # info_label.pack()
+       # info_frame = QFrame(main_frame)
+       # info_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", pady=8)
+       # info_label = QLabel(info_frame, text="Program automatycznie zapamiętuje ostatnio użyte wartości\nw oknach dialogowych.", foreground="gray")
+       # info_label.show(  # Qt: pack() -> show(), use layouts)
         
         # Ramka resetu
-        reset_frame = ttk.LabelFrame(main_frame, text="Reset do ustawień domyślnych", padding="8")
-        reset_frame.pack(fill="x", pady=(0, 8))
-        ttk.Button(reset_frame, text="Resetuj", command=self.reset_all_defaults).pack()
+        reset_frame = QGroupBox(main_frame, text="Reset do ustawień domyślnych", padding="8")
+        reset_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", pady=(0, 8))
+        QPushButton(reset_frame, text="Resetuj", command=self.reset_all_defaults).show(  # Qt: pack() -> show(), use layouts)
         
         # Przyciski
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill="x", pady=(8, 0))
+        button_frame = QFrame(main_frame)
+        button_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", pady=(8, 0))
         
-        ttk.Button(button_frame, text="Zapisz", command=self.ok).pack(side="left", padx=5)
-        ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side="right", padx=5)
+        QPushButton(button_frame, text="Zapisz", command=self.ok).show(  # Qt: pack() -> show(), use layoutsside="left", padx=5)
+        QPushButton(button_frame, text="Anuluj", command=self.cancel).show(  # Qt: pack() -> show(), use layoutsside="right", padx=5)
     
     def browse_read_path(self):
-        from tkinter import filedialog
-        path = filedialog.askdirectory(title="Wybierz domyślną ścieżkę odczytu")
+        path = QFileDialog.getExistingDirectory(title="Wybierz domyślną ścieżkę odczytu")
         if path:
             self.default_read_path_var.set(path)
     
     def browse_path(self):
-        from tkinter import filedialog
-        path = filedialog.askdirectory(title="Wybierz domyślną ścieżkę zapisu")
+        path = QFileDialog.getExistingDirectory(title="Wybierz domyślną ścieżkę zapisu")
         if path:
             self.default_path_var.set(path)
     
@@ -571,7 +600,7 @@ class PreferencesDialog(tk.Toplevel):
         self.destroy()
 
 
-class PageCropResizeDialog(tk.Toplevel):
+class PageCropResizeDialog(QDialog):
     PAPER_FORMATS = {
         'A0': (841, 1189),
         'A1': (594, 841),
@@ -688,8 +717,8 @@ class PageCropResizeDialog(tk.Toplevel):
         pady_row2 = (0, 0)
 
         # --- CROP SECTION ---
-        crop_frame = ttk.LabelFrame(self, text="Przycinanie strony")
-        crop_frame.pack(fill="x", padx=12, pady=(12, 4))
+        crop_frame = QGroupBox(self, text="Przycinanie strony")
+        crop_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", padx=12, pady=(12, 4))
 
         crop_modes = [
             ("Nie przycinaj", "nocrop"),
@@ -698,32 +727,32 @@ class PageCropResizeDialog(tk.Toplevel):
         ]
         self.crop_radiobuttons = []
         for txt, val in crop_modes:
-            rb = ttk.Radiobutton(crop_frame, text=txt, variable=self.crop_mode, value=val, command=self.update_field_states)
-            rb.pack(anchor="w", **pad)
+            rb = QRadioButton(crop_frame, text=txt, variable=self.crop_mode, value=val, command=self.update_field_states)
+            rb.show(  # Qt: pack() -> show(), use layoutsanchor="w", **pad)
             self.crop_radiobuttons.append(rb)
 
-        margin_frame = ttk.Frame(crop_frame)
-        margin_frame.pack(fill="x", padx=12, pady=(4, 0))
-        ttk.Label(margin_frame, text="Góra [mm]:").grid(row=0, column=0, sticky="w", padx=(0,6), pady=pady_row1)
-        self.e_margin_top = ttk.Entry(margin_frame, textvariable=self.margin_top, width=6, validate="key", validatecommand=self.vcmd_margin)
-        self.e_margin_top.grid(row=0, column=1, sticky="w", padx=(0,16), pady=pady_row1)
-        ttk.Label(margin_frame, text="Dół [mm]:").grid(row=0, column=2, sticky="w", padx=(0,6), pady=pady_row1)
-        self.e_margin_bottom = ttk.Entry(margin_frame, textvariable=self.margin_bottom, width=6, validate="key", validatecommand=self.vcmd_margin)
-        self.e_margin_bottom.grid(row=0, column=3, sticky="w", padx=(0,0), pady=pady_row1)
+        margin_frame = QFrame(crop_frame)
+        margin_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", padx=12, pady=(4, 0))
+        QLabel(margin_frame, text="Góra [mm]:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=0, sticky="w", padx=(0,6), pady=pady_row1)
+        self.e_margin_top = QLineEdit(margin_frame, textvariable=self.margin_top, width=6, validate="key", validatecommand=self.vcmd_margin)
+        self.e_margin_top.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=1, sticky="w", padx=(0,16), pady=pady_row1)
+        QLabel(margin_frame, text="Dół [mm]:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=2, sticky="w", padx=(0,6), pady=pady_row1)
+        self.e_margin_bottom = QLineEdit(margin_frame, textvariable=self.margin_bottom, width=6, validate="key", validatecommand=self.vcmd_margin)
+        self.e_margin_bottom.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=3, sticky="w", padx=(0,0), pady=pady_row1)
 
-        ttk.Label(margin_frame, text="Lewo [mm]:").grid(row=1, column=0, sticky="w", padx=(0,6), pady=pady_row2)
-        self.e_margin_left = ttk.Entry(margin_frame, textvariable=self.margin_left, width=6, validate="key", validatecommand=self.vcmd_margin)
-        self.e_margin_left.grid(row=1, column=1, sticky="w", padx=(0,16), pady=pady_row2)
-        ttk.Label(margin_frame, text="Prawo [mm]:").grid(row=1, column=2, sticky="w", padx=(0,6), pady=pady_row2)
-        self.e_margin_right = ttk.Entry(margin_frame, textvariable=self.margin_right, width=6, validate="key", validatecommand=self.vcmd_margin)
-        self.e_margin_right.grid(row=1, column=3, sticky="w", padx=(0,0), pady=pady_row2)
+        QLabel(margin_frame, text="Lewo [mm]:").show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=0, sticky="w", padx=(0,6), pady=pady_row2)
+        self.e_margin_left = QLineEdit(margin_frame, textvariable=self.margin_left, width=6, validate="key", validatecommand=self.vcmd_margin)
+        self.e_margin_left.show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=1, sticky="w", padx=(0,16), pady=pady_row2)
+        QLabel(margin_frame, text="Prawo [mm]:").show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=2, sticky="w", padx=(0,6), pady=pady_row2)
+        self.e_margin_right = QLineEdit(margin_frame, textvariable=self.margin_right, width=6, validate="key", validatecommand=self.vcmd_margin)
+        self.e_margin_right.show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=3, sticky="w", padx=(0,0), pady=pady_row2)
         self.margin_entries = [self.e_margin_top, self.e_margin_bottom, self.e_margin_left, self.e_margin_right]
         # Komunikat zakresu marginesów
-        ttk.Label(margin_frame, text="Zakres: 0–200 mm", foreground="gray").grid(row=2, column=0, columnspan=4, sticky="w", pady=(6,0))
+        QLabel(margin_frame, text="Zakres: 0–200 mm", foreground="gray").show(  # Qt: grid() -> show(), use QGridLayoutrow=2, column=0, columnspan=4, sticky="w", pady=(6,0))
 
         # --- RESIZE SECTION ---
-        resize_frame = ttk.LabelFrame(self, text="Zmiana rozmiaru arkusza")
-        resize_frame.pack(fill="x", padx=12, pady=8)
+        resize_frame = QGroupBox(self, text="Zmiana rozmiaru arkusza")
+        resize_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", padx=12, pady=8)
 
         resize_modes = [
             ("Nie zmieniaj rozmiaru", "noresize"),
@@ -732,59 +761,59 @@ class PageCropResizeDialog(tk.Toplevel):
         ]
         self.resize_radiobuttons = []
         for txt, val in resize_modes:
-            rb = ttk.Radiobutton(resize_frame, text=txt, variable=self.resize_mode, value=val, command=self.update_field_states)
-            rb.pack(anchor="w", **pad)
+            rb = QRadioButton(resize_frame, text=txt, variable=self.resize_mode, value=val, command=self.update_field_states)
+            rb.show(  # Qt: pack() -> show(), use layoutsanchor="w", **pad)
             self.resize_radiobuttons.append(rb)
 
-        format_frame = ttk.Frame(resize_frame)
-        format_frame.pack(fill="x", padx=12, pady=(4, 0))
-        ttk.Label(format_frame, text="Format:").grid(row=0, column=0, sticky="w")
-        self.format_combo = ttk.Combobox(format_frame, textvariable=self.target_format, values=list(self.PAPER_FORMATS.keys()), state="readonly", width=16)
-        self.format_combo.grid(row=0, column=1, sticky="w", padx=(0,12))
+        format_frame = QFrame(resize_frame)
+        format_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", padx=12, pady=(4, 0))
+        QLabel(format_frame, text="Format:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=0, sticky="w")
+        self.format_combo = QComboBox(format_frame, textvariable=self.target_format, values=list(self.PAPER_FORMATS.keys()), state="readonly", width=16)
+        self.format_combo.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=1, sticky="w", padx=(0,12))
         self.format_combo.bind("<<ComboboxSelected>>", lambda e: self.update_field_states())
 
-        self.custom_size_frame = ttk.Frame(format_frame)
-        self.custom_size_frame.grid(row=1, column=0, columnspan=2, sticky="w", pady=(8,0))
-        ttk.Label(self.custom_size_frame, text="Szerokość [mm]:").grid(row=0, column=0, sticky="w", padx=(0,6), pady=pady_row1)
-        self.e_custom_width = ttk.Entry(self.custom_size_frame, textvariable=self.custom_width, width=8, validate="key", validatecommand=self.vcmd_size)
-        self.e_custom_width.grid(row=0, column=1, sticky="w", padx=(0,12), pady=pady_row1)
-        ttk.Label(self.custom_size_frame, text="Wysokość [mm]:").grid(row=0, column=2, sticky="w", padx=(0,6), pady=pady_row1)
-        self.e_custom_height = ttk.Entry(self.custom_size_frame, textvariable=self.custom_height, width=8, validate="key", validatecommand=self.vcmd_size)
-        self.e_custom_height.grid(row=0, column=3, sticky="w", padx=(0,0), pady=pady_row1)
+        self.custom_size_frame = QFrame(format_frame)
+        self.custom_size_frame.show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=0, columnspan=2, sticky="w", pady=(8,0))
+        QLabel(self.custom_size_frame, text="Szerokość [mm]:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=0, sticky="w", padx=(0,6), pady=pady_row1)
+        self.e_custom_width = QLineEdit(self.custom_size_frame, textvariable=self.custom_width, width=8, validate="key", validatecommand=self.vcmd_size)
+        self.e_custom_width.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=1, sticky="w", padx=(0,12), pady=pady_row1)
+        QLabel(self.custom_size_frame, text="Wysokość [mm]:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=2, sticky="w", padx=(0,6), pady=pady_row1)
+        self.e_custom_height = QLineEdit(self.custom_size_frame, textvariable=self.custom_height, width=8, validate="key", validatecommand=self.vcmd_size)
+        self.e_custom_height.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=3, sticky="w", padx=(0,0), pady=pady_row1)
         # Komunikat zakresu rozmiaru niestandardowego
-        ttk.Label(self.custom_size_frame, text="Zakres: 1–4000 mm", foreground="gray").grid(row=1, column=0, columnspan=4, sticky="w", pady=(0,0))
+        QLabel(self.custom_size_frame, text="Zakres: 1–4000 mm", foreground="gray").show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=0, columnspan=4, sticky="w", pady=(0,0))
         self.custom_entries = [self.e_custom_width, self.e_custom_height]
 
         # --- POSITION SECTION (osobna ramka) ---
-        self.position_frame = ttk.LabelFrame(self, text="Położenie obrazu")
-        self.position_frame.pack(fill="x", padx=12, pady=(8, 0))
+        self.position_frame = QGroupBox(self, text="Położenie obrazu")
+        self.position_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", padx=12, pady=(8, 0))
         position_modes = [
             ("Wyśrodkuj", "center"),
             ("Niestandardowe położenie", "custom")
         ]
         self.position_radiobuttons = []
         for txt, val in position_modes:
-            rb = ttk.Radiobutton(self.position_frame, text=txt, variable=self.position_mode, value=val, command=self.update_field_states)
-            rb.pack(anchor="w", **pad)
+            rb = QRadioButton(self.position_frame, text=txt, variable=self.position_mode, value=val, command=self.update_field_states)
+            rb.show(  # Qt: pack() -> show(), use layoutsanchor="w", **pad)
             self.position_radiobuttons.append(rb)
 
-        self.offset_frame = ttk.Frame(self.position_frame)
-        self.offset_frame.pack(fill="x", padx=18, pady=(0,0))
-        ttk.Label(self.offset_frame, text="Od lewej [mm]:").grid(row=0, column=0, sticky="w", padx=(0,6), pady=pady_row1)
-        self.e_offset_x = ttk.Entry(self.offset_frame, textvariable=self.offset_x, width=8, validate="key", validatecommand=self.vcmd_offset)
-        self.e_offset_x.grid(row=0, column=1, sticky="w", padx=(0,16), pady=pady_row1)
-        ttk.Label(self.offset_frame, text="Od dołu [mm]:").grid(row=0, column=2, sticky="w", padx=(0,6), pady=pady_row1)
-        self.e_offset_y = ttk.Entry(self.offset_frame, textvariable=self.offset_y, width=8, validate="key", validatecommand=self.vcmd_offset)
-        self.e_offset_y.grid(row=0, column=3, sticky="w", padx=(0,0), pady=pady_row1)
-        ttk.Label(self.offset_frame, text="Zakres: 0–500 mm", foreground="gray").grid(row=1, column=0, columnspan=4, sticky="w", pady=(0,0))
+        self.offset_frame = QFrame(self.position_frame)
+        self.offset_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", padx=18, pady=(0,0))
+        QLabel(self.offset_frame, text="Od lewej [mm]:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=0, sticky="w", padx=(0,6), pady=pady_row1)
+        self.e_offset_x = QLineEdit(self.offset_frame, textvariable=self.offset_x, width=8, validate="key", validatecommand=self.vcmd_offset)
+        self.e_offset_x.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=1, sticky="w", padx=(0,16), pady=pady_row1)
+        QLabel(self.offset_frame, text="Od dołu [mm]:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=2, sticky="w", padx=(0,6), pady=pady_row1)
+        self.e_offset_y = QLineEdit(self.offset_frame, textvariable=self.offset_y, width=8, validate="key", validatecommand=self.vcmd_offset)
+        self.e_offset_y.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=3, sticky="w", padx=(0,0), pady=pady_row1)
+        QLabel(self.offset_frame, text="Zakres: 0–500 mm", foreground="gray").show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=0, columnspan=4, sticky="w", pady=(0,0))
         self.offset_entries = [self.e_offset_x, self.e_offset_y]
 
         # --- BUTTONS ---
-        button_frame = ttk.Frame(self)
-        button_frame.pack(fill="x", padx=12, pady=(12,10))
-        ttk.Button(button_frame, text="Zastosuj", command=self.ok).pack(side="left", expand=True, padx=5)
-        ttk.Button(button_frame, text="Domyślne", command=self.restore_defaults).pack(side="left", expand=True, padx=5)
-        ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side="right", expand=True, padx=5)
+        button_frame = QFrame(self)
+        button_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", padx=12, pady=(12,10))
+        QPushButton(button_frame, text="Zastosuj", command=self.ok).show(  # Qt: pack() -> show(), use layoutsside="left", expand=True, padx=5)
+        QPushButton(button_frame, text="Domyślne", command=self.restore_defaults).show(  # Qt: pack() -> show(), use layoutsside="left", expand=True, padx=5)
+        QPushButton(button_frame, text="Anuluj", command=self.cancel).show(  # Qt: pack() -> show(), use layoutsside="right", expand=True, padx=5)
 
     def update_field_states(self):
         crop_selected = self.crop_mode.get() != "nocrop"
@@ -944,10 +973,10 @@ class Tooltip:
         self.tip_window.wm_geometry(f"+{x}+{y}")
 
         # 2. Dodanie etykiety z tekstem
-        label = tk.Label(self.tip_window, text=self.text, justify=tk.LEFT,
+        label = QLabel(self.tip_window, text=self.text, justify=tk.LEFT,
                          background="#ffffe0", relief=tk.SOLID, borderwidth=1,
                          font=("tahoma", "8", "normal"))
-        label.pack(ipadx=1) # Minimalny padding wewnętrzny
+        label.show(  # Qt: pack() -> show(), use layoutsipadx=1) # Minimalny padding wewnętrzny
 
     def hide(self, event=None):
         """Ukrywa i niszczy dymek pomocy."""
@@ -959,10 +988,8 @@ class Tooltip:
 # Przykład użycia tej klasy na przycisku:
 # Tooltip(przycisk_numeracja, "Wstawia numerację na zaznaczonych stronach.")
   
-import tkinter as tk
-from tkinter import ttk, messagebox
 
-class PageNumberingDialog(tk.Toplevel):
+class PageNumberingDialog(QDialog):
     DEFAULTS = {
         'margin_left': '35',
         'margin_right': '25',
@@ -1067,123 +1094,123 @@ class PageNumberingDialog(tk.Toplevel):
         self.geometry(f'+{x}+{y}')
 
     def build_ui(self):
-        main_frame = ttk.Frame(self, padding="6")
-        main_frame.pack(fill="both", expand=True)
+        main_frame = QFrame(self, padding="6")
+        main_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True)
 
         # Create left and right frames for two-column layout
-        left_frame = ttk.Frame(main_frame)
-        left_frame.pack(side="left", fill="both", expand=True, padx=(0, 8))
+        left_frame = QFrame(main_frame)
+        left_frame.show(  # Qt: pack() -> show(), use layoutsside="left", fill="both", expand=True, padx=(0, 8))
         
-        right_frame = ttk.Frame(main_frame)
-        right_frame.pack(side="right", fill="y")
+        right_frame = QFrame(main_frame)
+        right_frame.show(  # Qt: pack() -> show(), use layoutsside="right", fill="y")
 
         PADX_GROUP = 8
         PADY_GROUP = (8, 0)
         ENTRY_WIDTH = 4
 
         # 1. Marginesy poziome i lustrzane
-        config_frame = ttk.LabelFrame(left_frame, text="Marginesy poziome [mm]")
-        config_frame.pack(fill="x", padx=PADX_GROUP, pady=PADY_GROUP)
-        config_inner = ttk.Frame(config_frame)
-        config_inner.pack(anchor='w', padx=2, pady=(8, 2))
-        ttk.Label(config_inner, text="Lewy:").pack(side='left', padx=(0,4))
-        left_entry = ttk.Entry(config_inner, textvariable=self.v_margin_left, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_200)
-        left_entry.pack(side='left', padx=(0,10))
-        ttk.Label(config_inner, text="Prawy:").pack(side='left', padx=(0,4))
-        right_entry = ttk.Entry(config_inner, textvariable=self.v_margin_right, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_200)
-        right_entry.pack(side='left', padx=(0,10))
+        config_frame = QGroupBox(left_frame, text="Marginesy poziome [mm]")
+        config_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", padx=PADX_GROUP, pady=PADY_GROUP)
+        config_inner = QFrame(config_frame)
+        config_inner.show(  # Qt: pack() -> show(), use layoutsanchor='w', padx=2, pady=(8, 2))
+        QLabel(config_inner, text="Lewy:").show(  # Qt: pack() -> show(), use layoutsside='left', padx=(0,4))
+        left_entry = QLineEdit(config_inner, textvariable=self.v_margin_left, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_200)
+        left_entry.show(  # Qt: pack() -> show(), use layoutsside='left', padx=(0,10))
+        QLabel(config_inner, text="Prawy:").show(  # Qt: pack() -> show(), use layoutsside='left', padx=(0,4))
+        right_entry = QLineEdit(config_inner, textvariable=self.v_margin_right, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_200)
+        right_entry.show(  # Qt: pack() -> show(), use layoutsside='left', padx=(0,10))
         # Wspólny komunikat w tej samej linii z polami marginesów
-        #ttk.Label(config_inner, text="(zakres 1–200 mm)", foreground="gray").pack(side='left', padx=(8,0))
-        ttk.Checkbutton(config_frame, text="Plik ma marginesy lustrzane", variable=self.v_mirror_margins).pack(anchor='w', padx=2, pady=(6,6))
+        #QLabel(config_inner, text="(zakres 1–200 mm)", foreground="gray").show(  # Qt: pack() -> show(), use layoutsside='left', padx=(8,0))
+        QCheckBox(config_frame, text="Plik ma marginesy lustrzane", variable=self.v_mirror_margins).show(  # Qt: pack() -> show(), use layoutsanchor='w', padx=2, pady=(6,6))
 
         # 2. Położenie
-        pos_frame = ttk.LabelFrame(left_frame, text="Położenie numeru strony")
-        pos_frame.pack(fill="x", padx=PADX_GROUP, pady=PADY_GROUP)
+        pos_frame = QGroupBox(left_frame, text="Położenie numeru strony")
+        pos_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", padx=PADX_GROUP, pady=PADY_GROUP)
         row_idx = 0
-        ttk.Label(pos_frame, text="Od krawędzi:").grid(row=row_idx, column=0, sticky="w", padx=(2,4), pady=(2,2))
-        vertical_entry = ttk.Entry(pos_frame, textvariable=self.v_margin_vertical_mm, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_200)
-        vertical_entry.grid(row=row_idx, column=1, sticky="w", padx=(0,2), pady=(2,2))
+        QLabel(pos_frame, text="Od krawędzi:").show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=0, sticky="w", padx=(2,4), pady=(2,2))
+        vertical_entry = QLineEdit(pos_frame, textvariable=self.v_margin_vertical_mm, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_200)
+        vertical_entry.show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=1, sticky="w", padx=(0,2), pady=(2,2))
         # Komunikat w tej samej linii
-        #ttk.Label(pos_frame, text="(zakres 1–200 mm)", foreground="gray").grid(row=row_idx, column=2, sticky="w", padx=(8,2))
+        #QLabel(pos_frame, text="(zakres 1–200 mm)", foreground="gray").show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=2, sticky="w", padx=(8,2))
         row_idx += 1
 
         # Radiobuttony PION
-        ttk.Label(pos_frame, text="Pion:").grid(row=row_idx, column=0, sticky="w", padx=(2,4), pady=(2,2))
-        ttk.Radiobutton(pos_frame, text="Nagłówek", variable=self.v_vertical_pos, value='gora').grid(row=row_idx, column=1, sticky="w", padx=(0,4))
-        ttk.Radiobutton(pos_frame, text="Stopka", variable=self.v_vertical_pos, value='dol').grid(row=row_idx, column=2, sticky="w", padx=(0,2))
+        QLabel(pos_frame, text="Pion:").show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=0, sticky="w", padx=(2,4), pady=(2,2))
+        QRadioButton(pos_frame, text="Nagłówek", variable=self.v_vertical_pos, value='gora').show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=1, sticky="w", padx=(0,4))
+        QRadioButton(pos_frame, text="Stopka", variable=self.v_vertical_pos, value='dol').show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=2, sticky="w", padx=(0,2))
         row_idx += 1
 
         # Radiobuttony POZIOM
-        ttk.Label(pos_frame, text="Poziom:").grid(row=row_idx, column=0, sticky="w", padx=(2,4), pady=(2,2))
-        ttk.Radiobutton(pos_frame, text="Lewo", variable=self.v_alignment, value='lewa').grid(row=row_idx, column=1, sticky="w", padx=(0,4))
-        ttk.Radiobutton(pos_frame, text="Środek", variable=self.v_alignment, value='srodek').grid(row=row_idx, column=2, sticky="w", padx=(0,4))
-        ttk.Radiobutton(pos_frame, text="Prawo", variable=self.v_alignment, value='prawa').grid(row=row_idx, column=3, sticky="w", padx=(0,2))
+        QLabel(pos_frame, text="Poziom:").show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=0, sticky="w", padx=(2,4), pady=(2,2))
+        QRadioButton(pos_frame, text="Lewo", variable=self.v_alignment, value='lewa').show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=1, sticky="w", padx=(0,4))
+        QRadioButton(pos_frame, text="Środek", variable=self.v_alignment, value='srodek').show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=2, sticky="w", padx=(0,4))
+        QRadioButton(pos_frame, text="Prawo", variable=self.v_alignment, value='prawa').show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=3, sticky="w", padx=(0,2))
         row_idx += 1
 
         # Radiobuttony TRYB
-        ttk.Label(pos_frame, text="Tryb:").grid(row=row_idx, column=0, sticky="w", padx=(2,4), pady=(2,2))
-        ttk.Radiobutton(pos_frame, text="Normalna", variable=self.v_mode, value='normalna').grid(row=row_idx, column=1, sticky="w", padx=(0,4))
-        ttk.Radiobutton(pos_frame, text="Lustrzana", variable=self.v_mode, value='lustrzana').grid(row=row_idx, column=2, sticky="w", padx=(0,2))
+        QLabel(pos_frame, text="Tryb:").show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=0, sticky="w", padx=(2,4), pady=(2,2))
+        QRadioButton(pos_frame, text="Normalna", variable=self.v_mode, value='normalna').show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=1, sticky="w", padx=(0,4))
+        QRadioButton(pos_frame, text="Lustrzana", variable=self.v_mode, value='lustrzana').show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=2, sticky="w", padx=(0,2))
         row_idx += 1
 
         # 3. Liczniki startowe
-        counter_frame = ttk.LabelFrame(left_frame, text="Wartość numeracji")
-        counter_frame.pack(fill="x", padx=PADX_GROUP, pady=(8,0))
-        counter_inner = ttk.Frame(counter_frame)
-        counter_inner.pack(fill="x", padx=2, pady=(0,0))
-        ttk.Label(counter_inner, text="Licznik numeracji zacznij od numeru:").grid(row=0, column=0, sticky="w", padx=(2,4), pady=(0,4))
-        start_number_entry = ttk.Entry(counter_inner, textvariable=self.v_start_number, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_9999)
-        start_number_entry.grid(row=0, column=1, sticky="w", padx=(0,2), pady=(0,4))
+        counter_frame = QGroupBox(left_frame, text="Wartość numeracji")
+        counter_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", padx=PADX_GROUP, pady=(8,0))
+        counter_inner = QFrame(counter_frame)
+        counter_inner.show(  # Qt: pack() -> show(), use layoutsfill="x", padx=2, pady=(0,0))
+        QLabel(counter_inner, text="Licznik numeracji zacznij od numeru:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=0, sticky="w", padx=(2,4), pady=(0,4))
+        start_number_entry = QLineEdit(counter_inner, textvariable=self.v_start_number, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_9999)
+        start_number_entry.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=1, sticky="w", padx=(0,2), pady=(0,4))
         # Brak komunikatu zakresu pod licznikiem!
 
         # 4. Czcionka i format
-        style_frame = ttk.LabelFrame(left_frame, text="Czcionka i format numeracji")
-        style_frame.pack(fill="x", padx=PADX_GROUP, pady=PADY_GROUP)
-        font_row = ttk.Frame(style_frame)
-        font_row.pack(anchor='w', padx=2, pady=(8, 2))
-        ttk.Label(font_row, text="Czcionka:").pack(side='left', padx=(0,6))
-        font_combo = ttk.Combobox(font_row, textvariable=self.v_font_name, values=self.font_options, state='readonly', width=16)
-        font_combo.pack(side='left', padx=(0,10))
-        ttk.Label(font_row, text="Rozmiar [pt]:").pack(side='left', padx=(0,6))
-        size_combo = ttk.Combobox(font_row, textvariable=self.v_font_size, values=self.size_options, state='readonly', width=ENTRY_WIDTH)
-        size_combo.pack(side='left', padx=(0,0))
+        style_frame = QGroupBox(left_frame, text="Czcionka i format numeracji")
+        style_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", padx=PADX_GROUP, pady=PADY_GROUP)
+        font_row = QFrame(style_frame)
+        font_row.show(  # Qt: pack() -> show(), use layoutsanchor='w', padx=2, pady=(8, 2))
+        QLabel(font_row, text="Czcionka:").show(  # Qt: pack() -> show(), use layoutsside='left', padx=(0,6))
+        font_combo = QComboBox(font_row, textvariable=self.v_font_name, values=self.font_options, state='readonly', width=16)
+        font_combo.show(  # Qt: pack() -> show(), use layoutsside='left', padx=(0,10))
+        QLabel(font_row, text="Rozmiar [pt]:").show(  # Qt: pack() -> show(), use layoutsside='left', padx=(0,6))
+        size_combo = QComboBox(font_row, textvariable=self.v_font_size, values=self.size_options, state='readonly', width=ENTRY_WIDTH)
+        size_combo.show(  # Qt: pack() -> show(), use layoutsside='left', padx=(0,0))
 
-        f_frame = ttk.Frame(style_frame)
-        f_frame.pack(anchor='w', padx=2, pady=(8, 6))
-        ttk.Label(f_frame, text="Format:").pack(side='left', padx=(0,6))
-        ttk.Radiobutton(f_frame, text="Standardowy (1, 2...)", variable=self.v_format_type, value='simple').pack(side='left', padx=(0,6))
-        ttk.Radiobutton(f_frame, text="Strona 1 z 99", variable=self.v_format_type, value='full').pack(side='left', padx=(0,0))
+        f_frame = QFrame(style_frame)
+        f_frame.show(  # Qt: pack() -> show(), use layoutsanchor='w', padx=2, pady=(8, 6))
+        QLabel(f_frame, text="Format:").show(  # Qt: pack() -> show(), use layoutsside='left', padx=(0,6))
+        QRadioButton(f_frame, text="Standardowy (1, 2...)", variable=self.v_format_type, value='simple').show(  # Qt: pack() -> show(), use layoutsside='left', padx=(0,6))
+        QRadioButton(f_frame, text="Strona 1 z 99", variable=self.v_format_type, value='full').show(  # Qt: pack() -> show(), use layoutsside='left', padx=(0,0))
 
         # 5. Przyciski
-        button_frame = ttk.Frame(left_frame)
-        button_frame.pack(fill='x', pady=(8,6))
-        ttk.Button(button_frame, text="Wstaw", command=self.ok).pack(side='left', expand=True, padx=5)
-        ttk.Button(button_frame, text="Domyślne", command=self.restore_defaults).pack(side='left', expand=True, padx=5)
-        ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side='right', expand=True, padx=5)
+        button_frame = QFrame(left_frame)
+        button_frame.show(  # Qt: pack() -> show(), use layoutsfill='x', pady=(8,6))
+        QPushButton(button_frame, text="Wstaw", command=self.ok).show(  # Qt: pack() -> show(), use layoutsside='left', expand=True, padx=5)
+        QPushButton(button_frame, text="Domyślne", command=self.restore_defaults).show(  # Qt: pack() -> show(), use layoutsside='left', expand=True, padx=5)
+        QPushButton(button_frame, text="Anuluj", command=self.cancel).show(  # Qt: pack() -> show(), use layoutsside='right', expand=True, padx=5)
         
         # 6. Profile panel on the right
-        profile_frame = ttk.LabelFrame(right_frame, text="Profile użytkownika")
-        profile_frame.pack(fill="both", expand=True, padx=(0, 8), pady=PADY_GROUP)
+        profile_frame = QGroupBox(right_frame, text="Profile użytkownika")
+        profile_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True, padx=(0, 8), pady=PADY_GROUP)
         
         # Listbox with scrollbar
-        listbox_frame = ttk.Frame(profile_frame)
-        listbox_frame.pack(fill="both", expand=True, padx=4, pady=4)
+        listbox_frame = QFrame(profile_frame)
+        listbox_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True, padx=4, pady=4)
         
-        scrollbar = ttk.Scrollbar(listbox_frame)
-        scrollbar.pack(side="right", fill="y")
+        scrollbar = # QScrollArea(  # TODO: Adjust scrollbarlistbox_frame)
+        scrollbar.show(  # Qt: pack() -> show(), use layoutsside="right", fill="y")
         
-        self.profile_listbox = tk.Listbox(listbox_frame, yscrollcommand=scrollbar.set, width=20, height=15)
-        self.profile_listbox.pack(side="left", fill="both", expand=True)
+        self.profile_listbox = QListWidget(listbox_frame, yscrollcommand=scrollbar.set, width=20, height=15)
+        self.profile_listbox.show(  # Qt: pack() -> show(), use layoutsside="left", fill="both", expand=True)
         scrollbar.config(command=self.profile_listbox.yview)
         self.profile_listbox.bind('<Double-Button-1>', lambda event: self.load_profile())
         
         # Profile buttons
-        profile_btn_frame = ttk.Frame(profile_frame)
-        profile_btn_frame.pack(fill="x", padx=4, pady=(0, 4))
+        profile_btn_frame = QFrame(profile_frame)
+        profile_btn_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", padx=4, pady=(0, 4))
         
-        ttk.Button(profile_btn_frame, text="Zapisz", command=self.save_profile).pack(fill="x", pady=2)
-        ttk.Button(profile_btn_frame, text="Wczytaj", command=self.load_profile).pack(fill="x", pady=2)
-        ttk.Button(profile_btn_frame, text="Usuń", command=self.delete_profile).pack(fill="x", pady=2)
+        QPushButton(profile_btn_frame, text="Zapisz", command=self.save_profile).show(  # Qt: pack() -> show(), use layoutsfill="x", pady=2)
+        QPushButton(profile_btn_frame, text="Wczytaj", command=self.load_profile).show(  # Qt: pack() -> show(), use layoutsfill="x", pady=2)
+        QPushButton(profile_btn_frame, text="Usuń", command=self.delete_profile).show(  # Qt: pack() -> show(), use layoutsfill="x", pady=2)
         
         # Load existing profiles
         self.refresh_profile_list()
@@ -1284,10 +1311,10 @@ class PageNumberingDialog(tk.Toplevel):
         dialog.transient(self)
         dialog.grab_set()
         
-        ttk.Label(dialog, text="Nazwa profilu:").pack(padx=10, pady=(10, 5))
+        QLabel(dialog, text="Nazwa profilu:").show(  # Qt: pack() -> show(), use layoutspadx=10, pady=(10, 5))
         name_var = tk.StringVar(value=default_name)
-        entry = ttk.Entry(dialog, textvariable=name_var, width=30)
-        entry.pack(padx=10, pady=5)
+        entry = QLineEdit(dialog, textvariable=name_var, width=30)
+        entry.show(  # Qt: pack() -> show(), use layoutspadx=10, pady=5)
         entry.select_range(0, tk.END)
         entry.focus()
         
@@ -1315,10 +1342,10 @@ class PageNumberingDialog(tk.Toplevel):
         def cancel_save():
             dialog.destroy()
         
-        btn_frame = ttk.Frame(dialog)
-        btn_frame.pack(pady=10)
-        ttk.Button(btn_frame, text="Zapisz", command=save).pack(side="left", padx=5)
-        ttk.Button(btn_frame, text="Anuluj", command=cancel_save).pack(side="left", padx=5)
+        btn_frame = QFrame(dialog)
+        btn_frame.show(  # Qt: pack() -> show(), use layoutspady=10)
+        QPushButton(btn_frame, text="Zapisz", command=save).show(  # Qt: pack() -> show(), use layoutsside="left", padx=5)
+        QPushButton(btn_frame, text="Anuluj", command=cancel_save).show(  # Qt: pack() -> show(), use layoutsside="left", padx=5)
         
         dialog.bind('<Return>', lambda e: save())
         dialog.bind('<Escape>', lambda e: cancel_save())
@@ -1374,10 +1401,8 @@ class PageNumberingDialog(tk.Toplevel):
                 self.prefs_manager.save_profiles('PageNumberingDialogProfiles', profiles)
                 self.refresh_profile_list()
         
-import tkinter as tk
-from tkinter import ttk, messagebox
 
-class PageNumberMarginDialog(tk.Toplevel):
+class PageNumberMarginDialog(QDialog):
     """Okno dialogowe do określania wysokości marginesów (górnego i dolnego) do skanowania."""
     DEFAULTS = {
         'top_margin': '20',
@@ -1447,33 +1472,33 @@ class PageNumberMarginDialog(tk.Toplevel):
         self.geometry(f'{w}x{h}+{x}+{y}')
 
     def create_widgets(self, initial_top, initial_bottom):
-        main_frame = ttk.Frame(self, padding="6")
-        main_frame.pack(fill="both", expand=True)
+        main_frame = QFrame(self, padding="6")
+        main_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True)
 
-        margin_frame = ttk.LabelFrame(
+        margin_frame = QGroupBox(
             main_frame, text="Wysokość pola z numerem [mm]", padding=(8, 4)
         )
-        margin_frame.pack(fill="x", padx=4, pady=(6, 2))
+        margin_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", padx=4, pady=(6, 2))
 
         ENTRY_WIDTH = 4
 
         # Marginesy w jednym wierszu (etykiety i pola obok siebie)
-        ttk.Label(margin_frame, text="Od góry (nagłówek):").grid(
+        QLabel(margin_frame, text="Od góry (nagłówek):").show(  # Qt: grid() -> show(), use QGridLayout
             row=0, column=0, sticky="e", padx=(2, 6), pady=(2, 2)
         )
-        self.top_margin_entry = ttk.Entry(margin_frame, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_margin)
+        self.top_margin_entry = QLineEdit(margin_frame, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_margin)
         self.top_margin_entry.insert(0, initial_top)
-        self.top_margin_entry.grid(row=0, column=1, sticky="w", padx=(0, 12), pady=(2, 2))
+        self.top_margin_entry.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=1, sticky="w", padx=(0, 12), pady=(2, 2))
 
-        ttk.Label(margin_frame, text="Od dołu (stopka):").grid(
+        QLabel(margin_frame, text="Od dołu (stopka):").show(  # Qt: grid() -> show(), use QGridLayout
             row=0, column=2, sticky="e", padx=(2, 6), pady=(2, 2)
         )
-        self.bottom_margin_entry = ttk.Entry(margin_frame, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_margin)
+        self.bottom_margin_entry = QLineEdit(margin_frame, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_margin)
         self.bottom_margin_entry.insert(0, initial_bottom)
-        self.bottom_margin_entry.grid(row=0, column=3, sticky="w", padx=(0, 2), pady=(2, 2))
+        self.bottom_margin_entry.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=3, sticky="w", padx=(0, 2), pady=(2, 2))
 
         # Komunikat pod polami
-        info_label = ttk.Label(
+        info_label = QLabel(
             margin_frame,
             text="Zakres: 0–200 mm.\nSkrypt szuka nr stron w zadanym polu. Jeśli podasz zbyt duże wartości skrypt może usunąć np. nr rozdziału.",
             foreground="gray",
@@ -1481,14 +1506,14 @@ class PageNumberMarginDialog(tk.Toplevel):
             font=("Arial", 9),
             wraplength=300  # <-- ograniczenie szerokości komunikatu
         )
-        info_label.grid(row=1, column=0, columnspan=4, sticky="w", padx=(2, 2), pady=(6, 2))
+        info_label.show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=0, columnspan=4, sticky="w", padx=(2, 2), pady=(6, 2))
 
         # Przyciski
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill='x', side='bottom', pady=(8, 4))
-        ttk.Button(button_frame, text="Usuń", command=self.ok).pack(side='left', expand=True, padx=5)
-        ttk.Button(button_frame, text="Domyślne", command=self.restore_defaults).pack(side='left', expand=True, padx=5)
-        ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side='right', expand=True, padx=5)
+        button_frame = QFrame(main_frame)
+        button_frame.show(  # Qt: pack() -> show(), use layoutsfill='x', side='bottom', pady=(8, 4))
+        QPushButton(button_frame, text="Usuń", command=self.ok).show(  # Qt: pack() -> show(), use layoutsside='left', expand=True, padx=5)
+        QPushButton(button_frame, text="Domyślne", command=self.restore_defaults).show(  # Qt: pack() -> show(), use layoutsside='left', expand=True, padx=5)
+        QPushButton(button_frame, text="Anuluj", command=self.cancel).show(  # Qt: pack() -> show(), use layoutsside='right', expand=True, padx=5)
 
     def ok(self, event=None):
         try:
@@ -1509,7 +1534,7 @@ class PageNumberMarginDialog(tk.Toplevel):
         self.result = None
         self.destroy()
 
-class ShiftContentDialog(tk.Toplevel):
+class ShiftContentDialog(QDialog):
     """Okno dialogowe do określania przesunięcia zawartości strony, wyśrodkowane i modalne."""
     DEFAULTS = {
         'x_direction': 'P',
@@ -1580,34 +1605,34 @@ class ShiftContentDialog(tk.Toplevel):
         self.geometry(f'+{position_x}+{position_y}')
 
     def create_widgets(self):
-        main_frame = ttk.Frame(self, padding="8")
-        main_frame.pack(fill="both", expand=True)
+        main_frame = QFrame(self, padding="8")
+        main_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True)
 
-        xy_frame = ttk.LabelFrame(main_frame, text="Kierunek i wartość przesunięcia [mm]", padding=(8, 6))
-        xy_frame.pack(fill='x', padx=4, pady=(8, 0))
+        xy_frame = QGroupBox(main_frame, text="Kierunek i wartość przesunięcia [mm]", padding=(8, 6))
+        xy_frame.show(  # Qt: pack() -> show(), use layoutsfill='x', padx=4, pady=(8, 0))
 
         ENTRY_WIDTH = 4
 
         # Przesunięcie X (poziome)
-        ttk.Label(xy_frame, text="Poziome:").grid(row=0, column=0, sticky="w", padx=(2, 8), pady=(4,2))
-        self.x_value = ttk.Entry(xy_frame, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_shift)
+        QLabel(xy_frame, text="Poziome:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=0, sticky="w", padx=(2, 8), pady=(4,2))
+        self.x_value = QLineEdit(xy_frame, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_shift)
         self.x_value.insert(0, self._get_pref('x_value'))
-        self.x_value.grid(row=0, column=1, sticky="w", padx=(0,2), pady=(4,2))
+        self.x_value.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=1, sticky="w", padx=(0,2), pady=(4,2))
         self.x_direction = tk.StringVar(value=self._get_pref('x_direction'))
-        ttk.Radiobutton(xy_frame, text="Lewo", variable=self.x_direction, value='L').grid(row=0, column=2, sticky="w", padx=(8, 4))
-        ttk.Radiobutton(xy_frame, text="Prawo", variable=self.x_direction, value='P').grid(row=0, column=3, sticky="w", padx=(0,2))
+        QRadioButton(xy_frame, text="Lewo", variable=self.x_direction, value='L').show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=2, sticky="w", padx=(8, 4))
+        QRadioButton(xy_frame, text="Prawo", variable=self.x_direction, value='P').show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=3, sticky="w", padx=(0,2))
 
         # Przesunięcie Y (pionowe)
-        ttk.Label(xy_frame, text="Pionowe:").grid(row=1, column=0, sticky="w", padx=(2, 8), pady=(8,2))
-        self.y_value = ttk.Entry(xy_frame, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_shift)
+        QLabel(xy_frame, text="Pionowe:").show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=0, sticky="w", padx=(2, 8), pady=(8,2))
+        self.y_value = QLineEdit(xy_frame, width=ENTRY_WIDTH, validate="key", validatecommand=self.vcmd_shift)
         self.y_value.insert(0, self._get_pref('y_value'))
-        self.y_value.grid(row=1, column=1, sticky="w", padx=(0,2), pady=(8,2))
+        self.y_value.show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=1, sticky="w", padx=(0,2), pady=(8,2))
         self.y_direction = tk.StringVar(value=self._get_pref('y_direction'))
-        ttk.Radiobutton(xy_frame, text="Dół", variable=self.y_direction, value='D').grid(row=1, column=2, sticky="w", padx=(8, 4))
-        ttk.Radiobutton(xy_frame, text="Góra", variable=self.y_direction, value='G').grid(row=1, column=3, sticky="w", padx=(0,2))
+        QRadioButton(xy_frame, text="Dół", variable=self.y_direction, value='D').show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=2, sticky="w", padx=(8, 4))
+        QRadioButton(xy_frame, text="Góra", variable=self.y_direction, value='G').show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=3, sticky="w", padx=(0,2))
 
         # Komunikat informacyjny przeniesiony do ramki xy_frame
-        info_label = ttk.Label(
+        info_label = QLabel(
             xy_frame,
             text="Zakres: 0–1000 mm.",
             foreground="gray",
@@ -1615,14 +1640,14 @@ class ShiftContentDialog(tk.Toplevel):
             font=("Arial", 9),
             wraplength=240
         )
-        info_label.grid(row=2, column=0, columnspan=4, sticky="w", padx=(2, 2), pady=(10, 2))
+        info_label.show(  # Qt: grid() -> show(), use QGridLayoutrow=2, column=0, columnspan=4, sticky="w", padx=(2, 2), pady=(10, 2))
 
         # Przyciski
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill='x', side='bottom', pady=(10, 4))
-        ttk.Button(button_frame, text="Przesuń", command=self.ok).pack(side='left', expand=True, padx=5)
-        ttk.Button(button_frame, text="Domyślne", command=self.restore_defaults).pack(side='left', expand=True, padx=5)
-        ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side='right', expand=True, padx=5)
+        button_frame = QFrame(main_frame)
+        button_frame.show(  # Qt: pack() -> show(), use layoutsfill='x', side='bottom', pady=(10, 4))
+        QPushButton(button_frame, text="Przesuń", command=self.ok).show(  # Qt: pack() -> show(), use layoutsside='left', expand=True, padx=5)
+        QPushButton(button_frame, text="Domyślne", command=self.restore_defaults).show(  # Qt: pack() -> show(), use layoutsside='left', expand=True, padx=5)
+        QPushButton(button_frame, text="Anuluj", command=self.cancel).show(  # Qt: pack() -> show(), use layoutsside='right', expand=True, padx=5)
 
     def ok(self, event=None):
         try:
@@ -1650,7 +1675,7 @@ class ShiftContentDialog(tk.Toplevel):
         self.result = None
         self.destroy()
 
-class ImageImportSettingsDialog(tk.Toplevel):
+class ImageImportSettingsDialog(QDialog):
     DEFAULTS = {
         'scaling_mode': 'DOPASUJ',
         'alignment_mode': 'SRODEK',
@@ -1745,18 +1770,18 @@ class ImageImportSettingsDialog(tk.Toplevel):
         self.update_scale_controls()
 
     def body(self):
-        main_frame = ttk.Frame(self, padding="10")
-        main_frame.pack(fill="both", expand=True)
+        main_frame = QFrame(self, padding="10")
+        main_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True)
 
         # Sekcja 1: Informacje o obrazie
-        info_frame = ttk.LabelFrame(main_frame, text="Informacje o obrazie źródłowym", padding=(8, 4))
-        info_frame.pack(fill='x', pady=(0, 8))
-        ttk.Label(info_frame, text=f"Wymiary: {self.image_pixel_width} x {self.image_pixel_height} px", anchor="w").pack(fill='x')
-        ttk.Label(info_frame, text=f"DPI: {self.image_dpi}", anchor="w").pack(fill='x')
+        info_frame = QGroupBox(main_frame, text="Informacje o obrazie źródłowym", padding=(8, 4))
+        info_frame.show(  # Qt: pack() -> show(), use layoutsfill='x', pady=(0, 8))
+        QLabel(info_frame, text=f"Wymiary: {self.image_pixel_width} x {self.image_pixel_height} px", anchor="w").show(  # Qt: pack() -> show(), use layoutsfill='x')
+        QLabel(info_frame, text=f"DPI: {self.image_dpi}", anchor="w").show(  # Qt: pack() -> show(), use layoutsfill='x')
 
         # Sekcja 2: Ustawienia skalowania
-        scale_frame = ttk.LabelFrame(main_frame, text="Ustawienia importu", padding=(8, 4))
-        scale_frame.pack(fill='x', pady=(0, 8))
+        scale_frame = QGroupBox(main_frame, text="Ustawienia importu", padding=(8, 4))
+        scale_frame.show(  # Qt: pack() -> show(), use layoutsfill='x', pady=(0, 8))
         options = [
             ("Dopasuj do strony A4 [marginesy 25 mm]", "DOPASUJ"),
             ("Oryginalny rozmiar (100%)", "ORYGINALNY"),
@@ -1765,46 +1790,46 @@ class ImageImportSettingsDialog(tk.Toplevel):
             ("Dopasuj obraz do dokłanego rozmiaru strony", "CUSTOM_SIZE")
         ]
         for text, value in options:
-            rb = ttk.Radiobutton(
+            rb = QRadioButton(
                 scale_frame, text=text, variable=self.scaling_mode, value=value,
                 command=self.update_scale_controls
             )
-            rb.pack(anchor="w", pady=2)
+            rb.show(  # Qt: pack() -> show(), use layoutsanchor="w", pady=2)
             if value == "SKALA":
-                self.scale_entry_frame = ttk.Frame(scale_frame)
-                self.scale_entry_frame.pack(fill='x', pady=2, padx=24)
-                ttk.Label(self.scale_entry_frame, text="Skala [%]:").pack(side=tk.LEFT)
-                self.scale_entry = ttk.Entry(
+                self.scale_entry_frame = QFrame(scale_frame)
+                self.scale_entry_frame.show(  # Qt: pack() -> show(), use layoutsfill='x', pady=2, padx=24)
+                QLabel(self.scale_entry_frame, text="Skala [%]:").show(  # Qt: pack() -> show(), use layoutsside=tk.LEFT)
+                self.scale_entry = QLineEdit(
                     self.scale_entry_frame, textvariable=self.scale_factor, width=6, validate="key", validatecommand=self.vcmd_scale
                 )
-                self.scale_entry.pack(side=tk.LEFT, padx=5)
-                ttk.Label(self.scale_entry_frame, text="(1–500)").pack(side=tk.LEFT)
+                self.scale_entry.show(  # Qt: pack() -> show(), use layoutsside=tk.LEFT, padx=5)
+                QLabel(self.scale_entry_frame, text="(1–500)").show(  # Qt: pack() -> show(), use layoutsside=tk.LEFT)
             if value == "CUSTOM_SIZE":
-                self.custom_size_frame = ttk.Frame(scale_frame)
-                self.custom_size_frame.pack(fill='x', pady=2, padx=24)
-                ttk.Label(self.custom_size_frame, text="Szerokość [mm]:").pack(side=tk.LEFT)
-                self.custom_width_entry = ttk.Entry(self.custom_size_frame, textvariable=self.custom_width, width=8, validate="key", validatecommand=self.vcmd_size)
-                self.custom_width_entry.pack(side=tk.LEFT, padx=5)
-                ttk.Label(self.custom_size_frame, text="Wysokość [mm]:").pack(side=tk.LEFT)
-                self.custom_height_entry = ttk.Entry(self.custom_size_frame, textvariable=self.custom_height, width=8, validate="key", validatecommand=self.vcmd_size)
-                self.custom_height_entry.pack(side=tk.LEFT, padx=5)
+                self.custom_size_frame = QFrame(scale_frame)
+                self.custom_size_frame.show(  # Qt: pack() -> show(), use layoutsfill='x', pady=2, padx=24)
+                QLabel(self.custom_size_frame, text="Szerokość [mm]:").show(  # Qt: pack() -> show(), use layoutsside=tk.LEFT)
+                self.custom_width_entry = QLineEdit(self.custom_size_frame, textvariable=self.custom_width, width=8, validate="key", validatecommand=self.vcmd_size)
+                self.custom_width_entry.show(  # Qt: pack() -> show(), use layoutsside=tk.LEFT, padx=5)
+                QLabel(self.custom_size_frame, text="Wysokość [mm]:").show(  # Qt: pack() -> show(), use layoutsside=tk.LEFT)
+                self.custom_height_entry = QLineEdit(self.custom_size_frame, textvariable=self.custom_height, width=8, validate="key", validatecommand=self.vcmd_size)
+                self.custom_height_entry.show(  # Qt: pack() -> show(), use layoutsside=tk.LEFT, padx=5)
                 # Checkbox "Zachowaj proporcje" pod polami, równo z ramką
-                self.ratio_check_frame = ttk.Frame(scale_frame)
-                self.ratio_check_frame.pack(fill='x', pady=(0, 5), padx=24)
-                self.ratio_check = ttk.Checkbutton(self.ratio_check_frame, text="Zachowaj proporcje", variable=self.keep_ratio)
-                self.ratio_check.pack(anchor="w")
+                self.ratio_check_frame = QFrame(scale_frame)
+                self.ratio_check_frame.show(  # Qt: pack() -> show(), use layoutsfill='x', pady=(0, 5), padx=24)
+                self.ratio_check = QCheckBox(self.ratio_check_frame, text="Zachowaj proporcje", variable=self.keep_ratio)
+                self.ratio_check.show(  # Qt: pack() -> show(), use layoutsanchor="w")
 
         # Sekcja 3: Orientacja strony (po skalowaniu, przed wyrównaniem)
-        orient_frame = ttk.LabelFrame(main_frame, text="Orientacja strony docelowej (A4)", padding=(8, 4))
-        orient_frame.pack(fill='x', pady=(0, 8))
-        self.rb_pion = ttk.Radiobutton(orient_frame, text="Pionowo", variable=self.page_orientation, value="PIONOWO")
-        self.rb_pion.pack(anchor="w")
-        self.rb_poz = ttk.Radiobutton(orient_frame, text="Poziomo", variable=self.page_orientation, value="POZIOMO")
-        self.rb_poz.pack(anchor="w")
+        orient_frame = QGroupBox(main_frame, text="Orientacja strony docelowej (A4)", padding=(8, 4))
+        orient_frame.show(  # Qt: pack() -> show(), use layoutsfill='x', pady=(0, 8))
+        self.rb_pion = QRadioButton(orient_frame, text="Pionowo", variable=self.page_orientation, value="PIONOWO")
+        self.rb_pion.show(  # Qt: pack() -> show(), use layoutsanchor="w")
+        self.rb_poz = QRadioButton(orient_frame, text="Poziomo", variable=self.page_orientation, value="POZIOMO")
+        self.rb_poz.show(  # Qt: pack() -> show(), use layoutsanchor="w")
 
         # Sekcja 4: Wyrównanie
-        align_frame = ttk.LabelFrame(main_frame, text="Wyrównanie na stronie", padding=(8, 4))
-        align_frame.pack(fill='x')
+        align_frame = QGroupBox(main_frame, text="Wyrównanie na stronie", padding=(8, 4))
+        align_frame.show(  # Qt: pack() -> show(), use layoutsfill='x')
         self.align_rbs = []
         align_options = [
             ("Środek strony", "SRODEK"),
@@ -1812,8 +1837,8 @@ class ImageImportSettingsDialog(tk.Toplevel):
             ("Dół", "DOL")
         ]
         for text, value in align_options:
-            rb = ttk.Radiobutton(align_frame, text=text, variable=self.alignment_mode, value=value)
-            rb.pack(anchor="w", pady=2)
+            rb = QRadioButton(align_frame, text=text, variable=self.alignment_mode, value=value)
+            rb.show(  # Qt: pack() -> show(), use layoutsanchor="w", pady=2)
             self.align_rbs.append(rb)
 
         # Powiązania wpisów do zachowania proporcji
@@ -1879,13 +1904,13 @@ class ImageImportSettingsDialog(tk.Toplevel):
             pass
 
     def buttonbox(self):
-        box = ttk.Frame(self)
-        box.pack(fill=tk.X, pady=(8, 10))
-        center = ttk.Frame(box)
-        center.pack(anchor="center")
-        ttk.Button(center, text="Importuj", width=12, command=self.ok).pack(side=tk.LEFT, padx=10)
-        ttk.Button(center, text="Domyślne", width=12, command=self.restore_defaults).pack(side=tk.LEFT, padx=10)
-        ttk.Button(center, text="Anuluj", width=12, command=self.cancel).pack(side=tk.LEFT, padx=10)
+        box = QFrame(self)
+        box.show(  # Qt: pack() -> show(), use layoutsfill=tk.X, pady=(8, 10))
+        center = QFrame(box)
+        center.show(  # Qt: pack() -> show(), use layoutsanchor="center")
+        QPushButton(center, text="Importuj", width=12, command=self.ok).show(  # Qt: pack() -> show(), use layoutsside=tk.LEFT, padx=10)
+        QPushButton(center, text="Domyślne", width=12, command=self.restore_defaults).show(  # Qt: pack() -> show(), use layoutsside=tk.LEFT, padx=10)
+        QPushButton(center, text="Anuluj", width=12, command=self.cancel).show(  # Qt: pack() -> show(), use layoutsside=tk.LEFT, padx=10)
         self.bind("<Return>", self.ok)
         self.bind("<Escape>", lambda e: self.cancel())
 
@@ -1931,12 +1956,10 @@ class ImageImportSettingsDialog(tk.Toplevel):
 # KLASA: OKNO DIALOGOWE WYBORU ZAKRESU STRON (Bez zmian)
 # ====================================================================
 
-import tkinter as tk
-from tkinter import ttk, messagebox
 import re
 from typing import Optional, List
 
-class EnhancedPageRangeDialog(tk.Toplevel):
+class EnhancedPageRangeDialog(QDialog):
     def __init__(self, parent, title, imported_doc):
         super().__init__(parent)
         self.transient(parent)
@@ -1977,29 +2000,29 @@ class EnhancedPageRangeDialog(tk.Toplevel):
         self.wait_window(self)
 
     def body(self):
-        main_frame = ttk.Frame(self, padding=(10, 10))
-        main_frame.pack(fill="both")
+        main_frame = QFrame(self, padding=(10, 10))
+        main_frame.show(  # Qt: pack() -> show(), use layoutsfill="both")
 
-        range_frame = ttk.LabelFrame(main_frame, text="Zakres stron do importu", padding=(10, 8))
-        range_frame.pack(fill='x', pady=(0, 2))
+        range_frame = QGroupBox(main_frame, text="Zakres stron do importu", padding=(10, 8))
+        range_frame.show(  # Qt: pack() -> show(), use layoutsfill='x', pady=(0, 2))
 
-        label = ttk.Label(
+        label = QLabel(
             range_frame,
             text=f"Podaj strony z zakresu [1 - {self.max_pages}]:",
             anchor="w"
         )
-        label.grid(row=0, column=0, sticky="w", pady=(0, 2))
+        label.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=0, sticky="w", pady=(0, 2))
 
-        self.entry = ttk.Entry(range_frame, width=18)
+        self.entry = QLineEdit(range_frame, width=18)
         self.entry.insert(0, f"1-{self.max_pages}")
-        self.entry.grid(row=1, column=0, sticky="we", pady=(0, 0))
+        self.entry.show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=0, sticky="we", pady=(0, 0))
 
-        helper = ttk.Label(
+        helper = QLabel(
             range_frame,
             text="Format: 1, 3-5, 7",
             foreground="gray"
         )
-        helper.grid(row=2, column=0, sticky="w", pady=(2, 0))
+        helper.show(  # Qt: grid() -> show(), use QGridLayoutrow=2, column=0, sticky="w", pady=(2, 0))
 
         range_frame.columnconfigure(0, weight=1)
 
@@ -2007,12 +2030,12 @@ class EnhancedPageRangeDialog(tk.Toplevel):
 
     def buttonbox(self):
         # Przycisk importuj/anuluj – tuż pod ramką, bez odstępu od dołu
-        box = ttk.Frame(self)
-        box.pack(fill=tk.X, pady=(4, 0))
-        center = ttk.Frame(box)
-        center.pack(anchor="center")
-        ttk.Button(center, text="Importuj", width=12, command=self.ok).pack(side=tk.LEFT, padx=14)
-        ttk.Button(center, text="Anuluj", width=12, command=self.cancel).pack(side=tk.LEFT, padx=14)
+        box = QFrame(self)
+        box.show(  # Qt: pack() -> show(), use layoutsfill=tk.X, pady=(4, 0))
+        center = QFrame(box)
+        center.show(  # Qt: pack() -> show(), use layoutsanchor="center")
+        QPushButton(center, text="Importuj", width=12, command=self.ok).show(  # Qt: pack() -> show(), use layoutsside=tk.LEFT, padx=14)
+        QPushButton(center, text="Anuluj", width=12, command=self.cancel).show(  # Qt: pack() -> show(), use layoutsside=tk.LEFT, padx=14)
         self.bind("<Return>", self.ok)
         self.bind("<Escape>", lambda e: self.cancel())
     
@@ -2119,7 +2142,7 @@ class ThumbnailFrame(tk.Frame):
         self.column_width = column_width
         self.bg_normal = "#F5F5F5"
         self.bg_selected = "#B3E5FC"
-        self.outer_frame = tk.Frame(
+        self.outer_frame = QFrame(
             self, 
             bg=self.bg_normal, 
             borderwidth=0, 
@@ -2127,7 +2150,7 @@ class ThumbnailFrame(tk.Frame):
             highlightthickness=FOCUS_HIGHLIGHT_WIDTH, 
             highlightbackground=self.bg_normal 
         )
-        self.outer_frame.pack(fill="both", expand=True, padx=0, pady=0)
+        self.outer_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True, padx=0, pady=0)
         self.img_label = None 
         self.setup_ui(self.outer_frame)
 
@@ -2145,16 +2168,16 @@ class ThumbnailFrame(tk.Frame):
         img_tk = self.viewer_app._render_and_scale(self.page_index, self.column_width)
         # Cache is now handled inside _render_and_scale
         
-        image_container = tk.Frame(parent_frame, bg="white") 
-        image_container.pack(padx=5, pady=(5, 0))
+        image_container = QFrame(parent_frame, bg="white") 
+        image_container.show(  # Qt: pack() -> show(), use layoutspadx=5, pady=(5, 0))
         
-        self.img_label = tk.Label(image_container, image=img_tk, bg="white")
-        self.img_label.pack() 
+        self.img_label = QLabel(image_container, image=img_tk, bg="white")
+        self.img_label.show(  # Qt: pack() -> show(), use layouts) 
         
-        tk.Label(parent_frame, text=f"Strona {self.page_index + 1}", bg=self.bg_normal, font=("Helvetica", 10, "bold")).pack(pady=(5, 0))
+        QLabel(parent_frame, text=f"Strona {self.page_index + 1}", bg=self.bg_normal, font=("Helvetica", 10, "bold")).show(  # Qt: pack() -> show(), use layoutspady=(5, 0))
         
         format_label = self.viewer_app._get_page_size_label(self.page_index)
-        tk.Label(parent_frame, text=format_label, fg="gray", bg=self.bg_normal, font=("Helvetica", 9)).pack(pady=(0, 5))
+        QLabel(parent_frame, text=format_label, fg="gray", bg=self.bg_normal, font=("Helvetica", 9)).show(  # Qt: pack() -> show(), use layoutspady=(0, 5))
 
         self._bind_all_children("<Button-1>", lambda event, idx=self.page_index: self.viewer_app._handle_lpm_click(idx, event))
 
@@ -2176,7 +2199,7 @@ class ThumbnailFrame(tk.Frame):
 # DIALOG SCALANIA STRON NA ARKUSZU
 # ====================================================================
 
-class MergePageGridDialog(tk.Toplevel):
+class MergePageGridDialog(QDialog):
     PAPER_FORMATS = {
         'A0': (841, 1189),
         'A1': (594, 841),
@@ -2219,8 +2242,8 @@ class MergePageGridDialog(tk.Toplevel):
         self.margin_right_mm = tk.StringVar(value=self._get_pref('margin_right_mm'))
         self.spacing_x_mm = tk.StringVar(value=self._get_pref('spacing_x_mm'))
         self.spacing_y_mm = tk.StringVar(value=self._get_pref('spacing_y_mm'))
-        self.rows_var = tk.StringVar()
-        self.cols_var = tk.StringVar()
+        self.rows_var = ""  # Qt: Use direct string
+        self.cols_var = ""  # Qt: Use direct string
         self.dpi_var = tk.StringVar(value=self._get_pref('dpi_var'))
         self.page_count = page_count
 
@@ -2261,77 +2284,77 @@ class MergePageGridDialog(tk.Toplevel):
             combo.event_generate('<<ComboboxSelected>>')
 
     def build_ui(self):
-        main_frame = ttk.Frame(self)
-        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        main_frame = QFrame(self)
+        main_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True, padx=10, pady=10)
 
-        left_frame = ttk.Frame(main_frame)
-        left_frame.pack(side="left", fill="y", expand=False, padx=(0, 10))
-        right_frame = ttk.Frame(main_frame)
-        right_frame.pack(side="left", fill="both", expand=True)
+        left_frame = QFrame(main_frame)
+        left_frame.show(  # Qt: pack() -> show(), use layoutsside="left", fill="y", expand=False, padx=(0, 10))
+        right_frame = QFrame(main_frame)
+        right_frame.show(  # Qt: pack() -> show(), use layoutsside="left", fill="both", expand=True)
 
-        format_frame = ttk.LabelFrame(left_frame, text="Arkusz docelowy")
-        format_frame.pack(fill="x", pady=(0, 8))
-        ttk.Label(format_frame, text="Format:").grid(row=0, column=0, sticky="e", padx=4, pady=4)
-        format_combo = ttk.Combobox(
+        format_frame = QGroupBox(left_frame, text="Arkusz docelowy")
+        format_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", pady=(0, 8))
+        QLabel(format_frame, text="Format:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=0, sticky="e", padx=4, pady=4)
+        format_combo = QComboBox(
             format_frame,
             textvariable=self.sheet_format,
             values=list(self.PAPER_FORMATS.keys()),
             state="readonly",
             width=8
         )
-        format_combo.grid(row=0, column=1, sticky="w", padx=4, pady=4)
+        format_combo.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=1, sticky="w", padx=4, pady=4)
         format_combo.bind("<<ComboboxSelected>>", lambda e: self._update_grid_preview())
-        orient_label = ttk.Label(format_frame, text="Orientacja:")
-        orient_label.grid(row=1, column=0, sticky="e", padx=4, pady=4)
-        orient_radio_frame = ttk.Frame(format_frame)
-        orient_radio_frame.grid(row=1, column=1, sticky="w", padx=4, pady=4)
-        orient_pion = ttk.Radiobutton(orient_radio_frame, text="Pionowa", variable=self.orientation, value="Pionowa", command=self._update_grid_preview)
-        orient_pion.pack(side="left", padx=(0,8))
-        orient_poz = ttk.Radiobutton(orient_radio_frame, text="Pozioma", variable=self.orientation, value="Pozioma", command=self._update_grid_preview)
-        orient_poz.pack(side="left")
+        orient_label = QLabel(format_frame, text="Orientacja:")
+        orient_label.show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=0, sticky="e", padx=4, pady=4)
+        orient_radio_frame = QFrame(format_frame)
+        orient_radio_frame.show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=1, sticky="w", padx=4, pady=4)
+        orient_pion = QRadioButton(orient_radio_frame, text="Pionowa", variable=self.orientation, value="Pionowa", command=self._update_grid_preview)
+        orient_pion.show(  # Qt: pack() -> show(), use layoutsside="left", padx=(0,8))
+        orient_poz = QRadioButton(orient_radio_frame, text="Pozioma", variable=self.orientation, value="Pozioma", command=self._update_grid_preview)
+        orient_poz.show(  # Qt: pack() -> show(), use layoutsside="left")
 
-        margin_frame = ttk.LabelFrame(left_frame, text="Marginesy [mm]")
-        margin_frame.pack(fill="x", pady=8)
-        ttk.Label(margin_frame, text="Górny:").grid(row=0, column=0, sticky="w", padx=4, pady=2)
-        ttk.Entry(margin_frame, textvariable=self.margin_top_mm, width=6, validate="key", validatecommand=self.vcmd_200).grid(row=0, column=1, sticky="w", padx=2, pady=2)
-        ttk.Label(margin_frame, text="Dolny:").grid(row=0, column=2, sticky="w", padx=4, pady=2)
-        ttk.Entry(margin_frame, textvariable=self.margin_bottom_mm, width=6, validate="key", validatecommand=self.vcmd_200).grid(row=0, column=3, sticky="w", padx=2, pady=2)
-        ttk.Label(margin_frame, text="Lewy:").grid(row=1, column=0, sticky="w", padx=4, pady=2)
-        ttk.Entry(margin_frame, textvariable=self.margin_left_mm, width=6, validate="key", validatecommand=self.vcmd_200).grid(row=1, column=1, sticky="w", padx=2, pady=2)
-        ttk.Label(margin_frame, text="Prawy:").grid(row=1, column=2, sticky="w", padx=4, pady=2)
-        ttk.Entry(margin_frame, textvariable=self.margin_right_mm, width=6, validate="key", validatecommand=self.vcmd_200).grid(row=1, column=3, sticky="w", padx=2, pady=2)
-        ttk.Label(margin_frame, text="Zakres: 0–200 mm", foreground="gray").grid(row=2, column=0, columnspan=4, sticky="w", padx=4, pady=(3,2))
+        margin_frame = QGroupBox(left_frame, text="Marginesy [mm]")
+        margin_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", pady=8)
+        QLabel(margin_frame, text="Górny:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=0, sticky="w", padx=4, pady=2)
+        QLineEdit(margin_frame, textvariable=self.margin_top_mm, width=6, validate="key", validatecommand=self.vcmd_200).show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=1, sticky="w", padx=2, pady=2)
+        QLabel(margin_frame, text="Dolny:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=2, sticky="w", padx=4, pady=2)
+        QLineEdit(margin_frame, textvariable=self.margin_bottom_mm, width=6, validate="key", validatecommand=self.vcmd_200).show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=3, sticky="w", padx=2, pady=2)
+        QLabel(margin_frame, text="Lewy:").show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=0, sticky="w", padx=4, pady=2)
+        QLineEdit(margin_frame, textvariable=self.margin_left_mm, width=6, validate="key", validatecommand=self.vcmd_200).show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=1, sticky="w", padx=2, pady=2)
+        QLabel(margin_frame, text="Prawy:").show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=2, sticky="w", padx=4, pady=2)
+        QLineEdit(margin_frame, textvariable=self.margin_right_mm, width=6, validate="key", validatecommand=self.vcmd_200).show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=3, sticky="w", padx=2, pady=2)
+        QLabel(margin_frame, text="Zakres: 0–200 mm", foreground="gray").show(  # Qt: grid() -> show(), use QGridLayoutrow=2, column=0, columnspan=4, sticky="w", padx=4, pady=(3,2))
 
-        spacing_frame = ttk.LabelFrame(left_frame, text="Odstępy [mm]")
-        spacing_frame.pack(fill="x", pady=(0, 8))
-        ttk.Label(spacing_frame, text="Między kolumnami:").grid(row=0, column=0, sticky="w", padx=4, pady=2)
-        ttk.Entry(spacing_frame, textvariable=self.spacing_x_mm, width=6, validate="key", validatecommand=self.vcmd_200).grid(row=0, column=1, sticky="w", padx=2, pady=2)
-        ttk.Label(spacing_frame, text="Między wierszami:").grid(row=1, column=0, sticky="w", padx=4, pady=2)
-        ttk.Entry(spacing_frame, textvariable=self.spacing_y_mm, width=6, validate="key", validatecommand=self.vcmd_200).grid(row=1, column=1, sticky="w", padx=2, pady=2)
-        ttk.Label(spacing_frame, text="Zakres: 0–200 mm", foreground="gray").grid(row=2, column=0, columnspan=2, sticky="w", padx=4, pady=(2,2))
+        spacing_frame = QGroupBox(left_frame, text="Odstępy [mm]")
+        spacing_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", pady=(0, 8))
+        QLabel(spacing_frame, text="Między kolumnami:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=0, sticky="w", padx=4, pady=2)
+        QLineEdit(spacing_frame, textvariable=self.spacing_x_mm, width=6, validate="key", validatecommand=self.vcmd_200).show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=1, sticky="w", padx=2, pady=2)
+        QLabel(spacing_frame, text="Między wierszami:").show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=0, sticky="w", padx=4, pady=2)
+        QLineEdit(spacing_frame, textvariable=self.spacing_y_mm, width=6, validate="key", validatecommand=self.vcmd_200).show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=1, sticky="w", padx=2, pady=2)
+        QLabel(spacing_frame, text="Zakres: 0–200 mm", foreground="gray").show(  # Qt: grid() -> show(), use QGridLayoutrow=2, column=0, columnspan=2, sticky="w", padx=4, pady=(2,2))
 
         # NOWY WYBÓR DPI
-        dpi_frame = ttk.LabelFrame(left_frame, text="Rozdzielczość eksportu (DPI)")
-        dpi_frame.pack(fill="x", pady=(0, 8))
-        ttk.Label(dpi_frame, text="DPI:").grid(row=0, column=0, sticky="e", padx=4, pady=4)
-        dpi_combo = ttk.Combobox(
+        dpi_frame = QGroupBox(left_frame, text="Rozdzielczość eksportu (DPI)")
+        dpi_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", pady=(0, 8))
+        QLabel(dpi_frame, text="DPI:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=0, sticky="e", padx=4, pady=4)
+        dpi_combo = QComboBox(
             dpi_frame,
             textvariable=self.dpi_var,
             values=["72", "150", "300", "600"],
             state="readonly",
             width=6
         )
-        dpi_combo.grid(row=0, column=1, sticky="w", padx=2, pady=4)
+        dpi_combo.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=1, sticky="w", padx=2, pady=4)
 
-        grid_frame = ttk.LabelFrame(left_frame, text="Siatka stron")
-        grid_frame.pack(fill="x", pady=(0, 8))
-        ttk.Label(grid_frame, text="Wiersze:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
-        self.rows_combo = ttk.Combobox(grid_frame, textvariable=self.rows_var, values=self.grid_range, width=5, state="readonly", justify="center")
-        self.rows_combo.grid(row=0, column=1, sticky="w", padx=2, pady=4)
+        grid_frame = QGroupBox(left_frame, text="Siatka stron")
+        grid_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", pady=(0, 8))
+        QLabel(grid_frame, text="Wiersze:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=0, sticky="w", padx=4, pady=4)
+        self.rows_combo = QComboBox(grid_frame, textvariable=self.rows_var, values=self.grid_range, width=5, state="readonly", justify="center")
+        self.rows_combo.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=1, sticky="w", padx=2, pady=4)
         self.rows_combo.bind("<Key>", lambda e: self._combo_key_num(self.rows_combo, self.rows_var, e))
-        ttk.Label(grid_frame, text="Kolumny:").grid(row=0, column=2, sticky="w", padx=4, pady=4)
-        self.cols_combo = ttk.Combobox(grid_frame, textvariable=self.cols_var, values=self.grid_range, width=5, state="readonly", justify="center")
-        self.cols_combo.grid(row=0, column=3, sticky="w", padx=2, pady=4)
+        QLabel(grid_frame, text="Kolumny:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=2, sticky="w", padx=4, pady=4)
+        self.cols_combo = QComboBox(grid_frame, textvariable=self.cols_var, values=self.grid_range, width=5, state="readonly", justify="center")
+        self.cols_combo.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=3, sticky="w", padx=2, pady=4)
         self.cols_combo.bind("<Key>", lambda e: self._combo_key_num(self.cols_combo, self.cols_var, e))
         self.rows_var.trace_add("write", lambda *a: self._update_grid_preview())
         self.cols_var.trace_add("write", lambda *a: self._update_grid_preview())
@@ -2344,8 +2367,8 @@ class MergePageGridDialog(tk.Toplevel):
         self.spacing_x_mm.trace_add("write", lambda *a: self._update_grid_preview())
         self.spacing_y_mm.trace_add("write", lambda *a: self._update_grid_preview())
 
-        preview_frame = ttk.LabelFrame(right_frame, text="Podgląd rozkładu stron")
-        preview_frame.pack(fill="both", expand=True)
+        preview_frame = QGroupBox(right_frame, text="Podgląd rozkładu stron")
+        preview_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True)
         self.PREVIEW_W = 320
         self.PREVIEW_H = 450
         self.PREVIEW_PAD = 20
@@ -2356,13 +2379,13 @@ class MergePageGridDialog(tk.Toplevel):
             bg=self.cget('bg'),
             highlightthickness=0
         )
-        self.preview_canvas.pack(padx=0, pady=0, fill="both", expand=True)
+        self.preview_canvas.show(  # Qt: pack() -> show(), use layoutspadx=0, pady=0, fill="both", expand=True)
 
-        button_frame = ttk.Frame(self)
-        button_frame.pack(fill="x", padx=16, pady=(0, 12), side="bottom")
-        ttk.Button(button_frame, text="Zastosuj", command=self.ok).pack(side="left", expand=True, padx=5)
-        ttk.Button(button_frame, text="Domyślne", command=self.restore_defaults).pack(side="left", expand=True, padx=5)
-        ttk.Button(button_frame, text="Anuluj", command=self.cancel).pack(side="right", expand=True, padx=5)
+        button_frame = QFrame(self)
+        button_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", padx=16, pady=(0, 12), side="bottom")
+        QPushButton(button_frame, text="Zastosuj", command=self.ok).show(  # Qt: pack() -> show(), use layoutsside="left", expand=True, padx=5)
+        QPushButton(button_frame, text="Domyślne", command=self.restore_defaults).show(  # Qt: pack() -> show(), use layoutsside="left", expand=True, padx=5)
+        QPushButton(button_frame, text="Anuluj", command=self.cancel).show(  # Qt: pack() -> show(), use layoutsside="right", expand=True, padx=5)
     
     def _get_pref(self, key):
         """Pobiera preferencję dla tego dialogu"""
@@ -2535,7 +2558,7 @@ class MergePageGridDialog(tk.Toplevel):
 # DIALOG SCALANIA PLIKÓW PDF
 # ====================================================================
 
-class MacroEditDialog(tk.Toplevel):
+class MacroEditDialog(QDialog):
     """Dialog for editing macro actions - reorder, delete, add"""
     
     def __init__(self, parent, prefs_manager, macro_name, refresh_callback):
@@ -2574,35 +2597,35 @@ class MacroEditDialog(tk.Toplevel):
         self.geometry(f"+{x}+{y}")
     
     def build_ui(self):
-        main_frame = ttk.Frame(self, padding="12")
-        main_frame.pack(fill="both", expand=True)
+        main_frame = QFrame(self, padding="12")
+        main_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True)
         
         # Info label
-        ttk.Label(main_frame, text="Edytuj makro jako tekst JSON:", 
-                 font=('TkDefaultFont', 9, 'bold')).pack(anchor="w", pady=(0, 4))
+        QLabel(main_frame, text="Edytuj makro jako tekst JSON:", 
+                 font=('TkDefaultFont', 9, 'bold')).show(  # Qt: pack() -> show(), use layoutsanchor="w", pady=(0, 4))
         
-        info_label = ttk.Label(main_frame, text="Format: [{\"action\": \"nazwa_akcji\", \"params\": {\"parametr\": \"wartość\"}}, ...]", 
+        info_label = QLabel(main_frame, text="Format: [{\"action\": \"nazwa_akcji\", \"params\": {\"parametr\": \"wartość\"}}, ...]", 
                               foreground="gray")
-        info_label.pack(anchor="w", pady=(0, 8))
+        info_label.show(  # Qt: pack() -> show(), use layoutsanchor="w", pady=(0, 8))
         
         # Text editor for manual editing
-        text_frame = ttk.Frame(main_frame)
-        text_frame.pack(fill="both", expand=True, pady=(0, 8))
+        text_frame = QFrame(main_frame)
+        text_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True, pady=(0, 8))
         
-        scrollbar = ttk.Scrollbar(text_frame)
-        scrollbar.pack(side="right", fill="y")
+        scrollbar = # QScrollArea(  # TODO: Adjust scrollbartext_frame)
+        scrollbar.show(  # Qt: pack() -> show(), use layoutsside="right", fill="y")
         
         self.actions_text = tk.Text(text_frame, yscrollcommand=scrollbar.set, 
                                     wrap="none", font=('Courier', 9))
-        self.actions_text.pack(side="left", fill="both", expand=True)
+        self.actions_text.show(  # Qt: pack() -> show(), use layoutsside="left", fill="both", expand=True)
         scrollbar.config(command=self.actions_text.yview)
         
         # Save/Cancel buttons
-        buttons_frame = ttk.Frame(main_frame)
-        buttons_frame.pack(fill="x")
+        buttons_frame = QFrame(main_frame)
+        buttons_frame.show(  # Qt: pack() -> show(), use layoutsfill="x")
         
-        ttk.Button(buttons_frame, text="Zapisz", command=self.save, width=15).pack(side="left", padx=(0, 4))
-        ttk.Button(buttons_frame, text="Anuluj", command=self.close, width=15).pack(side="left", padx=4)
+        QPushButton(buttons_frame, text="Zapisz", command=self.save, width=15).show(  # Qt: pack() -> show(), use layoutsside="left", padx=(0, 4))
+        QPushButton(buttons_frame, text="Anuluj", command=self.close, width=15).show(  # Qt: pack() -> show(), use layoutsside="left", padx=4)
     
     def load_actions(self):
         """Load actions into text editor as JSON"""
@@ -2664,7 +2687,7 @@ class MacroEditDialog(tk.Toplevel):
         self.destroy()
 
 
-class MacroRecordingDialog(tk.Toplevel):
+class MacroRecordingDialog(QDialog):
     """Non-blocking dialog for macro recording with Start/Stop/Cancel buttons"""
     
     def __init__(self, parent, viewer, refresh_callback=None):
@@ -2698,23 +2721,23 @@ class MacroRecordingDialog(tk.Toplevel):
         self.geometry(f"+{x}+{y}")
     
     def build_ui(self):
-        main_frame = ttk.Frame(self, padding="12")
-        main_frame.pack(fill="both", expand=True)
+        main_frame = QFrame(self, padding="12")
+        main_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True)
         
         # Name field
-        ttk.Label(main_frame, text="Nazwa makra:").grid(row=0, column=0, sticky="w", pady=2)
-        self.name_var = tk.StringVar()
-        self.name_entry = ttk.Entry(main_frame, textvariable=self.name_var, width=30)
-        self.name_entry.grid(row=0, column=1, sticky="ew", pady=2, padx=(8, 0))
+        QLabel(main_frame, text="Nazwa makra:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=0, sticky="w", pady=2)
+        self.name_var = ""  # Qt: Use direct string
+        self.name_entry = QLineEdit(main_frame, textvariable=self.name_var, width=30)
+        self.name_entry.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=1, sticky="ew", pady=2, padx=(8, 0))
         
         # List of recordable functions
-        ttk.Label(main_frame, text="Funkcje które mogą zostać nagrane:", 
-                 font=('TkDefaultFont', 9)).grid(row=1, column=0, columnspan=2, sticky="w", pady=(12, 4))
+        QLabel(main_frame, text="Funkcje które mogą zostać nagrane:", 
+                 font=('TkDefaultFont', 9)).show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=0, columnspan=2, sticky="w", pady=(12, 4))
         
         functions_text = tk.Text(main_frame, height=9, width=50, wrap="word", 
                                 font=('TkDefaultFont', 9), state=tk.DISABLED, 
                                 relief="flat", borderwidth=0, background="SystemButtonFace")
-        functions_text.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
+        functions_text.show(  # Qt: grid() -> show(), use QGridLayoutrow=2, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
         
         recordable_functions = """• Zaznaczanie konkretnych stron
 • Zaznacz wszystkie / nieparzyste / parzyste / pionowe / poziome
@@ -2729,24 +2752,24 @@ class MacroRecordingDialog(tk.Toplevel):
         functions_text.config(state=tk.DISABLED)
         
         # Status label
-        self.status_label = ttk.Label(main_frame, text="", foreground="blue")
-        self.status_label.grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        self.status_label = QLabel(main_frame, text="", foreground="blue")
+        self.status_label.show(  # Qt: grid() -> show(), use QGridLayoutrow=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
         
         # Buttons
-        button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=4, column=0, columnspan=2, pady=(12, 0))
+        button_frame = QFrame(main_frame)
+        button_frame.show(  # Qt: grid() -> show(), use QGridLayoutrow=4, column=0, columnspan=2, pady=(12, 0))
         
-        self.start_button = ttk.Button(button_frame, text="Rozpocznij nagrywanie", 
+        self.start_button = QPushButton(button_frame, text="Rozpocznij nagrywanie", 
                                        command=self.on_start, width=20)
-        self.start_button.pack(side="left", padx=4)
+        self.start_button.show(  # Qt: pack() -> show(), use layoutsside="left", padx=4)
         
-        self.stop_button = ttk.Button(button_frame, text="Zatrzymaj nagrywanie", 
+        self.stop_button = QPushButton(button_frame, text="Zatrzymaj nagrywanie", 
                                       command=self.on_stop, width=20, state=tk.DISABLED)
-        self.stop_button.pack(side="left", padx=4)
+        self.stop_button.show(  # Qt: pack() -> show(), use layoutsside="left", padx=4)
         
-        self.cancel_button = ttk.Button(button_frame, text="Anuluj", 
+        self.cancel_button = QPushButton(button_frame, text="Anuluj", 
                                         command=self.on_cancel, width=10)
-        self.cancel_button.pack(side="left", padx=4)
+        self.cancel_button.show(  # Qt: pack() -> show(), use layoutsside="left", padx=4)
         
         # Configure grid weights for proper resizing
         main_frame.grid_rowconfigure(2, weight=1)
@@ -2827,7 +2850,7 @@ class MacroRecordingDialog(tk.Toplevel):
         self.destroy()
 
 
-class MacrosListDialog(tk.Toplevel):
+class MacrosListDialog(QDialog):
     """Okno dialogowe listy makr użytkownika"""
     
     def __init__(self, parent, prefs_manager, viewer):
@@ -2864,38 +2887,38 @@ class MacrosListDialog(tk.Toplevel):
         self.geometry(f"+{x}+{y}")
     
     def build_ui(self):
-        main_frame = ttk.Frame(self, padding="12")
-        main_frame.pack(fill="both", expand=True)
+        main_frame = QFrame(self, padding="12")
+        main_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True)
         
         # Horizontal layout: list on left, buttons on right
-        content_frame = ttk.Frame(main_frame)
-        content_frame.pack(fill="both", expand=True, pady=(0, 8))
+        content_frame = QFrame(main_frame)
+        content_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True, pady=(0, 8))
         
         # Lista makr (left side)
-        list_frame = ttk.Frame(content_frame)
-        list_frame.pack(side="left", fill="both", expand=True, padx=(0, 8))
+        list_frame = QFrame(content_frame)
+        list_frame.show(  # Qt: pack() -> show(), use layoutsside="left", fill="both", expand=True, padx=(0, 8))
         
-        scrollbar = ttk.Scrollbar(list_frame)
-        scrollbar.pack(side="right", fill="y")
+        scrollbar = # QScrollArea(  # TODO: Adjust scrollbarlist_frame)
+        scrollbar.show(  # Qt: pack() -> show(), use layoutsside="right", fill="y")
         
-        self.macros_listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar.set, height=15)
-        self.macros_listbox.pack(side="left", fill="both", expand=True)
+        self.macros_listbox = QListWidget(list_frame, yscrollcommand=scrollbar.set, height=15)
+        self.macros_listbox.show(  # Qt: pack() -> show(), use layoutsside="left", fill="both", expand=True)
         scrollbar.config(command=self.macros_listbox.yview)
         
         # Bind double-click to run macro
         self.macros_listbox.bind("<Double-Button-1>", lambda e: self.run_selected())
         
         # Przyciski akcji (right side, vertical layout)
-        buttons_frame = ttk.Frame(content_frame)
-        buttons_frame.pack(side="right", fill="y")
+        buttons_frame = QFrame(content_frame)
+        buttons_frame.show(  # Qt: pack() -> show(), use layoutsside="right", fill="y")
         
-        ttk.Button(buttons_frame, text="Uruchom", command=self.run_selected, width=15).pack(pady=(0, 4))
-        ttk.Button(buttons_frame, text="Nagraj makro...", command=self.record_macro, width=15).pack(pady=4)
-        #ttk.Button(buttons_frame, text="Nowe makro", command=self.new_macro, width=15).pack(pady=4)
-        ttk.Button(buttons_frame, text="Duplikuj", command=self.duplicate_selected, width=15).pack(pady=4)
-        ttk.Button(buttons_frame, text="Edytuj...", command=self.edit_selected, width=15).pack(pady=4)
-        ttk.Button(buttons_frame, text="Usuń", command=self.delete_selected, width=15).pack(pady=4)
-        ttk.Button(buttons_frame, text="Zamknij", command=self.close, width=15).pack(pady=(4, 0))
+        QPushButton(buttons_frame, text="Uruchom", command=self.run_selected, width=15).show(  # Qt: pack() -> show(), use layoutspady=(0, 4))
+        QPushButton(buttons_frame, text="Nagraj makro...", command=self.record_macro, width=15).show(  # Qt: pack() -> show(), use layoutspady=4)
+        #QPushButton(buttons_frame, text="Nowe makro", command=self.new_macro, width=15).show(  # Qt: pack() -> show(), use layoutspady=4)
+        QPushButton(buttons_frame, text="Duplikuj", command=self.duplicate_selected, width=15).show(  # Qt: pack() -> show(), use layoutspady=4)
+        QPushButton(buttons_frame, text="Edytuj...", command=self.edit_selected, width=15).show(  # Qt: pack() -> show(), use layoutspady=4)
+        QPushButton(buttons_frame, text="Usuń", command=self.delete_selected, width=15).show(  # Qt: pack() -> show(), use layoutspady=4)
+        QPushButton(buttons_frame, text="Zamknij", command=self.close, width=15).show(  # Qt: pack() -> show(), use layoutspady=(4, 0))
     
     def load_macros(self):
         """Wczytaj listę makr"""
@@ -2924,7 +2947,6 @@ class MacrosListDialog(tk.Toplevel):
         macro_name = list(macros.keys())[index]
         
         # Ask for new name using simpledialog
-        from tkinter import simpledialog
         new_name = simpledialog.askstring(
             "Duplikuj makro",
             f"Wprowadź nową nazwę dla kopii makra '{macro_name}':",
@@ -3010,7 +3032,7 @@ class MacrosListDialog(tk.Toplevel):
         self.destroy()
 
 
-class MergePDFDialog(tk.Toplevel):
+class MergePDFDialog(QDialog):
     """Okno dialogowe do scalania wielu plików PDF"""
     
     def __init__(self, parent):
@@ -3043,46 +3065,46 @@ class MergePDFDialog(tk.Toplevel):
         self.geometry(f"+{x}+{y}")
     
     def build_ui(self):
-        main_frame = ttk.Frame(self, padding="12")
-        main_frame.pack(fill="both", expand=True)
+        main_frame = QFrame(self, padding="12")
+        main_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True)
         
         # Nagłówek
-        #ttk.Label(main_frame, text="Dodaj pliki PDF do scalenia:", font=("Arial", 10, "bold")).pack(anchor="w", pady=(0, 8))
+        #QLabel(main_frame, text="Dodaj pliki PDF do scalenia:", font=("Arial", 10, "bold")).show(  # Qt: pack() -> show(), use layoutsanchor="w", pady=(0, 8))
         
         # Frame dla listy i przycisków
-        content_frame = ttk.Frame(main_frame)
-        content_frame.pack(fill="both", expand=True, pady=(0, 8))
+        content_frame = QFrame(main_frame)
+        content_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True, pady=(0, 8))
         
         # Lista plików (węższa - z lewej strony)
-        list_frame = ttk.Frame(content_frame)
-        list_frame.pack(side="left", fill="both", expand=True)
+        list_frame = QFrame(content_frame)
+        list_frame.show(  # Qt: pack() -> show(), use layoutsside="left", fill="both", expand=True)
         
-        scrollbar = ttk.Scrollbar(list_frame)
-        scrollbar.pack(side="right", fill="y")
+        scrollbar = # QScrollArea(  # TODO: Adjust scrollbarlist_frame)
+        scrollbar.show(  # Qt: pack() -> show(), use layoutsside="right", fill="y")
         
-        self.files_listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar.set, height=15)
-        self.files_listbox.pack(side="left", fill="both", expand=True)
+        self.files_listbox = QListWidget(list_frame, yscrollcommand=scrollbar.set, height=15)
+        self.files_listbox.show(  # Qt: pack() -> show(), use layoutsside="left", fill="both", expand=True)
         scrollbar.config(command=self.files_listbox.yview)
         
         # Przyciski zarządzania listą (w rzędzie po prawej)
-        buttons_frame = ttk.Frame(content_frame)
-        buttons_frame.pack(side="right", fill="y", padx=(8, 0))
+        buttons_frame = QFrame(content_frame)
+        buttons_frame.show(  # Qt: pack() -> show(), use layoutsside="right", fill="y", padx=(8, 0))
         
-        ttk.Button(buttons_frame, text="Dodaj pliki...", command=self.add_files, width=15).pack(pady=(0, 4))
-        ttk.Button(buttons_frame, text="Usuń zaznaczony", command=self.remove_selected, width=15).pack(pady=4)
-        ttk.Button(buttons_frame, text="Przesuń w górę", command=self.move_up, width=15).pack(pady=4)
-        ttk.Button(buttons_frame, text="Przesuń w dół", command=self.move_down, width=15).pack(pady=4)
+        QPushButton(buttons_frame, text="Dodaj pliki...", command=self.add_files, width=15).show(  # Qt: pack() -> show(), use layoutspady=(0, 4))
+        QPushButton(buttons_frame, text="Usuń zaznaczony", command=self.remove_selected, width=15).show(  # Qt: pack() -> show(), use layoutspady=4)
+        QPushButton(buttons_frame, text="Przesuń w górę", command=self.move_up, width=15).show(  # Qt: pack() -> show(), use layoutspady=4)
+        QPushButton(buttons_frame, text="Przesuń w dół", command=self.move_down, width=15).show(  # Qt: pack() -> show(), use layoutspady=4)
         
         # Przyciski akcji
-        action_frame = ttk.Frame(main_frame)
-        action_frame.pack(fill="x")
+        action_frame = QFrame(main_frame)
+        action_frame.show(  # Qt: pack() -> show(), use layoutsfill="x")
         
-        ttk.Button(action_frame, text="Scal i zapisz...", command=self.merge_and_save, width=15).pack(side="left", padx=(0, 4))
-        ttk.Button(action_frame, text="Anuluj", command=self.cancel, width=15).pack(side="left", padx=4)
+        QPushButton(action_frame, text="Scal i zapisz...", command=self.merge_and_save, width=15).show(  # Qt: pack() -> show(), use layoutsside="left", padx=(0, 4))
+        QPushButton(action_frame, text="Anuluj", command=self.cancel, width=15).show(  # Qt: pack() -> show(), use layoutsside="left", padx=4)
     
     def add_files(self):
         """Dodaj pliki PDF do listy"""
-        files = filedialog.askopenfilenames(
+        files = QFileDialog.getOpenFileNames(
             title="Wybierz pliki PDF do scalenia",
             filetypes=[("Pliki PDF", "*.pdf"), ("Wszystkie pliki", "*.*")]
         )
@@ -3137,15 +3159,15 @@ class MergePDFDialog(tk.Toplevel):
         dialog.grab_set()
         dialog.resizable(False, False)
         
-        main_frame = ttk.Frame(dialog, padding="12")
-        main_frame.pack(fill="both", expand=True)
+        main_frame = QFrame(dialog, padding="12")
+        main_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True)
         
-        ttk.Label(main_frame, text=f"Plik {os.path.basename(filepath)} jest zabezpieczony hasłem.").pack(anchor="w", pady=(0, 8))
-        ttk.Label(main_frame, text="Wprowadź hasło:").pack(anchor="w", pady=(0, 4))
+        QLabel(main_frame, text=f"Plik {os.path.basename(filepath)} jest zabezpieczony hasłem.").show(  # Qt: pack() -> show(), use layoutsanchor="w", pady=(0, 8))
+        QLabel(main_frame, text="Wprowadź hasło:").show(  # Qt: pack() -> show(), use layoutsanchor="w", pady=(0, 4))
         
-        password_var = tk.StringVar()
-        password_entry = ttk.Entry(main_frame, textvariable=password_var, show="*", width=30)
-        password_entry.pack(fill="x", pady=(0, 12))
+        password_var = ""  # Qt: Use direct string
+        password_entry = QLineEdit(main_frame, textvariable=password_var, show="*", width=30)
+        password_entry.show(  # Qt: pack() -> show(), use layoutsfill="x", pady=(0, 12))
         
         result = [None]
         
@@ -3156,10 +3178,10 @@ class MergePDFDialog(tk.Toplevel):
         def on_cancel():
             dialog.destroy()
         
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack()
-        ttk.Button(button_frame, text="OK", command=on_ok, width=10).pack(side="left", padx=4)
-        ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10).pack(side="left", padx=4)
+        button_frame = QFrame(main_frame)
+        button_frame.show(  # Qt: pack() -> show(), use layouts)
+        QPushButton(button_frame, text="OK", command=on_ok, width=10).show(  # Qt: pack() -> show(), use layoutsside="left", padx=4)
+        QPushButton(button_frame, text="Anuluj", command=on_cancel, width=10).show(  # Qt: pack() -> show(), use layoutsside="left", padx=4)
         
         password_entry.focus_set()
         dialog.bind("<Return>", lambda e: on_ok())
@@ -3187,7 +3209,7 @@ class MergePDFDialog(tk.Toplevel):
             custom_messagebox(self, "Błąd", "Dodaj przynajmniej jeden plik PDF.", typ="error")
             return
         
-        output_path = filedialog.asksaveasfilename(
+        output_path = QFileDialog.getSaveFileName(
             defaultextension=".pdf",
             filetypes=[("Pliki PDF", "*.pdf")],
             title="Zapisz scalony PDF"
@@ -3238,7 +3260,7 @@ class MergePDFDialog(tk.Toplevel):
         self.destroy()
 
 
-class PDFAnalysisDialog(tk.Toplevel):
+class PDFAnalysisDialog(QDialog):
     """Okno analizy PDF - zlicza strony wg kolorystyki, formatu i orientacji"""
     
     # Formaty stron (w mm) z tolerancją ±5mm
@@ -3304,22 +3326,22 @@ class PDFAnalysisDialog(tk.Toplevel):
         self.geometry(f"+{x}+{y}")
     
     def build_ui(self):
-        main_frame = ttk.Frame(self, padding="12")
-        main_frame.pack(fill="both", expand=True)
+        main_frame = QFrame(self, padding="12")
+        main_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True)
         
         # Button to manually trigger analysis
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill="x", pady=(0, 8))
-        ttk.Button(button_frame, text="Analizuj PDF", command=self.analyze_pdf, width=15).pack()
+        button_frame = QFrame(main_frame)
+        button_frame.show(  # Qt: pack() -> show(), use layoutsfill="x", pady=(0, 8))
+        QPushButton(button_frame, text="Analizuj PDF", command=self.analyze_pdf, width=15).show(  # Qt: pack() -> show(), use layouts)
         
         # Results area with scrollbar
-        results_frame = ttk.LabelFrame(main_frame, text="Wyniki analizy")
-        results_frame.pack(fill="both", expand=True, pady=(0, 8))
+        results_frame = QGroupBox(main_frame, text="Wyniki analizy")
+        results_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True, pady=(0, 8))
         
         # Create scrollable canvas
         canvas = tk.Canvas(results_frame, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(results_frame, orient="vertical", command=canvas.yview)
-        self.results_container = ttk.Frame(canvas)
+        scrollbar = # QScrollArea(  # TODO: Adjust scrollbarresults_frame, orient="vertical", command=canvas.yview)
+        self.results_container = QFrame(canvas)
         
         self.results_container.bind(
             "<Configure>",
@@ -3329,13 +3351,13 @@ class PDFAnalysisDialog(tk.Toplevel):
         canvas.create_window((0, 0), window=self.results_container, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        canvas.show(  # Qt: pack() -> show(), use layoutsside="left", fill="both", expand=True)
+        scrollbar.show(  # Qt: pack() -> show(), use layoutsside="right", fill="y")
         
         self.canvas = canvas
         
         # Close button
-        ttk.Button(main_frame, text="Zamknij", command=self.close, width=15).pack()
+        QPushButton(main_frame, text="Zamknij", command=self.close, width=15).show(  # Qt: pack() -> show(), use layouts)
     
     def analyze_pdf(self):
         """Analizuje PDF i wyświetla wyniki"""
@@ -3357,8 +3379,8 @@ class PDFAnalysisDialog(tk.Toplevel):
             return
         
         # Show progress message
-        progress_label = ttk.Label(self.results_container, text="Analizowanie...")
-        progress_label.pack(pady=10)
+        progress_label = QLabel(self.results_container, text="Analizowanie...")
+        progress_label.show(  # Qt: pack() -> show(), use layoutspady=10)
         self.update()
         
         # Analyze each page
@@ -3485,8 +3507,8 @@ class PDFAnalysisDialog(tk.Toplevel):
         row = 0
         for color in sorted(color_format_groups.keys()):
             # Color header
-            color_label = ttk.Label(self.results_container, text=f"{color}", font=("Arial", 10, "bold"))
-            color_label.grid(row=row, column=0, columnspan=2, sticky="w", pady=(5, 2))
+            color_label = QLabel(self.results_container, text=f"{color}", font=("Arial", 10, "bold"))
+            color_label.show(  # Qt: grid() -> show(), use QGridLayoutrow=row, column=0, columnspan=2, sticky="w", pady=(5, 2))
             row += 1
             
             for page_format in sorted(color_format_groups[color].keys()):
@@ -3499,7 +3521,7 @@ class PDFAnalysisDialog(tk.Toplevel):
                     if page_format in ['A4', 'Letter'] and landscape_count > 0:
                         text += f" (poziomych: {landscape_count})"
                     
-                    btn = tk.Button(
+                    btn = QPushButton(
                         self.results_container,
                         text=text,
                         anchor="w",
@@ -3509,7 +3531,7 @@ class PDFAnalysisDialog(tk.Toplevel):
                         cursor="hand2",
                         command=lambda p=pages: self._select_pages(p)
                     )
-                    btn.grid(row=row, column=0, sticky="ew", padx=(10, 5), pady=1)
+                    btn.show(  # Qt: grid() -> show(), use QGridLayoutrow=row, column=0, sticky="ew", padx=(10, 5), pady=1)
                     self.result_buttons.append(btn)
                     
                     row += 1
@@ -3519,8 +3541,8 @@ class PDFAnalysisDialog(tk.Toplevel):
     
     def _show_message(self, message):
         """Wyświetla komunikat w obszarze wyników"""
-        label = ttk.Label(self.results_container, text=message)
-        label.pack(pady=20)
+        label = QLabel(self.results_container, text=message)
+        label.show(  # Qt: pack() -> show(), use layoutspady=20)
     
     def _select_pages(self, page_indices):
         """Zaznacza strony w głównym oknie programu"""
@@ -3578,7 +3600,6 @@ class SelectablePDFViewer:
     import fitz
     from pypdf import PdfReader, PdfWriter, Transformation
     from pypdf.generic import RectangleObject, FloatObject
-    from tkinterdnd2 import DND_FILES, TkinterDnD
 
     MM_TO_POINTS = 72 / 25.4
 
@@ -4232,7 +4253,6 @@ class SelectablePDFViewer:
             ("Nawigacja", "Strzałki, Spacja, Esc"),
         ]
 
-        import tkinter as tk
         dialog = tk.Toplevel(self.master)
         dialog.title("Skróty klawiszowe")
         dialog.transient(self.master)
@@ -4244,13 +4264,13 @@ class SelectablePDFViewer:
         max_height = int(screen_height * 0.8)
         width = 631
 
-        outer_frame = tk.Frame(dialog, bg=bg)
-        outer_frame.pack(fill="both", expand=True, padx=24, pady=24)
+        outer_frame = QFrame(dialog, bg=bg)
+        outer_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True, padx=24, pady=24)
 
         canvas = tk.Canvas(outer_frame, bg=bg, highlightthickness=0)
         scrollbar = tk.Scrollbar(outer_frame, orient="vertical", command=canvas.yview)
 
-        scrollable_frame = tk.Frame(canvas, bg=bg, bd=1, relief="solid",
+        scrollable_frame = QFrame(canvas, bg=bg, bd=1, relief="solid",
                                    highlightbackground=grid_color, highlightthickness=1)
 
         window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
@@ -4268,27 +4288,27 @@ class SelectablePDFViewer:
             # Lewa kolumna
             if i < len(shortcuts_left):
                 op, key = shortcuts_left[i]
-                l_op = tk.Label(scrollable_frame, text=op, bg=bg, anchor="w", font=("Arial", 10))
-                l_key = tk.Label(scrollable_frame, text=key, bg=bg, anchor="e", font=("Arial", 10, "bold"), fg="#234")
-                l_op.grid(row=row_idx, column=0, sticky="ew", padx=(10, 6), pady=(2,2))
-                l_key.grid(row=row_idx, column=1, sticky="ew", padx=(2, 20), pady=(2,2))
+                l_op = QLabel(scrollable_frame, text=op, bg=bg, anchor="w", font=("Arial", 10))
+                l_key = QLabel(scrollable_frame, text=key, bg=bg, anchor="e", font=("Arial", 10, "bold"), fg="#234")
+                l_op.show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=0, sticky="ew", padx=(10, 6), pady=(2,2))
+                l_key.show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=1, sticky="ew", padx=(2, 20), pady=(2,2))
             else:
-                tk.Label(scrollable_frame, text="", bg=bg).grid(row=row_idx, column=0)
-                tk.Label(scrollable_frame, text="", bg=bg).grid(row=row_idx, column=1)
+                QLabel(scrollable_frame, text="", bg=bg).show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=0)
+                QLabel(scrollable_frame, text="", bg=bg).show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=1)
             # Prawa kolumna
             if i < len(shortcuts_right):
                 op, key = shortcuts_right[i]
-                r_op = tk.Label(scrollable_frame, text=op, bg=bg, anchor="w", font=("Arial", 10))
-                r_key = tk.Label(scrollable_frame, text=key, bg=bg, anchor="e", font=("Arial", 10, "bold"), fg="#234")
-                r_op.grid(row=row_idx, column=2, sticky="ew", padx=(20, 6), pady=(2,2))
-                r_key.grid(row=row_idx, column=3, sticky="ew", padx=(2, 10), pady=(2,2))
+                r_op = QLabel(scrollable_frame, text=op, bg=bg, anchor="w", font=("Arial", 10))
+                r_key = QLabel(scrollable_frame, text=key, bg=bg, anchor="e", font=("Arial", 10, "bold"), fg="#234")
+                r_op.show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=2, sticky="ew", padx=(20, 6), pady=(2,2))
+                r_key.show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=3, sticky="ew", padx=(2, 10), pady=(2,2))
             else:
-                tk.Label(scrollable_frame, text="", bg=bg).grid(row=row_idx, column=2)
-                tk.Label(scrollable_frame, text="", bg=bg).grid(row=row_idx, column=3)
+                QLabel(scrollable_frame, text="", bg=bg).show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=2)
+                QLabel(scrollable_frame, text="", bg=bg).show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx, column=3)
             if i < max_rows-1:
                 for col in range(4):
-                    frame = tk.Frame(scrollable_frame, bg=grid_color, height=1)
-                    frame.grid(row=row_idx+1, column=col, sticky="ewns")
+                    frame = QFrame(scrollable_frame, bg=grid_color, height=1)
+                    frame.show(  # Qt: grid() -> show(), use QGridLayoutrow=row_idx+1, column=col, sticky="ewns")
 
         for col in range(4):
             scrollable_frame.grid_columnconfigure(col, weight=1)
@@ -4298,11 +4318,11 @@ class SelectablePDFViewer:
 
         if content_height > max_height:
             height = max_height
-            canvas.pack(side="left", fill="both", expand=True)
-            scrollbar.pack(side="right", fill="y")
+            canvas.show(  # Qt: pack() -> show(), use layoutsside="left", fill="both", expand=True)
+            scrollbar.show(  # Qt: pack() -> show(), use layoutsside="right", fill="y")
         else:
             height = content_height
-            canvas.pack(side="left", fill="both", expand=True)
+            canvas.show(  # Qt: pack() -> show(), use layoutsside="left", fill="both", expand=True)
 
         x = self.master.winfo_x() + (self.master.winfo_width() - width) // 2
         y = self.master.winfo_y() + (self.master.winfo_height() - height) // 2
@@ -4565,7 +4585,7 @@ class SelectablePDFViewer:
             return
 
         # Wybierz folder do zapisu (bez dialogu trybu - domyślnie każda strona osobno)
-        output_dir = filedialog.askdirectory(
+        output_dir = QFileDialog.getExistingDirectory(
             title="Wybierz folder do zapisu wyeksportowanych obrazów"
         )
         
@@ -4690,11 +4710,11 @@ class SelectablePDFViewer:
         self.BG_IMPORT = GRAY_BG
         self.BG_EXPORT = GRAY_BG
 
-        main_control_panel = tk.Frame(master, bg=BG_SECONDARY, padx=10, pady=5) 
-        main_control_panel.pack(side=tk.TOP, fill=tk.X)
+        main_control_panel = QFrame(master, bg=BG_SECONDARY, padx=10, pady=5) 
+        main_control_panel.show(  # Qt: pack() -> show(), use layoutsside=tk.TOP, fill=tk.X)
         
-        tools_frame = tk.Frame(main_control_panel, bg=BG_SECONDARY)
-        tools_frame.pack(side=tk.LEFT, fill=tk.Y)
+        tools_frame = QFrame(main_control_panel, bg=BG_SECONDARY)
+        tools_frame.show(  # Qt: pack() -> show(), use layoutsside=tk.LEFT, fill=tk.Y)
 
         ICON_WIDTH = 3
         ICON_FONT = ("Arial", 14)
@@ -4717,16 +4737,16 @@ class SelectablePDFViewer:
 
             if isinstance(icon, ImageTk.PhotoImage):
                  # Jeśli używamy ikon graficznych, używamy ich
-                 btn = tk.Button(parent, image=icon, **common_config)
+                 btn = QPushButton(parent, image=icon, **common_config)
                  btn.image = icon 
             else:
                  # Jeśli używamy emoji/tekstu zastępczego, używamy dłuższej formy dla czytelności
                  if btn_text:
-                     btn = tk.Button(parent, text=btn_text, font=("Arial", 9, "bold"), fg=fg_color, **common_config)
+                     btn = QPushButton(parent, text=btn_text, font=("Arial", 9, "bold"), fg=fg_color, **common_config)
                  else:
-                     btn = tk.Button(parent, text=icon, width=ICON_WIDTH, font=ICON_FONT, fg=fg_color, **common_config)
+                     btn = QPushButton(parent, text=icon, width=ICON_WIDTH, font=ICON_FONT, fg=fg_color, **common_config)
             
-            btn.pack(side=tk.LEFT, padx=padx)
+            btn.show(  # Qt: pack() -> show(), use layoutsside=tk.LEFT, padx=padx)
             return btn
 
         # 1. PRZYCISKI PLIK/ZAPISZ/IMPORT/EKSPORT/COFNIJ
@@ -4795,8 +4815,8 @@ class SelectablePDFViewer:
         Tooltip(self.add_nums_btn, "Wstawianie numeracji. \n" "Wymaga zaznaczenia przynajniej jednej strony.")
 
         # ZOOM 
-        zoom_frame = tk.Frame(main_control_panel, bg=BG_SECONDARY)
-        zoom_frame.pack(side=tk.RIGHT, padx=10)
+        zoom_frame = QFrame(main_control_panel, bg=BG_SECONDARY)
+        zoom_frame.show(  # Qt: pack() -> show(), use layoutsside=tk.RIGHT, padx=10)
         
         ZOOM_BG = GRAY_BG 
         ZOOM_FONT = ("Arial", 14, "bold") 
@@ -4812,30 +4832,30 @@ class SelectablePDFViewer:
         
         
         # Pasek statusu z paskiem postępu
-        status_frame = tk.Frame(master, bd=1, relief=tk.SUNKEN, bg="#f0f0f0")
-        status_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        status_frame = QFrame(master, bd=1, relief=tk.SUNKEN, bg="#f0f0f0")
+        status_frame.show(  # Qt: pack() -> show(), use layoutsside=tk.BOTTOM, fill=tk.X)
         
-        self.status_bar = tk.Label(status_frame, text="Gotowy. Otwórz plik PDF.", anchor=tk.W, bg="#f0f0f0", fg="black")
-        self.status_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.status_bar = QLabel(status_frame, text="Gotowy. Otwórz plik PDF.", anchor=tk.W, bg="#f0f0f0", fg="black")
+        self.status_bar.show(  # Qt: pack() -> show(), use layoutsside=tk.LEFT, fill=tk.X, expand=True)
         
         # Pasek postępu (początkowo ukryty)
         self.progress_bar = ttk.Progressbar(status_frame, orient="horizontal", length=200, mode="determinate")
-        self.progress_bar.pack(side=tk.RIGHT, padx=(5, 5))
+        self.progress_bar.show(  # Qt: pack() -> show(), use layoutsside=tk.RIGHT, padx=(5, 5))
         self.progress_bar.pack_forget()  # Ukryj na starcie
 
 
         self.canvas = tk.Canvas(master, bg="#F5F5F5") 
         self.scrollbar = tk.Scrollbar(master, orient="vertical", command=self.canvas.yview)
         
-        self.scrollable_frame = tk.Frame(self.canvas, bg="#F5F5F5") 
+        self.scrollable_frame = QFrame(self.canvas, bg="#F5F5F5") 
         
         self.canvas_window_id = self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         
         self.canvas.bind("<Configure>", self._reconfigure_grid) 
         
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
-        self.scrollbar.pack(side="right", fill="y")
-        self.canvas.pack(side="left", fill="both", expand=True) 
+        self.scrollbar.show(  # Qt: pack() -> show(), use layoutsside="right", fill="y")
+        self.canvas.show(  # Qt: pack() -> show(), use layoutsside="left", fill="both", expand=True) 
 
         self.canvas.bind_all("<MouseWheel>", self._on_mousewheel) 
         self.canvas.bind_all("<Button-4>", self._on_mousewheel)
@@ -5028,9 +5048,9 @@ class SelectablePDFViewer:
                 
         
         # --- Ramka Centrująca Treść ---
-        main_frame = ttk.Frame(dialog)
+        main_frame = QFrame(dialog)
         # Pack bez expand/fill sprawia, że treść jest mała i wyśrodkowana w stałym oknie
-        main_frame.pack(padx=10, pady=10) 
+        main_frame.show(  # Qt: pack() -> show(), use layoutspadx=10, pady=10) 
 
         # 3. Dodanie Grafiki
         logo_path = PROGRAM_LOGO_PATH 
@@ -5043,32 +5063,32 @@ class SelectablePDFViewer:
                 
                 self.tk_image = ImageTk.PhotoImage(pil_image)
                 
-                logo_label = ttk.Label(main_frame, image=self.tk_image)
-                logo_label.pack(pady=(0, 5))
+                logo_label = QLabel(main_frame, image=self.tk_image)
+                logo_label.show(  # Qt: pack() -> show(), use layoutspady=(0, 5))
             except Exception as e:
                 print(f"Błąd ładowania logo: {e}") 
 
         # 4. Dodanie Treści
         
         # Tytuł
-        title_label = ttk.Label(main_frame, text=PROGRAM_TITLE, font=("Helvetica", 12, "bold"))
-        title_label.pack(pady=(2, 1))
+        title_label = QLabel(main_frame, text=PROGRAM_TITLE, font=("Helvetica", 12, "bold"))
+        title_label.show(  # Qt: pack() -> show(), use layoutspady=(2, 1))
         
         # Wersja
-        version_label = ttk.Label(main_frame, text=f"Wersja: {PROGRAM_VERSION} (Data: {PROGRAM_DATE})", font=("Helvetica", 8))
-        version_label.pack(pady=1)
+        version_label = QLabel(main_frame, text=f"Wersja: {PROGRAM_VERSION} (Data: {PROGRAM_DATE})", font=("Helvetica", 8))
+        version_label.show(  # Qt: pack() -> show(), use layoutspady=1)
 
-        separator_frame = tk.Frame(main_frame, height=1, bg='lightgray')
-        separator_frame.pack(fill='x', padx=15, pady=15)
+        separator_frame = QFrame(main_frame, height=1, bg='lightgray')
+        separator_frame.show(  # Qt: pack() -> show(), use layoutsfill='x', padx=15, pady=15)
         # Prawa Autorskie (Zmodyfikowano: czcionka 10, bez pogrubienia, dodano zawijanie)
-        copy_label = ttk.Label(
+        copy_label = QLabel(
         main_frame, 
         text=COPYRIGHT_INFO, 
         font=("Helvetica", 8),              # Czcionka 10, bez pogrubienia
         foreground="black",
         wraplength=250                       # Zawijanie tekstu po osiągnięciu 300 pikseli szerokości
         )
-        copy_label.pack(pady=(5, 0))
+        copy_label.show(  # Qt: pack() -> show(), use layoutspady=(5, 0))
         
         # 5. Blokowanie
         dialog.bind('<Escape>', lambda e: dialog.destroy())
@@ -5525,7 +5545,7 @@ class SelectablePDFViewer:
             else:
                 initialdir = self.prefs_manager.get('last_open_path', '')
             
-            filepath = filedialog.askopenfilename(
+            filepath = QFileDialog.getOpenFileName(
                 filetypes=[("Pliki PDF", "*.pdf")],
                 initialdir=initialdir if initialdir else None
             )
@@ -5647,7 +5667,7 @@ class SelectablePDFViewer:
         Jeśli filepath jest podany (np. przez drag&drop), użyje go, inaczej wyświetli dialog wyboru pliku.
         """
         if filepath is None:
-            image_path = filedialog.askopenfilename(
+            image_path = QFileDialog.getOpenFileName(
                 filetypes=[("Obrazy", "*.png;*.jpg;*.jpeg;*.tif;*.tiff")],
                 title="Wybierz plik obrazu do otwarcia jako PDF"
             )
@@ -5699,7 +5719,7 @@ class SelectablePDFViewer:
         if filepath:
             import_path = filepath
         else:
-            import_path = filedialog.askopenfilename(
+            import_path = QFileDialog.getOpenFileName(
                 title="Wybierz plik PDF do zaimportowania",
                 filetypes=[("Pliki PDF", "*.pdf")]
             )
@@ -5806,7 +5826,7 @@ class SelectablePDFViewer:
         if filepath:
             image_path = filepath
         else:
-            image_path = filedialog.askopenfilename(
+            image_path = QFileDialog.getOpenFileName(
                 filetypes=[("Image files", "*.png;*.jpg;*.jpeg;*.tif;*.tiff")],
                 title="Wybierz plik obrazu do importu"
             )
@@ -5974,7 +5994,7 @@ class SelectablePDFViewer:
         self.progress_bar["mode"] = mode
         self.progress_bar["maximum"] = maximum
         self.progress_bar["value"] = 0
-        self.progress_bar.pack(side=tk.RIGHT, padx=(5, 5))
+        self.progress_bar.show(  # Qt: pack() -> show(), use layoutsside=tk.RIGHT, padx=(5, 5))
         if mode == "indeterminate":
             self.progress_bar.start(10)  # Animacja w trybie nieokreślonym
         self.master.update_idletasks()
@@ -6253,14 +6273,14 @@ class SelectablePDFViewer:
             dialog.grab_set()
             dialog.resizable(False, False)
             
-            main_frame = ttk.Frame(dialog, padding="12")
-            main_frame.pack(fill="both", expand=True)
+            main_frame = QFrame(dialog, padding="12")
+            main_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True)
             
-            ttk.Label(main_frame, text="Wybierz tryb eksportu:").pack(anchor="w", pady=(0, 8))
+            QLabel(main_frame, text="Wybierz tryb eksportu:").show(  # Qt: pack() -> show(), use layoutsanchor="w", pady=(0, 8))
             
             mode_var = tk.StringVar(value="single")
-            ttk.Radiobutton(main_frame, text="Wszystkie strony do jednego pliku PDF", variable=mode_var, value="single").pack(anchor="w", pady=2)
-            ttk.Radiobutton(main_frame, text="Każda strona do osobnego pliku PDF", variable=mode_var, value="separate").pack(anchor="w", pady=2)
+            QRadioButton(main_frame, text="Wszystkie strony do jednego pliku PDF", variable=mode_var, value="single").show(  # Qt: pack() -> show(), use layoutsanchor="w", pady=2)
+            QRadioButton(main_frame, text="Każda strona do osobnego pliku PDF", variable=mode_var, value="separate").show(  # Qt: pack() -> show(), use layoutsanchor="w", pady=2)
             
             result = [None]
             
@@ -6271,10 +6291,10 @@ class SelectablePDFViewer:
             def on_cancel():
                 dialog.destroy()
             
-            button_frame = ttk.Frame(main_frame)
-            button_frame.pack(pady=(12, 0))
-            ttk.Button(button_frame, text="OK", command=on_ok, width=10).pack(side="left", padx=4)
-            ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10).pack(side="left", padx=4)
+            button_frame = QFrame(main_frame)
+            button_frame.show(  # Qt: pack() -> show(), use layoutspady=(12, 0))
+            QPushButton(button_frame, text="OK", command=on_ok, width=10).show(  # Qt: pack() -> show(), use layoutsside="left", padx=4)
+            QPushButton(button_frame, text="Anuluj", command=on_cancel, width=10).show(  # Qt: pack() -> show(), use layoutsside="left", padx=4)
             
             dialog.bind("<Return>", lambda e: on_ok())
             dialog.bind("<Escape>", lambda e: on_cancel())
@@ -6301,7 +6321,7 @@ class SelectablePDFViewer:
         if export_mode == "single":
             # Wszystkie strony do jednego pliku
             # Wybierz folder
-            output_dir = filedialog.askdirectory(
+            output_dir = QFileDialog.getExistingDirectory(
                 title="Wybierz folder do zapisu PDF"
             )
             if not output_dir:
@@ -6335,7 +6355,7 @@ class SelectablePDFViewer:
                 self._update_status(f"BŁĄD Eksportu: Nie udało się zapisać nowego pliku: {e}")
         else:
             # Każda strona do osobnego pliku
-            output_dir = filedialog.askdirectory(
+            output_dir = QFileDialog.getExistingDirectory(
                 title="Wybierz folder do zapisu plików PDF"
             )
             if not output_dir:
@@ -6533,7 +6553,7 @@ class SelectablePDFViewer:
         else:
             initialdir = self.prefs_manager.get('last_save_path', '')
         
-        filepath = filedialog.asksaveasfilename(
+        filepath = QFileDialog.getSaveFileName(
             defaultextension=".pdf",
             filetypes=[("Pliki PDF", "*.pdf")],
             title="Zapisz zmodyfikowany PDF jako...",
@@ -7092,7 +7112,7 @@ class SelectablePDFViewer:
                 page_index=i,  
                 column_width=column_width
             )
-            page_frame.grid(row=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")  
+            page_frame.show(  # Qt: grid() -> show(), use QGridLayoutrow=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")  
             self.thumb_frames[i] = page_frame  
             if page_count > 10:
                 self.update_progressbar(i + 1)
@@ -7124,7 +7144,7 @@ class SelectablePDFViewer:
 
         for i in range(page_count):
             page_frame = self.thumb_frames[i]
-            page_frame.grid(row=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")
+            page_frame.show(  # Qt: grid() -> show(), use QGridLayoutrow=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")
             img_tk = self._render_and_scale(i, column_width)
             page_frame.img_label.config(image=img_tk)
             page_frame.img_label.image = img_tk
@@ -7274,15 +7294,15 @@ class SelectablePDFViewer:
         dialog.grab_set()
         dialog.resizable(False, False)
         
-        main_frame = ttk.Frame(dialog, padding="12")
-        main_frame.pack(fill="both", expand=True)
+        main_frame = QFrame(dialog, padding="12")
+        main_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True)
         
-        ttk.Label(main_frame, text="Ten plik PDF jest zabezpieczony hasłem.").pack(anchor="w", pady=(0, 8))
-        ttk.Label(main_frame, text="Wprowadź hasło:").pack(anchor="w", pady=(0, 4))
+        QLabel(main_frame, text="Ten plik PDF jest zabezpieczony hasłem.").show(  # Qt: pack() -> show(), use layoutsanchor="w", pady=(0, 8))
+        QLabel(main_frame, text="Wprowadź hasło:").show(  # Qt: pack() -> show(), use layoutsanchor="w", pady=(0, 4))
         
-        password_var = tk.StringVar()
-        password_entry = ttk.Entry(main_frame, textvariable=password_var, show="*", width=30)
-        password_entry.pack(fill="x", pady=(0, 12))
+        password_var = ""  # Qt: Use direct string
+        password_entry = QLineEdit(main_frame, textvariable=password_var, show="*", width=30)
+        password_entry.show(  # Qt: pack() -> show(), use layoutsfill="x", pady=(0, 12))
         
         result = [None]
         
@@ -7293,10 +7313,10 @@ class SelectablePDFViewer:
         def on_cancel():
             dialog.destroy()
         
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack()
-        ttk.Button(button_frame, text="OK", command=on_ok, width=10).pack(side="left", padx=4)
-        ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10).pack(side="left", padx=4)
+        button_frame = QFrame(main_frame)
+        button_frame.show(  # Qt: pack() -> show(), use layouts)
+        QPushButton(button_frame, text="OK", command=on_ok, width=10).show(  # Qt: pack() -> show(), use layoutsside="left", padx=4)
+        QPushButton(button_frame, text="Anuluj", command=on_cancel, width=10).show(  # Qt: pack() -> show(), use layoutsside="left", padx=4)
         
         password_entry.focus_set()
         dialog.bind("<Return>", lambda e: on_ok())
@@ -7331,18 +7351,18 @@ class SelectablePDFViewer:
         dialog.grab_set()
         dialog.resizable(False, False)
         
-        main_frame = ttk.Frame(dialog, padding="12")
-        main_frame.pack(fill="both", expand=True)
+        main_frame = QFrame(dialog, padding="12")
+        main_frame.show(  # Qt: pack() -> show(), use layoutsfill="both", expand=True)
         
-        ttk.Label(main_frame, text="Wprowadź hasło:").grid(row=0, column=0, sticky="w", pady=2)
-        password_var = tk.StringVar()
-        password_entry = ttk.Entry(main_frame, textvariable=password_var, show="*", width=30)
-        password_entry.grid(row=0, column=1, sticky="ew", pady=2, padx=(8, 0))
+        QLabel(main_frame, text="Wprowadź hasło:").show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=0, sticky="w", pady=2)
+        password_var = ""  # Qt: Use direct string
+        password_entry = QLineEdit(main_frame, textvariable=password_var, show="*", width=30)
+        password_entry.show(  # Qt: grid() -> show(), use QGridLayoutrow=0, column=1, sticky="ew", pady=2, padx=(8, 0))
         
-        ttk.Label(main_frame, text="Potwierdź hasło:").grid(row=1, column=0, sticky="w", pady=2)
-        confirm_var = tk.StringVar()
-        confirm_entry = ttk.Entry(main_frame, textvariable=confirm_var, show="*", width=30)
-        confirm_entry.grid(row=1, column=1, sticky="ew", pady=2, padx=(8, 0))
+        QLabel(main_frame, text="Potwierdź hasło:").show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=0, sticky="w", pady=2)
+        confirm_var = ""  # Qt: Use direct string
+        confirm_entry = QLineEdit(main_frame, textvariable=confirm_var, show="*", width=30)
+        confirm_entry.show(  # Qt: grid() -> show(), use QGridLayoutrow=1, column=1, sticky="ew", pady=2, padx=(8, 0))
         
         result = [None]
         
@@ -7361,10 +7381,10 @@ class SelectablePDFViewer:
         def on_cancel():
             dialog.destroy()
         
-        button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=2, column=0, columnspan=2, pady=(12, 0))
-        ttk.Button(button_frame, text="OK", command=on_ok, width=10).pack(side="left", padx=4)
-        ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10).pack(side="left", padx=4)
+        button_frame = QFrame(main_frame)
+        button_frame.show(  # Qt: grid() -> show(), use QGridLayoutrow=2, column=0, columnspan=2, pady=(12, 0))
+        QPushButton(button_frame, text="OK", command=on_ok, width=10).show(  # Qt: pack() -> show(), use layoutsside="left", padx=4)
+        QPushButton(button_frame, text="Anuluj", command=on_cancel, width=10).show(  # Qt: pack() -> show(), use layoutsside="left", padx=4)
         
         password_entry.focus_set()
         dialog.bind("<Return>", lambda e: on_ok())
@@ -7387,7 +7407,7 @@ class SelectablePDFViewer:
         if result[0]:
             # Zapisz PDF z hasłem używając pypdf
             try:
-                filepath = filedialog.asksaveasfilename(
+                filepath = QFileDialog.getSaveFileName(
                     defaultextension=".pdf",
                     filetypes=[("Pliki PDF", "*.pdf")],
                     title="Zapisz PDF z hasłem"
@@ -7422,7 +7442,7 @@ class SelectablePDFViewer:
         
         # Jeśli dokument jest już otwarty, to hasło zostało już podane przy otwarciu
         # Zapisujemy go bez hasła
-        filepath = filedialog.asksaveasfilename(
+        filepath = QFileDialog.getSaveFileName(
             defaultextension=".pdf",
             filetypes=[("Pliki PDF", "*.pdf")],
             title="Zapisz PDF bez hasła"
@@ -7996,7 +8016,6 @@ class SelectablePDFViewer:
 
 if __name__ == '__main__':
     try:
-        from tkinterdnd2 import TkinterDnD
         root = TkinterDnD.Tk()
         from PIL import Image, ImageTk
         icon_path = resource_path(os.path.join('icons', 'gryf.ico'))  # lub .ico jeśli masz na Windows

@@ -8,9 +8,9 @@
 
 ## Files
 
-- `PDFEditor.py` - Original Tkinter version (PRESERVED)
-- `PDFEditor_pyside6.py` - Automated PySide6 migration (NEEDS MANUAL FIXES)
-- `PDFEditor_tkinter_backup.py` - Backup of original
+- `PDFEditor.py` - **PySide6 version** (automated migration - NEEDS MANUAL FIXES)
+- `PDFEditor_tkinter.py` - Original Tkinter version (preserved for reference)
+- `PDFEditor_pyside6.py` - Copy of PySide6 version (same as PDFEditor.py)
 
 ## What Was Migrated
 
