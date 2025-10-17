@@ -2906,11 +2906,11 @@ class MacrosListDialog(tk.Toplevel):
     
     def record_macro(self):
         """Otwórz okno nagrywania makra"""
-        MacroRecordingDialog(self, self.viewer, refresh_callback=self.load_macros)
+        self.viewer.dialogs.macro_recording(self.viewer, refresh_callback=self.load_macros)
     
     def new_macro(self):
         """Otwórz okno nagrywania nowego makra z pustą nazwą"""
-        MacroRecordingDialog(self, self.viewer, refresh_callback=self.load_macros)
+        self.viewer.dialogs.macro_recording(self.viewer, refresh_callback=self.load_macros)
     
     def duplicate_selected(self):
         """Duplikuj wybrane makro pod nową nazwą"""
@@ -2977,7 +2977,7 @@ class MacrosListDialog(tk.Toplevel):
         macro_name = list(macros.keys())[index]
         
         # Open edit dialog
-        MacroEditDialog(self, self.prefs_manager, macro_name, self.load_macros)
+        self.viewer.dialogs.macro_edit(macro_name, self.load_macros)
     
     def delete_selected(self):
         """Usuń wybrane makro"""
@@ -3013,9 +3013,10 @@ class MacrosListDialog(tk.Toplevel):
 class MergePDFDialog(tk.Toplevel):
     """Okno dialogowe do scalania wielu plików PDF"""
     
-    def __init__(self, parent):
+    def __init__(self, parent, dialogs=None):
         super().__init__(parent)
         self.parent = parent
+        self.dialogs = dialogs
         self.title("Scalanie plików PDF")
         self.transient(parent)
         self.grab_set()
@@ -3206,7 +3207,7 @@ class MergePDFDialog(tk.Toplevel):
                     
                     # Sprawdź czy dokument jest zaszyfrowany
                     if doc.is_encrypted:
-                        password = self._ask_password_dialog(pdf_path)
+                        password = self.dialogs.ask_for_password(filepath=pdf_path) if self.dialogs else self._ask_password_dialog(pdf_path)
                         
                         if password is None:
                             # Użytkownik anulował
@@ -3564,6 +3565,217 @@ class PDFAnalysisDialog(tk.Toplevel):
 
 
 # ====================================================================
+# KLASA ZARZĄDZAJĄCA DIALOGAMI
+# ====================================================================
+
+class Dialogs:
+    """Centralna klasa zarządzająca wszystkimi oknami dialogowymi aplikacji"""
+    
+    def __init__(self, parent, prefs_manager):
+        self.parent = parent
+        self.prefs_manager = prefs_manager
+    
+    def custom_messagebox(self, title, message, typ="info"):
+        """
+        Wyświetla niestandardowe okno dialogowe wyśrodkowane na oknie aplikacji (nie na środku ekranu).
+        Brak obsługi ikon PNG, okno jest nieco mniejsze.
+        """
+        import tkinter as tk
+        from tkinter import ttk
+
+        dialog = tk.Toplevel(self.parent)
+        dialog.title(title)
+        dialog.transient(self.parent)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        # Kolory dla różnych typów (opcjonalnie)
+        colors = {
+            "info": "#d1ecf1",
+            "error": "#f8d7da",
+            "warning": "#fff3cd",
+            "question": "#d1ecf1",
+            "yesnocancel": "#d1ecf1"
+        }
+        bg_color = colors.get(typ, "#f0f0f0")
+
+        main_frame = ttk.Frame(dialog, padding="12")
+        main_frame.pack(fill="both", expand=True)
+        content_frame = ttk.Frame(main_frame)
+        content_frame.pack(fill="both", expand=True, pady=(0, 12))
+
+        # Tylko tekst komunikatu, bez ikony
+        msg_label = tk.Label(content_frame, text=message, justify="left", wraplength=310, font=("Arial", 10))
+        msg_label.pack(fill="both", expand=True, pady=6)
+
+        result = [None]
+
+        def on_yes():
+            result[0] = True
+            dialog.destroy()
+        def on_no():
+            result[0] = False
+            dialog.destroy()
+        def on_cancel():
+            result[0] = None
+            dialog.destroy()
+        def on_ok():
+            dialog.destroy()
+
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack()
+        if typ == "question":
+            yes_btn = ttk.Button(button_frame, text="Tak", command=on_yes, width=10)
+            yes_btn.pack(side="left", padx=4)
+            no_btn = ttk.Button(button_frame, text="Nie", command=on_no, width=10)
+            no_btn.pack(side="left", padx=4)
+            dialog.bind("<Return>", lambda e: on_yes())
+            dialog.bind("<Escape>", lambda e: on_no())
+            yes_btn.focus_set()
+        elif typ == "yesnocancel":
+            yes_btn = ttk.Button(button_frame, text="Tak", command=on_yes, width=10)
+            yes_btn.pack(side="left", padx=4)
+            no_btn = ttk.Button(button_frame, text="Nie", command=on_no, width=10)
+            no_btn.pack(side="left", padx=4)
+            cancel_btn = ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10)
+            cancel_btn.pack(side="left", padx=4)
+            dialog.bind("<Return>", lambda e: on_yes())
+            dialog.bind("<Escape>", lambda e: on_cancel())
+            dialog.protocol("WM_DELETE_WINDOW", on_cancel)
+            yes_btn.focus_set()
+        else:
+            ok_btn = ttk.Button(button_frame, text="OK", command=on_ok, width=10)
+            ok_btn.pack(padx=4)
+            dialog.bind("<Return>", lambda e: on_ok())
+            dialog.bind("<Escape>", lambda e: on_ok())
+            ok_btn.focus_set()
+
+        dialog.update_idletasks()
+        dialog_w = dialog.winfo_width()
+        dialog_h = dialog.winfo_height()
+        parent_x = self.parent.winfo_rootx()
+        parent_y = self.parent.winfo_rooty()
+        parent_w = self.parent.winfo_width()
+        parent_h = self.parent.winfo_height()
+        x = parent_x + (parent_w - dialog_w) // 2
+        y = parent_y + (parent_h - dialog_h) // 2
+        dialog.geometry(f"+{x}+{y}")
+
+        dialog.wait_window()
+
+        return result[0]
+    
+    def ask_for_password(self, filepath=None):
+        """Wyświetla dialog z prośbą o hasło do pliku PDF.
+        Zwraca hasło lub None jeśli użytkownik anulował."""
+        
+        dialog = tk.Toplevel(self.parent)
+        dialog.title("Plik PDF wymaga hasła")
+        dialog.transient(self.parent)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        
+        main_frame = ttk.Frame(dialog, padding="12")
+        main_frame.pack(fill="both", expand=True)
+        
+        if filepath:
+            ttk.Label(main_frame, text=f"Plik {os.path.basename(filepath)} jest zabezpieczony hasłem.").pack(anchor="w", pady=(0, 8))
+        else:
+            ttk.Label(main_frame, text="Ten plik PDF jest zabezpieczony hasłem.").pack(anchor="w", pady=(0, 8))
+        ttk.Label(main_frame, text="Wprowadź hasło:").pack(anchor="w", pady=(0, 4))
+        
+        password_var = tk.StringVar()
+        password_entry = ttk.Entry(main_frame, textvariable=password_var, show="*", width=30)
+        password_entry.pack(fill="x", pady=(0, 12))
+        
+        result = [None]
+        
+        def on_ok():
+            result[0] = password_var.get()
+            dialog.destroy()
+        
+        def on_cancel():
+            dialog.destroy()
+        
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack()
+        ttk.Button(button_frame, text="OK", command=on_ok, width=10).pack(side="left", padx=4)
+        ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10).pack(side="left", padx=4)
+        
+        password_entry.focus_set()
+        dialog.bind("<Return>", lambda e: on_ok())
+        dialog.bind("<Escape>", lambda e: on_cancel())
+        
+        # Wyśrodkuj
+        dialog.update_idletasks()
+        dialog_w = dialog.winfo_width()
+        dialog_h = dialog.winfo_height()
+        parent_x = self.parent.winfo_rootx()
+        parent_y = self.parent.winfo_rooty()
+        parent_w = self.parent.winfo_width()
+        parent_h = self.parent.winfo_height()
+        x = parent_x + (parent_w - dialog_w) // 2
+        y = parent_y + (parent_h - dialog_h) // 2
+        dialog.geometry(f"+{x}+{y}")
+        
+        dialog.wait_window()
+        
+        return result[0]
+    
+    def preferences(self):
+        """Otwiera dialog preferencji programu"""
+        return PreferencesDialog(self.parent, self.prefs_manager)
+    
+    def page_crop_resize(self):
+        """Otwiera dialog kadrowania i zmiany rozmiaru stron"""
+        return PageCropResizeDialog(self.parent, self.prefs_manager)
+    
+    def page_numbering(self):
+        """Otwiera dialog dodawania numeracji stron"""
+        return PageNumberingDialog(self.parent, self.prefs_manager)
+    
+    def page_number_margin(self, initial_margin_mm=20):
+        """Otwiera dialog usuwania numeracji stron"""
+        return PageNumberMarginDialog(self.parent, initial_margin_mm=initial_margin_mm, prefs_manager=self.prefs_manager)
+    
+    def shift_content(self):
+        """Otwiera dialog przesuwania zawartości stron"""
+        return ShiftContentDialog(self.parent, self.prefs_manager)
+    
+    def image_import_settings(self, title, image_path):
+        """Otwiera dialog ustawień importu obrazu"""
+        return ImageImportSettingsDialog(self.parent, title, image_path, prefs_manager=self.prefs_manager)
+    
+    def enhanced_page_range(self, title, imported_doc):
+        """Otwiera dialog zakresu stron do importu"""
+        return EnhancedPageRangeDialog(self.parent, title, imported_doc)
+    
+    def merge_page_grid(self, page_count):
+        """Otwiera dialog scalania stron na arkuszu"""
+        return MergePageGridDialog(self.parent, page_count=page_count, prefs_manager=self.prefs_manager)
+    
+    def macro_edit(self, macro_name, refresh_callback):
+        """Otwiera dialog edycji makra"""
+        return MacroEditDialog(self.parent, self.prefs_manager, macro_name, refresh_callback)
+    
+    def macro_recording(self, viewer, refresh_callback=None):
+        """Otwiera dialog nagrywania makra"""
+        return MacroRecordingDialog(self.parent, viewer, refresh_callback=refresh_callback)
+    
+    def macros_list(self, viewer):
+        """Otwiera dialog listy makr użytkownika"""
+        return MacrosListDialog(self.parent, self.prefs_manager, viewer)
+    
+    def merge_pdf(self):
+        """Otwiera dialog scalania plików PDF"""
+        return MergePDFDialog(self.parent, dialogs=self)
+    
+    def pdf_analysis(self, viewer):
+        """Otwiera dialog analizy PDF"""
+        return PDFAnalysisDialog(self.parent, viewer)
+
+
+# ====================================================================
 # GŁÓWNA KLASA PROGRAMU: SELECTABLEPDFVIEWER
 # ====================================================================
 
@@ -3613,7 +3825,7 @@ class SelectablePDFViewer:
         try:
             subprocess.Popen(args)
         except Exception as e:
-            custom_messagebox(self.master, "Błąd", f"Nie udało się uruchomić compare.exe:\n{e}", typ="error")
+            self.dialogs.custom_messagebox( "Błąd", f"Nie udało się uruchomić compare.exe:\n{e}", typ="error")
             
     def _setup_drag_and_drop_file(self):
         # Rejestrujemy canvas do odbioru plików DND
@@ -3818,7 +4030,7 @@ class SelectablePDFViewer:
             self._update_status("Musisz zaznaczyć przynajmniej jedną stronę PDF.")
             return
 
-        dialog = PageCropResizeDialog(self.master, self.prefs_manager)
+        dialog = self.dialogs.page_crop_resize()
         result = dialog.result
         if not result:
             self._update_status("Anulowano operację.")
@@ -3910,7 +4122,7 @@ class SelectablePDFViewer:
              self._update_status("Musisz zaznaczyć przynajmniej jedną stronę PDF.")
              return
         
-        dialog = PageNumberingDialog(self.master, self.prefs_manager)
+        dialog = self.dialogs.page_numbering()
         settings = dialog.result
 
         if settings is None:
@@ -4080,7 +4292,7 @@ class SelectablePDFViewer:
         except Exception as e:
             self.hide_progressbar()
             self._update_status(f"BŁĄD przy dodawaniu numeracji: {e}")
-            custom_messagebox(self.master, "Błąd Numeracji", str(e), typ="error")
+            self.dialogs.custom_messagebox( "Błąd Numeracji", str(e), typ="error")
    
     def remove_page_numbers(self):
         """
@@ -4091,7 +4303,7 @@ class SelectablePDFViewer:
             return
 
         # 1. Otwarcie dialogu i pobranie wartości od użytkownika
-        dialog = PageNumberMarginDialog(self.master, initial_margin_mm=20, prefs_manager=self.prefs_manager) # Zakładam, że root to główne okno
+        dialog = self.dialogs.page_number_margin(initial_margin_mm=20)
         margins = dialog.result
 
         if margins is None:
@@ -4328,7 +4540,7 @@ class SelectablePDFViewer:
             self._update_status("Musisz zaznaczyć przynajmniej jedną stronę PDF.")
             return
 
-        dialog = ShiftContentDialog(self.master, self.prefs_manager)
+        dialog = self.dialogs.shift_content()
         result = dialog.result
 
         if not result or (result['x_mm'] == 0 and result['y_mm'] == 0):
@@ -4424,7 +4636,7 @@ class SelectablePDFViewer:
     def _reverse_pages(self):
         """Odwraca kolejność wszystkich stron w bieżącym dokumencie PDF."""
         if not self.pdf_document:
-            custom_messagebox(self.master, "Informacja", "Najpierw otwórz plik PDF.", typ="info")
+            self.dialogs.custom_messagebox( "Informacja", "Najpierw otwórz plik PDF.", typ="info")
             return
 
         # 1. Zapisz obecny stan do historii przed zmianą
@@ -4471,7 +4683,7 @@ class SelectablePDFViewer:
             
         except Exception as e:
             self.hide_progressbar()
-            custom_messagebox(self.master, "Błąd", f"Wystąpił błąd podczas odwracania stron: {e}", typ="error")
+            self.dialogs.custom_messagebox( "Błąd", f"Wystąpił błąd podczas odwracania stron: {e}", typ="error")
             # W przypadku błędu użytkownik może użyć przycisku Cofnij aby przywrócić stan
     
     def _apply_selection_by_indices(self, indices_to_select, macro_source_page_count=None):
@@ -4561,7 +4773,7 @@ class SelectablePDFViewer:
         selected_indices = sorted(list(self.selected_pages))
         
         if not selected_indices:
-            custom_messagebox(self.master, "Informacja", "Wybierz strony do eksportu.", typ="info")
+            self.dialogs.custom_messagebox( "Informacja", "Wybierz strony do eksportu.", typ="info")
             return
 
         # Wybierz folder do zapisu (bez dialogu trybu - domyślnie każda strona osobno)
@@ -4620,7 +4832,7 @@ class SelectablePDFViewer:
         except Exception as e:
             self.hide_progressbar()
             self.master.config(cursor="")
-            custom_messagebox(self.master, "Błąd Eksportu", f"Wystąpił błąd podczas eksportowania stron:\n{e}", typ="error")
+            self.dialogs.custom_messagebox( "Błąd Eksportu", f"Wystąpił błąd podczas eksportowania stron:\n{e}", typ="error")
             
             
     
@@ -4633,6 +4845,9 @@ class SelectablePDFViewer:
 
         # Inicjalizacja managera preferencji
         self.prefs_manager = PreferencesManager()
+        
+        # Inicjalizacja systemu dialogów
+        self.dialogs = Dialogs(master, self.prefs_manager)
         
         # Inicjalizacja systemu makr
         self._init_macro_system()
@@ -4992,7 +5207,7 @@ class SelectablePDFViewer:
         
     def show_preferences_dialog(self):
         """Wyświetla okno dialogowe preferencji"""
-        PreferencesDialog(self.master, self.prefs_manager)
+        self.dialogs.preferences()
     
     def show_about_dialog(self):
         PROGRAM_LOGO_PATH = resource_path(os.path.join('icons', 'logo.png'))
@@ -5554,7 +5769,7 @@ class SelectablePDFViewer:
             # Krok 3: obsługa hasła
             if doc.is_encrypted:
                 doc.close()
-                password = self._ask_for_password()
+                password = self.dialogs.ask_for_password()
                 if password is None:
                     self._update_status("Anulowano otwieranie pliku.")
                     return
@@ -5663,7 +5878,7 @@ class SelectablePDFViewer:
             image_dpi = img.info.get('dpi', (96, 96))[0] if isinstance(img.info.get('dpi'), tuple) else 96
             img.close()
         except Exception as e:
-            custom_messagebox(self.master, "Błąd", f"Nie można wczytać obrazu: {e}", typ="error")
+            self.dialogs.custom_messagebox( "Błąd", f"Nie można wczytać obrazu: {e}", typ="error")
             return
 
         # Przelicz piksele na punkty PDF (1 cal = 72 punkty)
@@ -5716,7 +5931,7 @@ class SelectablePDFViewer:
             
             # Sprawdź czy dokument jest zaszyfrowany
             if imported_doc.is_encrypted:
-                password = self._ask_for_password()
+                password = self.dialogs.ask_for_password()
                 
                 if password is None:
                     # Użytkownik anulował
@@ -5743,7 +5958,7 @@ class SelectablePDFViewer:
                 selected_indices = list(range(max_pages))
             else:
                 self.master.update_idletasks() 
-                dialog = EnhancedPageRangeDialog(self.master, "Ustawienia importu PDF", imported_doc)
+                dialog = self.dialogs.enhanced_page_range("Ustawienia importu PDF", imported_doc)
                 selected_indices = dialog.result 
                 if selected_indices is None or not selected_indices:
                     self._update_status("Anulowano importowanie lub nie wybrano stron.")
@@ -5832,7 +6047,7 @@ class SelectablePDFViewer:
                 'custom_height_mm': None
             }
         else:
-            dialog = ImageImportSettingsDialog(self.master, "Ustawienia importu obrazu", image_path, prefs_manager=self.prefs_manager)
+            dialog = self.dialogs.image_import_settings("Ustawienia importu obrazu", image_path)
             settings = dialog.result
             if not settings:
                 return
@@ -5852,7 +6067,7 @@ class SelectablePDFViewer:
             image_height_points = (image_height_px / image_dpi) * 72
             img.close()
         except Exception as e:
-            custom_messagebox(self.master, "Błąd", f"Nie można wczytać obrazu: {e}", typ="error")
+            self.dialogs.custom_messagebox( "Błąd", f"Nie można wczytać obrazu: {e}", typ="error")
             return
 
         MM_TO_POINTS = 72 / 25.4
@@ -5911,7 +6126,7 @@ class SelectablePDFViewer:
         try:
             imported_page = imported_doc.new_page(-1, width=page_w, height=page_h)
         except Exception as e:
-            custom_messagebox(self.master, "Błąd inicjalizacji fitz", f"Nie udało się utworzyć tymczasowej strony PDF: {e}", typ="error")
+            self.dialogs.custom_messagebox( "Błąd inicjalizacji fitz", f"Nie udało się utworzyć tymczasowej strony PDF: {e}", typ="error")
             return
 
         # 5. Wklejenie obrazu do tymczasowej strony fitz
@@ -5948,7 +6163,7 @@ class SelectablePDFViewer:
             self.status_bar.config(text=f"Zaimportowano obraz jako stronę na pozycji {insert_index + 1}. Aktualna liczba stron: {len(self.pdf_document)}. Odświeżanie miniatur...")
 
         except Exception as e:
-            custom_messagebox(self.master, "Błąd Wklejania", f"Nie udało się wkleić obrazu: {e}", typ="error")
+            self.dialogs.custom_messagebox( "Błąd Wklejania", f"Nie udało się wkleić obrazu: {e}", typ="error")
         finally:
             if imported_doc and not imported_doc.is_closed:
                 imported_doc.close()
@@ -6823,7 +7038,7 @@ class SelectablePDFViewer:
         selected_indices = sorted(list(self.selected_pages))
         num_pages = len(selected_indices)
 
-        dialog = MergePageGridDialog(self.master, page_count=num_pages, prefs_manager=self.prefs_manager)
+        dialog = self.dialogs.merge_page_grid(page_count=num_pages)
         params = dialog.result
         if params is None:
             self._update_status("Anulowano scalanie stron.")
@@ -7264,64 +7479,10 @@ class SelectablePDFViewer:
     # NOWE FUNKCJE: HASŁA PDF, USUWANIE PUSTYCH STRON, SCALANIE PDF
     # ===================================================================
     
-    def _ask_for_password(self):
-        """Wyświetla dialog z prośbą o hasło do pliku PDF.
-        Zwraca hasło lub None jeśli użytkownik anulował."""
-        
-        dialog = tk.Toplevel(self.master)
-        dialog.title("Plik PDF wymaga hasła")
-        dialog.transient(self.master)
-        dialog.grab_set()
-        dialog.resizable(False, False)
-        
-        main_frame = ttk.Frame(dialog, padding="12")
-        main_frame.pack(fill="both", expand=True)
-        
-        ttk.Label(main_frame, text="Ten plik PDF jest zabezpieczony hasłem.").pack(anchor="w", pady=(0, 8))
-        ttk.Label(main_frame, text="Wprowadź hasło:").pack(anchor="w", pady=(0, 4))
-        
-        password_var = tk.StringVar()
-        password_entry = ttk.Entry(main_frame, textvariable=password_var, show="*", width=30)
-        password_entry.pack(fill="x", pady=(0, 12))
-        
-        result = [None]
-        
-        def on_ok():
-            result[0] = password_var.get()
-            dialog.destroy()
-        
-        def on_cancel():
-            dialog.destroy()
-        
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack()
-        ttk.Button(button_frame, text="OK", command=on_ok, width=10).pack(side="left", padx=4)
-        ttk.Button(button_frame, text="Anuluj", command=on_cancel, width=10).pack(side="left", padx=4)
-        
-        password_entry.focus_set()
-        dialog.bind("<Return>", lambda e: on_ok())
-        dialog.bind("<Escape>", lambda e: on_cancel())
-        
-        # Wyśrodkuj
-        dialog.update_idletasks()
-        dialog_w = dialog.winfo_width()
-        dialog_h = dialog.winfo_height()
-        parent_x = self.master.winfo_rootx()
-        parent_y = self.master.winfo_rooty()
-        parent_w = self.master.winfo_width()
-        parent_h = self.master.winfo_height()
-        x = parent_x + (parent_w - dialog_w) // 2
-        y = parent_y + (parent_h - dialog_h) // 2
-        dialog.geometry(f"+{x}+{y}")
-        
-        dialog.wait_window()
-        
-        return result[0]
-    
     def set_pdf_password(self):
         """Ustawia hasło na otwarty plik PDF"""
         if not self.pdf_document:
-            custom_messagebox(self.master, "Błąd", "Brak otwartego dokumentu PDF.", typ="error")
+            self.dialogs.custom_messagebox( "Błąd", "Brak otwartego dokumentu PDF.", typ="error")
             return
             
         # Dialog do wprowadzenia hasła
@@ -7409,15 +7570,15 @@ class SelectablePDFViewer:
                 with open(filepath, "wb") as output_file:
                     writer.write(output_file)
                 
-                custom_messagebox(self.master, "Sukces", f"PDF z hasłem zapisany do:\n{filepath}", typ="info")
+                self.dialogs.custom_messagebox( "Sukces", f"PDF z hasłem zapisany do:\n{filepath}", typ="info")
                 self._update_status(f"Zapisano PDF z hasłem: {filepath}")
             except Exception as e:
-                custom_messagebox(self.master, "Błąd", f"Nie udało się zapisać PDF z hasłem:\n{e}", typ="error")
+                self.dialogs.custom_messagebox( "Błąd", f"Nie udało się zapisać PDF z hasłem:\n{e}", typ="error")
     
     def remove_pdf_password(self):
         """Usuwa hasło z pliku PDF"""
         if not self.pdf_document:
-            custom_messagebox(self.master, "Błąd", "Brak otwartego dokumentu PDF.", typ="error")
+            self.dialogs.custom_messagebox( "Błąd", "Brak otwartego dokumentu PDF.", typ="error")
             return
         
         # Jeśli dokument jest już otwarty, to hasło zostało już podane przy otwarciu
@@ -7433,15 +7594,15 @@ class SelectablePDFViewer:
         try:
             # Zapisz aktualny dokument bez hasła
             self.pdf_document.save(filepath)
-            custom_messagebox(self.master, "Sukces", f"PDF bez hasła zapisany do:\n{filepath}", typ="info")
+            self.dialogs.custom_messagebox( "Sukces", f"PDF bez hasła zapisany do:\n{filepath}", typ="info")
             self._update_status(f"Zapisano PDF bez hasła: {filepath}")
         except Exception as e:
-            custom_messagebox(self.master, "Błąd", f"Nie udało się zapisać PDF bez hasła:\n{e}", typ="error")
+            self.dialogs.custom_messagebox( "Błąd", f"Nie udało się zapisać PDF bez hasła:\n{e}", typ="error")
     
     def remove_empty_pages(self):
         """Usuwa puste strony z dokumentu PDF"""
         if not self.pdf_document:
-            custom_messagebox(self.master, "Błąd", "Brak otwartego dokumentu PDF.", typ="error")
+            self.dialogs.custom_messagebox( "Błąd", "Brak otwartego dokumentu PDF.", typ="error")
             return
         
         answer = custom_messagebox(
@@ -7484,7 +7645,7 @@ class SelectablePDFViewer:
             
             if not empty_pages:
                 self.hide_progressbar()
-                custom_messagebox(self.master, "Informacja", "Nie znaleziono pustych stron w dokumencie.", typ="info")
+                self.dialogs.custom_messagebox( "Informacja", "Nie znaleziono pustych stron w dokumencie.", typ="info")
                 return
             
             # Zmień pasek na usuwanie stron
@@ -7513,11 +7674,11 @@ class SelectablePDFViewer:
             self._update_status(f"Usunięto {len(empty_pages)} pustych stron. Odswieżanie miniatur...")
         except Exception as e:
             self.hide_progressbar()
-            custom_messagebox(self.master, "Błąd", f"Nie udało się usunąć pustych stron:\n{e}", typ="error")
+            self.dialogs.custom_messagebox( "Błąd", f"Nie udało się usunąć pustych stron:\n{e}", typ="error")
     
     def merge_pdf_files(self):
         """Otwiera okno dialogowe do scalania plików PDF"""
-        MergePDFDialog(self.master)
+        self.dialogs.merge_pdf()
     
     # ===================================================================
     # FUNKCJE MAKR
@@ -7534,7 +7695,7 @@ class SelectablePDFViewer:
 
     def record_macro(self):
         """Opens non-blocking macro recording dialog"""
-        MacroRecordingDialog(self.master, self)
+        self.dialogs.macro_recording(self)
     
     def _record_action(self, action_name, **kwargs):
         """Nagrywa akcję do bieżącego makra"""
@@ -7552,7 +7713,7 @@ class SelectablePDFViewer:
             self.macros_list_dialog.focus_force()
         else:
             # Utwórz nowe okno i zapisz referencję
-            self.macros_list_dialog = MacrosListDialog(self.master, self.prefs_manager, self)
+            self.macros_list_dialog = self.dialogs.macros_list(self)
     
     def show_pdf_analysis(self):
         """Wyświetla okno analizy PDF"""
@@ -7562,20 +7723,20 @@ class SelectablePDFViewer:
             self.pdf_analysis_dialog.focus_force()
         else:
             # Utwórz nowe okno i zapisz referencję
-            self.pdf_analysis_dialog = PDFAnalysisDialog(self.master, self)
+            self.pdf_analysis_dialog = self.dialogs.pdf_analysis(self)
     
     def run_macro(self, macro_name):
         """Uruchamia makro o podanej nazwie"""
         macros = self.prefs_manager.get_profiles('macros')
         if macro_name not in macros:
-            custom_messagebox(self.master, "Błąd", f"Makro '{macro_name}' nie istnieje.", typ="error")
+            self.dialogs.custom_messagebox( "Błąd", f"Makro '{macro_name}' nie istnieje.", typ="error")
             return
         
         macro = macros[macro_name]
         actions = macro.get('actions', [])
         
         if not actions:
-            custom_messagebox(self.master, "Informacja", "Makro nie zawiera żadnych akcji.", typ="info")
+            self.dialogs.custom_messagebox( "Informacja", "Makro nie zawiera żadnych akcji.", typ="info")
             return
         
         # Wyłącz nagrywanie podczas wykonywania makra
@@ -7620,7 +7781,7 @@ class SelectablePDFViewer:
             
             self._update_status(f"Wykonano makro '{macro_name}' ({len(actions)} akcji).")
         except Exception as e:
-            custom_messagebox(self.master, "Błąd", f"Błąd podczas wykonywania makra:\n{e}", typ="error")
+            self.dialogs.custom_messagebox( "Błąd", f"Błąd podczas wykonywania makra:\n{e}", typ="error")
         finally:
             self.macro_recording = was_recording
     
