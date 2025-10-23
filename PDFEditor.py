@@ -5129,8 +5129,9 @@ class SelectablePDFViewer:
         self.file_menu.add_command(label="Otwórz PDF...", command=self.open_pdf, accelerator="Ctrl+O")
         self.file_menu.add_command(label="Otwórz obraz jako PDF...", command=self.open_image_as_new_pdf, accelerator="Ctrl+Shift+O")
         self.file_menu.add_command(label="Zapisz jako...", command=self.save_document, state=tk.DISABLED, accelerator="Ctrl+S")
+        self.file_menu.add_command(label="Zapisz z restrykcjami drukowania...", command=self.save_pdf_with_print_restriction, state=tk.DISABLED, accelerator="Ctrl+Shift+S")        
         self.file_menu.add_command(label="Zapisz jako plik z hasłem...", command=self.set_pdf_password, state=tk.DISABLED)
-        self.file_menu.add_command(label="Zapisz z restrykcjami drukowania...", command=self.save_pdf_with_print_restriction, state=tk.DISABLED, accelerator="Ctrl+Shift+S")
+
         self.file_menu.add_separator()
         self.file_menu.add_command(label="Importuj strony z PDF...", command=self.import_pdf_after_active_page, state=tk.DISABLED, accelerator="Ctrl+I") 
         self.file_menu.add_command(label="Eksportuj strony do PDF...", command=self.extract_selected_pages, state=tk.DISABLED,accelerator="Ctrl+E") 
