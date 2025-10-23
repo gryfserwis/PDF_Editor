@@ -2492,7 +2492,8 @@ class MergePageGridDialog(tk.Toplevel):
         self.page_count = page_count
 
         self.vcmd_200 = (self.register(lambda v: validate_float_range(v, 0, 200)), "%P")
-        self.grid_range = [str(i) for i in range(1, 11)]
+        self.vcmd_500 = (self.register(lambda v: validate_float_range(v, 0, 500)), "%P")
+        self.grid_range = [str(i) for i in range(1, 21)]
 
         if page_count == 1:
             self.rows_var.set("1")
@@ -2585,8 +2586,8 @@ class MergePageGridDialog(tk.Toplevel):
             # Oblicz maksymalną liczbę kolumn i wierszy
             # Dla kolumn: available_w = cols * page_w + (cols - 1) * spacing_x
             # cols = (available_w + spacing_x) / (page_w + spacing_x)
-            max_cols = max(1, min(10, int((available_w + spacing_x) / (page_w + spacing_x))))
-            max_rows = max(1, min(10, int((available_h + spacing_y) / (page_h + spacing_y))))
+            max_cols = max(1, min(20, int((available_w + spacing_x) / (page_w + spacing_x))))
+            max_rows = max(1, min(20, int((available_h + spacing_y) / (page_h + spacing_y))))
             
             # Znajdź optymalną kombinację która zmieści wszystkie strony
             num_pages = self.page_count
@@ -2619,7 +2620,7 @@ class MergePageGridDialog(tk.Toplevel):
         right_frame.pack(side="left", fill="both", expand=True)
 
         format_frame = ttk.LabelFrame(left_frame, text="Arkusz docelowy")
-        format_frame.pack(fill="x", pady=(0, 8))
+        format_frame.pack(fill="x", pady=(0, 0))
         ttk.Label(format_frame, text="Format:").grid(row=0, column=0, sticky="e", padx=4, pady=4)
         format_combo = ttk.Combobox(
             format_frame,
@@ -2702,15 +2703,15 @@ class MergePageGridDialog(tk.Toplevel):
         
         # Pola dla wymiarów (opcja 3)
         ttk.Label(scaling_frame, text="Szerokość [mm]:").grid(row=3, column=0, sticky="e", padx=4, pady=2)
-        self.page_width_entry = ttk.Entry(scaling_frame, textvariable=self.page_width_mm, width=8, validate="key", validatecommand=self.vcmd_200)
+        self.page_width_entry = ttk.Entry(scaling_frame, textvariable=self.page_width_mm, width=8, validate="key", validatecommand=self.vcmd_500)
         self.page_width_entry.grid(row=3, column=1, sticky="w", padx=2, pady=2)
         
         ttk.Label(scaling_frame, text="Wysokość [mm]:").grid(row=4, column=0, sticky="e", padx=4, pady=2)
-        self.page_height_entry = ttk.Entry(scaling_frame, textvariable=self.page_height_mm, width=8, validate="key", validatecommand=self.vcmd_200)
+        self.page_height_entry = ttk.Entry(scaling_frame, textvariable=self.page_height_mm, width=8, validate="key", validatecommand=self.vcmd_500)
         self.page_height_entry.grid(row=4, column=1, sticky="w", padx=2, pady=2)
-        
-        ttk.Label(scaling_frame, text="Zakres: 0–200 mm", foreground="gray").grid(row=5, column=0, columnspan=2, sticky="w", padx=4, pady=(2,2))
-        
+
+        ttk.Label(scaling_frame, text="Zakres: 0–500 mm", foreground="gray").grid(row=5, column=0, columnspan=2, sticky="w", padx=4, pady=(2,2))
+
         # Dodaj trace dla wymiarów stron
         self.page_width_mm.trace_add("write", lambda *a: self._on_dimensions_changed())
         self.page_height_mm.trace_add("write", lambda *a: self._on_dimensions_changed())
@@ -2756,10 +2757,10 @@ class MergePageGridDialog(tk.Toplevel):
         ).grid(row=1, column=0, sticky="w", padx=4, pady=2)
 
         preview_frame = ttk.LabelFrame(right_frame, text="Podgląd rozkładu stron")
-        preview_frame.pack(fill="both", expand=True)
+        preview_frame.pack(fill="both", expand=False)
         self.PREVIEW_W = 320
         self.PREVIEW_H = 450
-        self.PREVIEW_PAD = 20
+        self.PREVIEW_PAD = 10
         self.preview_canvas = tk.Canvas(
             preview_frame,
             width=self.PREVIEW_W,
@@ -2914,8 +2915,8 @@ class MergePageGridDialog(tk.Toplevel):
                 raise ValueError("Odstęp pionowy musi być z zakresu 0–200 mm.")
             rows = int(self.rows_var.get())
             cols = int(self.cols_var.get())
-            if not (1 <= rows <= 10 and 1 <= cols <= 10):
-                raise ValueError("Liczba wierszy i kolumn musi być z zakresu 1–10.")
+            if not (1 <= rows <= 20 and 1 <= cols <= 20):
+                raise ValueError("Liczba wierszy i kolumn musi być z zakresu 1–20.")
             # Usunięto walidację że liczba komórek musi być >= liczba stron
             # Teraz obsługujemy wiele arkuszy automatycznie
             
@@ -2926,10 +2927,10 @@ class MergePageGridDialog(tk.Toplevel):
             if scaling_mode == "dimensions":
                 page_width = float(self.page_width_mm.get().replace(",", "."))
                 page_height = float(self.page_height_mm.get().replace(",", "."))
-                if not validate_float_range(self.page_width_mm.get(), 0, 200):
-                    raise ValueError("Szerokość strony musi być z zakresu 0–200 mm.")
-                if not validate_float_range(self.page_height_mm.get(), 0, 200):
-                    raise ValueError("Wysokość strony musi być z zakresu 0–200 mm.")
+                if not validate_float_range(self.page_width_mm.get(), 0, 500):
+                    raise ValueError("Szerokość strony musi być z zakresu 0–500 mm.")
+                if not validate_float_range(self.page_height_mm.get(), 0, 500):
+                    raise ValueError("Wysokość strony musi być z zakresu 0–500 mm.")
                 if page_width <= 0 or page_height <= 0:
                     raise ValueError("Wymiary strony muszą być większe od zera.")
 
