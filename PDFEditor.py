@@ -2455,6 +2455,9 @@ class MergePageGridDialog(tk.Toplevel):
         'spacing_x_mm': '10',
         'spacing_y_mm': '10',
         'dpi_var': '300',
+        'scaling_mode': 'stretch',
+        'page_width_mm': '100',
+        'page_height_mm': '100',
     }
 
     def __init__(self, parent, page_count, prefs_manager=None):
@@ -2480,6 +2483,9 @@ class MergePageGridDialog(tk.Toplevel):
         self.rows_var = tk.StringVar()
         self.cols_var = tk.StringVar()
         self.dpi_var = tk.StringVar(value=self._get_pref('dpi_var'))
+        self.scaling_mode = tk.StringVar(value=self._get_pref('scaling_mode'))
+        self.page_width_mm = tk.StringVar(value=self._get_pref('page_width_mm'))
+        self.page_height_mm = tk.StringVar(value=self._get_pref('page_height_mm'))
         self.page_count = page_count
 
         self.vcmd_200 = (self.register(lambda v: validate_float_range(v, 0, 200)), "%P")
@@ -2499,6 +2505,7 @@ class MergePageGridDialog(tk.Toplevel):
                 self.cols_var.set(str(min(max(sq, 1), 10)))
 
         self.build_ui()
+        self._on_scaling_mode_changed()  # Initialize UI state based on scaling mode
         self._update_grid_preview()
         self.center_dialog(parent)
         self.grab_set()
@@ -2517,6 +2524,81 @@ class MergePageGridDialog(tk.Toplevel):
         elif event.char == "0":
             var.set("10")
             combo.event_generate('<<ComboboxSelected>>')
+    
+    def _on_scaling_mode_changed(self):
+        """Wywoływane gdy zmieni się tryb skalowania"""
+        mode = self.scaling_mode.get()
+        
+        # Włącz/wyłącz pola wymiarów
+        if mode == "dimensions":
+            self.page_width_entry.config(state="normal")
+            self.page_height_entry.config(state="normal")
+            # Wyłącz pola siatki i przelicz automatycznie
+            self.rows_combo.config(state="disabled")
+            self.cols_combo.config(state="disabled")
+            self._calculate_auto_grid()
+        else:
+            self.page_width_entry.config(state="disabled")
+            self.page_height_entry.config(state="disabled")
+            # Włącz pola siatki
+            self.rows_combo.config(state="readonly")
+            self.cols_combo.config(state="readonly")
+        
+        self._update_grid_preview()
+    
+    def _on_dimensions_changed(self):
+        """Wywoływane gdy zmienią się wymiary stron"""
+        if self.scaling_mode.get() == "dimensions":
+            self._calculate_auto_grid()
+            self._update_grid_preview()
+    
+    def _calculate_auto_grid(self):
+        """Automatycznie oblicza liczbę wierszy i kolumn na podstawie wymiarów stron"""
+        try:
+            page_w = float(self.page_width_mm.get().replace(",", "."))
+            page_h = float(self.page_height_mm.get().replace(",", "."))
+            
+            if page_w <= 0 or page_h <= 0:
+                return
+            
+            sheet_w, sheet_h = self._get_sheet_dimensions()
+            margin_top = float(self.margin_top_mm.get().replace(",", "."))
+            margin_bottom = float(self.margin_bottom_mm.get().replace(",", "."))
+            margin_left = float(self.margin_left_mm.get().replace(",", "."))
+            margin_right = float(self.margin_right_mm.get().replace(",", "."))
+            spacing_x = float(self.spacing_x_mm.get().replace(",", "."))
+            spacing_y = float(self.spacing_y_mm.get().replace(",", "."))
+            
+            # Dostępna przestrzeń
+            available_w = sheet_w - margin_left - margin_right
+            available_h = sheet_h - margin_top - margin_bottom
+            
+            # Oblicz maksymalną liczbę kolumn i wierszy
+            # Dla kolumn: available_w = cols * page_w + (cols - 1) * spacing_x
+            # cols = (available_w + spacing_x) / (page_w + spacing_x)
+            max_cols = max(1, min(10, int((available_w + spacing_x) / (page_w + spacing_x))))
+            max_rows = max(1, min(10, int((available_h + spacing_y) / (page_h + spacing_y))))
+            
+            # Znajdź optymalną kombinację która zmieści wszystkie strony
+            num_pages = self.page_count
+            found = False
+            for cols in range(max_cols, 0, -1):
+                for rows in range(max_rows, 0, -1):
+                    if rows * cols >= num_pages:
+                        self.rows_var.set(str(rows))
+                        self.cols_var.set(str(cols))
+                        found = True
+                        break
+                if found:
+                    break
+            
+            if not found:
+                # Jeśli nie znaleziono, użyj maksymalnej siatki
+                self.rows_var.set(str(max_rows))
+                self.cols_var.set(str(max_cols))
+        except Exception:
+            pass
+
 
     def build_ui(self):
         main_frame = ttk.Frame(self)
@@ -2581,6 +2663,49 @@ class MergePageGridDialog(tk.Toplevel):
         )
         dpi_combo.grid(row=0, column=1, sticky="w", padx=2, pady=4)
 
+        # NOWA SEKCJA: Sposób skalowania stron
+        scaling_frame = ttk.LabelFrame(left_frame, text="Sposób skalowania stron")
+        scaling_frame.pack(fill="x", pady=(0, 8))
+        
+        ttk.Radiobutton(
+            scaling_frame, 
+            text="Dopasuj (rozciągnij do komórki)", 
+            variable=self.scaling_mode, 
+            value="stretch",
+            command=self._on_scaling_mode_changed
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=4, pady=2)
+        
+        ttk.Radiobutton(
+            scaling_frame, 
+            text="Dopasuj, zachowaj proporcje", 
+            variable=self.scaling_mode, 
+            value="fit",
+            command=self._on_scaling_mode_changed
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=4, pady=2)
+        
+        ttk.Radiobutton(
+            scaling_frame, 
+            text="Skaluj do wymiarów", 
+            variable=self.scaling_mode, 
+            value="dimensions",
+            command=self._on_scaling_mode_changed
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=4, pady=2)
+        
+        # Pola dla wymiarów (opcja 3)
+        ttk.Label(scaling_frame, text="Szerokość [mm]:").grid(row=3, column=0, sticky="e", padx=4, pady=2)
+        self.page_width_entry = ttk.Entry(scaling_frame, textvariable=self.page_width_mm, width=8, validate="key", validatecommand=self.vcmd_200)
+        self.page_width_entry.grid(row=3, column=1, sticky="w", padx=2, pady=2)
+        
+        ttk.Label(scaling_frame, text="Wysokość [mm]:").grid(row=4, column=0, sticky="e", padx=4, pady=2)
+        self.page_height_entry = ttk.Entry(scaling_frame, textvariable=self.page_height_mm, width=8, validate="key", validatecommand=self.vcmd_200)
+        self.page_height_entry.grid(row=4, column=1, sticky="w", padx=2, pady=2)
+        
+        ttk.Label(scaling_frame, text="Zakres: 0–200 mm", foreground="gray").grid(row=5, column=0, columnspan=2, sticky="w", padx=4, pady=(2,2))
+        
+        # Dodaj trace dla wymiarów stron
+        self.page_width_mm.trace_add("write", lambda *a: self._on_dimensions_changed())
+        self.page_height_mm.trace_add("write", lambda *a: self._on_dimensions_changed())
+
         grid_frame = ttk.LabelFrame(left_frame, text="Siatka stron")
         grid_frame.pack(fill="x", pady=(0, 8))
         ttk.Label(grid_frame, text="Wiersze:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
@@ -2640,6 +2765,9 @@ class MergePageGridDialog(tk.Toplevel):
             self.prefs_manager.set('MergePageGridDialog.spacing_x_mm', self.spacing_x_mm.get())
             self.prefs_manager.set('MergePageGridDialog.spacing_y_mm', self.spacing_y_mm.get())
             self.prefs_manager.set('MergePageGridDialog.dpi_var', self.dpi_var.get())
+            self.prefs_manager.set('MergePageGridDialog.scaling_mode', self.scaling_mode.get())
+            self.prefs_manager.set('MergePageGridDialog.page_width_mm', self.page_width_mm.get())
+            self.prefs_manager.set('MergePageGridDialog.page_height_mm', self.page_height_mm.get())
     
     def restore_defaults(self):
         """Przywraca wartości domyślne"""
@@ -2652,6 +2780,10 @@ class MergePageGridDialog(tk.Toplevel):
         self.spacing_x_mm.set(self.DEFAULTS['spacing_x_mm'])
         self.spacing_y_mm.set(self.DEFAULTS['spacing_y_mm'])
         self.dpi_var.set(self.DEFAULTS['dpi_var'])
+        self.scaling_mode.set(self.DEFAULTS['scaling_mode'])
+        self.page_width_mm.set(self.DEFAULTS['page_width_mm'])
+        self.page_height_mm.set(self.DEFAULTS['page_height_mm'])
+        self._on_scaling_mode_changed()
         self._update_grid_preview()
 
     def _get_sheet_dimensions(self):
@@ -2756,6 +2888,20 @@ class MergePageGridDialog(tk.Toplevel):
                 raise ValueError("Liczba wierszy i kolumn musi być z zakresu 1–10.")
             if rows * cols < self.page_count:
                 raise ValueError("Liczba komórek siatki musi być nie mniejsza niż liczba scalanych stron.")
+            
+            # Walidacja dla trybu wymiarów
+            scaling_mode = self.scaling_mode.get()
+            page_width = None
+            page_height = None
+            if scaling_mode == "dimensions":
+                page_width = float(self.page_width_mm.get().replace(",", "."))
+                page_height = float(self.page_height_mm.get().replace(",", "."))
+                if not validate_float_range(self.page_width_mm.get(), 0, 200):
+                    raise ValueError("Szerokość strony musi być z zakresu 0–200 mm.")
+                if not validate_float_range(self.page_height_mm.get(), 0, 200):
+                    raise ValueError("Wysokość strony musi być z zakresu 0–200 mm.")
+                if page_width <= 0 or page_height <= 0:
+                    raise ValueError("Wymiary strony muszą być większe od zera.")
 
             format_name = self.sheet_format.get()
             sheet_dims = self.PAPER_FORMATS[format_name]
@@ -2776,7 +2922,10 @@ class MergePageGridDialog(tk.Toplevel):
                 "rows": rows,
                 "cols": cols,
                 "orientation": orientation,
-                "dpi": int(self.dpi_var.get())
+                "dpi": int(self.dpi_var.get()),
+                "scaling_mode": scaling_mode,
+                "page_width_mm": page_width,
+                "page_height_mm": page_height,
             }
             # Zapisz preferencje przed zamknięciem
             self._save_prefs()
@@ -7247,6 +7396,9 @@ class SelectablePDFViewer:
             spacing_y_pt = params["spacing_y_mm"] * self.MM_TO_POINTS
             rows = params["rows"]
             cols = params["cols"]
+            scaling_mode = params.get("scaling_mode", "stretch")
+            page_width_mm = params.get("page_width_mm")
+            page_height_mm = params.get("page_height_mm")
 
             TARGET_DPI = params.get("dpi", 600)
             PT_TO_INCH = 1 / 72
@@ -7260,14 +7412,20 @@ class SelectablePDFViewer:
                 source_pages = [selected_indices[i] if i < num_pages else None for i in range(total_cells)]
 
             # Oblicz rozmiar komórki (punkt PDF)
-            if cols == 1:
-                cell_width = sheet_width_pt - margin_left_pt - margin_right_pt
+            if scaling_mode == "dimensions":
+                # Dla trybu "dimensions", komórka ma dokładnie podane wymiary
+                cell_width = page_width_mm * self.MM_TO_POINTS
+                cell_height = page_height_mm * self.MM_TO_POINTS
             else:
-                cell_width = (sheet_width_pt - margin_left_pt - margin_right_pt - (cols - 1) * spacing_x_pt) / cols
-            if rows == 1:
-                cell_height = sheet_height_pt - margin_top_pt - margin_bottom_pt
-            else:
-                cell_height = (sheet_height_pt - margin_top_pt - margin_bottom_pt - (rows - 1) * spacing_y_pt) / rows
+                # Dla innych trybów, oblicz rozmiar komórki z dostępnej przestrzeni
+                if cols == 1:
+                    cell_width = sheet_width_pt - margin_left_pt - margin_right_pt
+                else:
+                    cell_width = (sheet_width_pt - margin_left_pt - margin_right_pt - (cols - 1) * spacing_x_pt) / cols
+                if rows == 1:
+                    cell_height = sheet_height_pt - margin_top_pt - margin_bottom_pt
+                else:
+                    cell_height = (sheet_height_pt - margin_top_pt - margin_bottom_pt - (rows - 1) * spacing_y_pt) / rows
 
             self._save_state_to_undo()
             new_page = self.pdf_document.new_page(width=sheet_width_pt, height=sheet_height_pt)
@@ -7298,22 +7456,62 @@ class SelectablePDFViewer:
                 if page_landscape != cell_landscape:
                     rotate = 90  # Obróć o 90 stopni
 
-                # Skala renderowania: bitmapa ma dokładnie tyle pikseli, ile wynosi rozmiar komórki w punktach * 600 / 72
-                bitmap_w = int(round(cell_width * TARGET_DPI * PT_TO_INCH))
-                bitmap_h = int(round(cell_height * TARGET_DPI * PT_TO_INCH))
-
-                if rotate == 90:
-                    scale_x = bitmap_w / page_h
-                    scale_y = bitmap_h / page_w
+                # Określ docelowy rozmiar i pozycję renderowania w zależności od trybu skalowania
+                if scaling_mode == "fit":
+                    # Tryb "fit" - zachowaj proporcje, dodaj białe marginesy
+                    if rotate == 90:
+                        aspect_ratio = page_h / page_w
+                    else:
+                        aspect_ratio = page_w / page_h
+                    
+                    cell_aspect = cell_width / cell_height
+                    
+                    if aspect_ratio > cell_aspect:
+                        # Strona szersza niż komórka - dopasuj szerokość
+                        render_width = cell_width
+                        render_height = cell_width / aspect_ratio
+                        offset_x = 0
+                        offset_y = (cell_height - render_height) / 2
+                    else:
+                        # Strona wyższa niż komórka - dopasuj wysokość
+                        render_height = cell_height
+                        render_width = cell_height * aspect_ratio
+                        offset_x = (cell_width - render_width) / 2
+                        offset_y = 0
+                    
+                    # Oblicz skalę renderowania dla bitmapy
+                    bitmap_w = int(round(render_width * TARGET_DPI * PT_TO_INCH))
+                    bitmap_h = int(round(render_height * TARGET_DPI * PT_TO_INCH))
+                    
+                    if rotate == 90:
+                        scale_x = bitmap_w / page_h
+                        scale_y = bitmap_h / page_w
+                    else:
+                        scale_x = bitmap_w / page_w
+                        scale_y = bitmap_h / page_h
+                    
+                    # Renderuj bitmapę z zachowaniem proporcji
+                    pix = src_page.get_pixmap(matrix=fitz.Matrix(scale_x, scale_y).prerotate(rotate), alpha=False)
+                    img_bytes = pix.tobytes("png")
+                    rect = fitz.Rect(x + offset_x, y + offset_y, x + offset_x + render_width, y + offset_y + render_height)
+                    new_page.insert_image(rect, stream=img_bytes)
                 else:
-                    scale_x = bitmap_w / page_w
-                    scale_y = bitmap_h / page_h
+                    # Tryb "stretch" lub "dimensions" - rozciągnij do komórki
+                    bitmap_w = int(round(cell_width * TARGET_DPI * PT_TO_INCH))
+                    bitmap_h = int(round(cell_height * TARGET_DPI * PT_TO_INCH))
 
-                # Renderuj bitmapę w bardzo wysokiej rozdzielczości, z ewentualnym obrotem
-                pix = src_page.get_pixmap(matrix=fitz.Matrix(scale_x, scale_y).prerotate(rotate), alpha=False)
-                img_bytes = pix.tobytes("png")
-                rect = fitz.Rect(x, y, x + cell_width, y + cell_height)
-                new_page.insert_image(rect, stream=img_bytes)
+                    if rotate == 90:
+                        scale_x = bitmap_w / page_h
+                        scale_y = bitmap_h / page_w
+                    else:
+                        scale_x = bitmap_w / page_w
+                        scale_y = bitmap_h / page_h
+
+                    # Renderuj bitmapę w bardzo wysokiej rozdzielczości, z ewentualnym obrotem
+                    pix = src_page.get_pixmap(matrix=fitz.Matrix(scale_x, scale_y).prerotate(rotate), alpha=False)
+                    img_bytes = pix.tobytes("png")
+                    rect = fitz.Rect(x, y, x + cell_width, y + cell_height)
+                    new_page.insert_image(rect, stream=img_bytes)
                 self.update_progressbar(idx + 1)
 
             # Odświeżenie GUI
@@ -7325,8 +7523,16 @@ class SelectablePDFViewer:
             self._reconfigure_grid()
             self.update_tool_button_states()
             self.update_focus_display()
+            
+            # Informacja o użytym trybie skalowania
+            mode_text = {
+                "stretch": "rozciąganie",
+                "fit": "dopasowanie z proporcjami",
+                "dimensions": f"wymiary {page_width_mm}×{page_height_mm}mm"
+            }.get(scaling_mode, "rozciąganie")
+            
             self._update_status(
-                f"Scalono {num_pages} stron w siatkę {rows}x{cols} na nowym arkuszu {params['format_name']} (bitmapy 600dpi). Odświeżanie miniatur..."
+                f"Scalono {num_pages} stron w siatkę {rows}x{cols} na nowym arkuszu {params['format_name']} (tryb: {mode_text}, {TARGET_DPI}dpi). Odświeżanie miniatur..."
             )
         except Exception as e:
             self.hide_progressbar()
