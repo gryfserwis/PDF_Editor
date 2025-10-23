@@ -7675,7 +7675,7 @@ class SelectablePDFViewer:
             
             writer.encrypt(
                 user_password="",  # Brak hasła użytkownika - można otworzyć bez hasła
-                owner_password="kserokopia12",  # Hasło właściciela
+                owner_password="bK@92!fJ#Lp*Xz7$wQv%Tg^Rm&nH_Us+oIq=Zl[Wj]Eo{Aq};:Vx,Pb.<D>y|cS/0t1u2v3w4x5y6z7a8b9C0D1E2F3G4H5I6J7K8L9M0N1O2P3Q4R5S6T7U8V9W0X1Y2Z3AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz",  # Hasło właściciela
                 permissions_flag=permissions_no_print  # Wszystkie uprawnienia oprócz drukowania
             )
             
