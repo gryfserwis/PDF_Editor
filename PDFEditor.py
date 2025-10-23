@@ -5129,7 +5129,9 @@ class SelectablePDFViewer:
         self.file_menu.add_command(label="Otwórz PDF...", command=self.open_pdf, accelerator="Ctrl+O")
         self.file_menu.add_command(label="Otwórz obraz jako PDF...", command=self.open_image_as_new_pdf, accelerator="Ctrl+Shift+O")
         self.file_menu.add_command(label="Zapisz jako...", command=self.save_document, state=tk.DISABLED, accelerator="Ctrl+S")
+        self.file_menu.add_command(label="Zapisz z restrykcjami drukowania...", command=self.save_pdf_with_print_restriction, state=tk.DISABLED, accelerator="Ctrl+Shift+S")        
         self.file_menu.add_command(label="Zapisz jako plik z hasłem...", command=self.set_pdf_password, state=tk.DISABLED)
+
         self.file_menu.add_separator()
         self.file_menu.add_command(label="Importuj strony z PDF...", command=self.import_pdf_after_active_page, state=tk.DISABLED, accelerator="Ctrl+I") 
         self.file_menu.add_command(label="Eksportuj strony do PDF...", command=self.extract_selected_pages, state=tk.DISABLED,accelerator="Ctrl+E") 
@@ -5400,6 +5402,8 @@ class SelectablePDFViewer:
         self.master.bind('<Control-O>', lambda e: self.open_pdf())
         self.master.bind('<Control-s>', lambda e: self.save_document())
         self.master.bind('<Control-S>', lambda e: self.save_document())
+        self.master.bind('<Control-Shift-s>', lambda e: self.save_pdf_with_print_restriction())
+        self.master.bind('<Control-Shift-S>', lambda e: self.save_pdf_with_print_restriction())
         # Zmienione skróty
         self.master.bind('<Control-Shift-I>', lambda e: self._check_action_allowed('import') and self.import_image_to_new_page()) # Ctrl+K dla obrazu
         self.master.bind('<Control-i>', lambda e: self._check_action_allowed('import') and self.import_pdf_after_active_page()) # Ctrl+I dla PDF
@@ -5676,6 +5680,7 @@ class SelectablePDFViewer:
             "Zamknij plik": import_state, 
             "Zapisz jako...": import_state,
             "Zapisz jako plik z hasłem...": reverse_state,
+            "Zapisz z restrykcjami drukowania...": import_state,
             "Zamień strony miejscami": two_pages_state,
             "Usuń puste strony": reverse_state,
             "Analiza PDF": reverse_state
@@ -7626,6 +7631,61 @@ class SelectablePDFViewer:
             self._update_status(f"Zapisano PDF bez hasła: {filepath}")
         except Exception as e:
             custom_messagebox(self.master, "Błąd", f"Nie udało się zapisać PDF bez hasła:\n{e}", typ="error")
+    
+    def save_pdf_with_print_restriction(self):
+        """Zapisuje PDF z restrykcjami drukowania i hasłem właściciela 'kserokopia12'"""
+        if not self.pdf_document:
+            custom_messagebox(self.master, "Błąd", "Brak otwartego dokumentu PDF.", typ="error")
+            return
+        
+        # Użyj domyślnej ścieżki zapisu lub ostatniej użytej ścieżki
+        default_save_path = self.prefs_manager.get('default_save_path', '')
+        if default_save_path:
+            initialdir = default_save_path
+        else:
+            initialdir = self.prefs_manager.get('last_save_path', '')
+        
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".pdf",
+            filetypes=[("Pliki PDF", "*.pdf")],
+            title="Zapisz PDF z restrykcjami drukowania",
+            initialdir=initialdir if initialdir else None
+        )
+        if not filepath:
+            self._update_status("Anulowano zapisywanie.")
+            return
+        
+        # Zapisz ostatnią ścieżkę tylko jeśli domyślna jest pusta
+        if not default_save_path:
+            self.prefs_manager.set('last_save_path', os.path.dirname(filepath))
+        
+        try:
+            # Konwertuj PyMuPDF do PyPDF
+            pdf_bytes = self.pdf_document.tobytes()
+            reader = PdfReader(io.BytesIO(pdf_bytes))
+            writer = PdfWriter()
+            
+            for page in reader.pages:
+                writer.add_page(page)
+            
+            # Ustaw hasło właściciela i zablokuj drukowanie
+            # Wszystkie uprawnienia OPRÓCZ drukowania (bit 3)
+            from pypdf.constants import UserAccessPermissions
+            permissions_no_print = UserAccessPermissions.all() & ~UserAccessPermissions.PRINT
+            
+            writer.encrypt(
+                user_password="",  # Brak hasła użytkownika - można otworzyć bez hasła
+                owner_password="kserokopia12",  # Hasło właściciela
+                permissions_flag=permissions_no_print  # Wszystkie uprawnienia oprócz drukowania
+            )
+            
+            with open(filepath, "wb") as output_file:
+                writer.write(output_file)
+            
+            custom_messagebox(self.master, "Sukces", f"PDF z restrykcjami drukowania zapisany do:\n{filepath}", typ="info")
+            self._update_status(f"Zapisano PDF z restrykcjami drukowania: {filepath}")
+        except Exception as e:
+            custom_messagebox(self.master, "Błąd", f"Nie udało się zapisać PDF z restrykcjami:\n{e}", typ="error")
     
     def remove_empty_pages(self):
         """Usuwa puste strony z dokumentu PDF"""
