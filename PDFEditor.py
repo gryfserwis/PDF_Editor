@@ -3804,6 +3804,23 @@ class SelectablePDFViewer:
         return output_bytes
 
     def _resize_scale(self, pdf_bytes, selected_indices, width_mm, height_mm):
+        # Oczyszczenie stron przez PyMuPDF
+        original_pdf_bytes = pdf_bytes
+        pymupdf_doc = fitz.open("pdf", original_pdf_bytes)
+        cleaned_doc = fitz.open()
+        for idx in range(len(pymupdf_doc)):
+            if idx in selected_indices:
+                temp = fitz.open()
+                temp.insert_pdf(pymupdf_doc, from_page=idx, to_page=idx)
+                cleaned_doc.insert_pdf(temp)
+                temp.close()
+            else:
+                cleaned_doc.insert_pdf(pymupdf_doc, from_page=idx, to_page=idx)
+        cleaned_pdf_bytes = cleaned_doc.write()
+        pymupdf_doc.close()
+        cleaned_doc.close()
+        pdf_bytes = cleaned_pdf_bytes
+        
         reader = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
         target_width = mm2pt(width_mm)
@@ -3838,6 +3855,23 @@ class SelectablePDFViewer:
         return out.read()
 
     def _resize_noscale(self, pdf_bytes, selected_indices, width_mm, height_mm, pos_mode="center", offset_x_mm=0, offset_y_mm=0):
+        # Oczyszczenie stron przez PyMuPDF
+        original_pdf_bytes = pdf_bytes
+        pymupdf_doc = fitz.open("pdf", original_pdf_bytes)
+        cleaned_doc = fitz.open()
+        for idx in range(len(pymupdf_doc)):
+            if idx in selected_indices:
+                temp = fitz.open()
+                temp.insert_pdf(pymupdf_doc, from_page=idx, to_page=idx)
+                cleaned_doc.insert_pdf(temp)
+                temp.close()
+            else:
+                cleaned_doc.insert_pdf(pymupdf_doc, from_page=idx, to_page=idx)
+        cleaned_pdf_bytes = cleaned_doc.write()
+        pymupdf_doc.close()
+        cleaned_doc.close()
+        pdf_bytes = cleaned_pdf_bytes
+        
         reader = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
         target_width = mm2pt(width_mm)
@@ -3889,6 +3923,23 @@ class SelectablePDFViewer:
         Returns:
             Bajty przetworzonego dokumentu PDF
         """
+        # Oczyszczenie stron przez PyMuPDF
+        original_pdf_bytes = pdf_bytes
+        pymupdf_doc = fitz.open("pdf", original_pdf_bytes)
+        cleaned_doc = fitz.open()
+        for idx in range(len(pymupdf_doc)):
+            if idx in selected_indices:
+                temp = fitz.open()
+                temp.insert_pdf(pymupdf_doc, from_page=idx, to_page=idx)
+                cleaned_doc.insert_pdf(temp)
+                temp.close()
+            else:
+                cleaned_doc.insert_pdf(pymupdf_doc, from_page=idx, to_page=idx)
+        cleaned_pdf_bytes = cleaned_doc.write()
+        pymupdf_doc.close()
+        cleaned_doc.close()
+        pdf_bytes = cleaned_pdf_bytes
+        
         reader = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
         scale_factor = scale_percent / 100.0
