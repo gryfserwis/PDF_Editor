@@ -37,7 +37,7 @@ FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
  
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
-PROGRAM_VERSION = "5.7.0"
+PROGRAM_VERSION = "5.7.5"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
 # === STAŁE DLA A4 [w punktach PDF i mm] ===
@@ -7468,8 +7468,8 @@ class SelectablePDFViewer:
                 page_landscape = page_w > page_h
                 cell_landscape = cell_width > cell_height
                 rotate = 0
-                if page_landscape != cell_landscape:
-                    rotate = 90  # Obróć o 90 stopni
+                #if page_landscape != cell_landscape:
+                #    rotate = 90  # Obróć o 90 stopni
 
                 # Określ docelowy rozmiar i pozycję renderowania w zależności od trybu skalowania
                 if scaling_mode == "fit":
