@@ -853,6 +853,7 @@ class PageCropResizeDialog(tk.Toplevel):
 
         enable_position = (
             (self.resize_mode.get() == "resize_noscale" and not crop_selected and not scale_selected)
+            or (self.scale_mode.get() == "scale_only" and not crop_selected and not resize_selected)
         )
         state_radio = tk.NORMAL if enable_position else tk.DISABLED
         for rb in self.position_radiobuttons:
@@ -916,7 +917,9 @@ class PageCropResizeDialog(tk.Toplevel):
             enable_position = (
                 (self.resize_mode.get() == "resize_noscale" and not (self.crop_mode.get() != "nocrop") and not (scale_mode == "scale_only"))
             )
-            if enable_position:
+            # Dodaj obsługę sekcji położenia dla scale_only
+            enable_position_for_scale = (scale_mode == "scale_only")
+            if enable_position or enable_position_for_scale:
                 position_mode = self.position_mode.get()
                 offset_x = offset_y = 0.0
                 if position_mode == "custom":
@@ -927,7 +930,7 @@ class PageCropResizeDialog(tk.Toplevel):
             else:
                 position_mode = None
                 offset_x = offset_y = None
-            
+
             # Skalowanie obrazu
             scale_value = None
             if scale_mode == "scale_only":
@@ -945,9 +948,9 @@ class PageCropResizeDialog(tk.Toplevel):
                 "target_format": format_name,
                 "target_width_mm": target_dims[0],
                 "target_height_mm": target_dims[1],
-                "position_mode": position_mode if enable_position else None,
-                "offset_x_mm": offset_x if enable_position else None,
-                "offset_y_mm": offset_y if enable_position else None,
+                "position_mode": position_mode if (enable_position or enable_position_for_scale) else None,
+                "offset_x_mm": offset_x if (enable_position or enable_position_for_scale) else None,
+                "offset_y_mm": offset_y if (enable_position or enable_position_for_scale) else None,
                 "scale_mode": scale_mode,
                 "scale_value": scale_value,
             }
@@ -3871,7 +3874,7 @@ class SelectablePDFViewer:
         out.seek(0)
         return out.read()
 
-    def _scale_only(self, pdf_bytes, selected_indices, scale_percent):
+    def _scale_only(self, pdf_bytes, selected_indices, scale_percent, position_mode="center", offset_x_mm=0, offset_y_mm=0):
         """
         Skaluje zawartość strony bez zmiany rozmiaru arkusza (mediabox/cropbox pozostają bez zmian).
         
@@ -3879,6 +3882,9 @@ class SelectablePDFViewer:
             pdf_bytes: Bajty dokumentu PDF
             selected_indices: Lista indeksów stron do skalowania
             scale_percent: Wartość skali w procentach (np. 100 = 100%)
+            position_mode: "center" lub "custom" (położenie obrazu)
+            offset_x_mm: przesunięcie od lewej w mm (jeśli custom)
+            offset_y_mm: przesunięcie od dołu w mm (jeśli custom)
         
         Returns:
             Bajty przetworzonego dokumentu PDF
@@ -3896,21 +3902,28 @@ class SelectablePDFViewer:
                 writer.add_page(page)
                 self.update_progressbar(i + 1)
                 continue
-            
+
             # Pobierz oryginalne wymiary strony
             orig_w = float(page.mediabox.width)
             orig_h = float(page.mediabox.height)
-            
-            # Oblicz przesunięcie, aby wyśrodkować skalowaną zawartość
-            # Po skalowaniu zawartość będzie miała rozmiar (orig_w * scale_factor, orig_h * scale_factor)
-            # Musimy ją wyśrodkować w oryginalnym mediabox
-            dx = (orig_w - orig_w * scale_factor) / 2
-            dy = (orig_h - orig_h * scale_factor) / 2
-            
-            # Zastosuj transformację: najpierw skaluj, potem przesuń do środka
+
+            # Wyznacz przesunięcie wg trybu położenia
+            if position_mode == "center":
+                dx = (orig_w - orig_w * scale_factor) / 2
+                dy = (orig_h - orig_h * scale_factor) / 2
+            elif position_mode == "custom":
+                # Przesunięcie względem środka strony
+                ox = offset_x_mm if offset_x_mm is not None else 0
+                oy = offset_y_mm if offset_y_mm is not None else 0
+                dx = (orig_w - orig_w * scale_factor) / 2 + mm2pt(ox)
+                dy = (orig_h - orig_h * scale_factor) / 2 + mm2pt(oy)
+            else:
+                # fallback: lewy dolny róg
+                dx = mm2pt(offset_x_mm if offset_x_mm is not None else 0)
+                dy = mm2pt(offset_y_mm if offset_y_mm is not None else 0)
+            # Zastosuj transformację: najpierw skaluj, potem przesuń
             transform = Transformation().scale(sx=scale_factor, sy=scale_factor).translate(tx=dx, ty=dy)
             page.add_transformation(transform)
-            
             # Nie zmieniamy mediabox ani cropbox - pozostawiamy oryginalne wymiary
             writer.add_page(page)
             self.update_progressbar(i + 1)
@@ -3977,10 +3990,18 @@ class SelectablePDFViewer:
                 )
                 msg = "Zmieniono rozmiar strony (bez skalowania zawartości)."
             elif scale_mode == "scale_only":
-                # Nowa funkcjonalność: skalowanie obrazu bez zmiany rozmiaru arkusza
+                # Skalowanie obrazu bez zmiany rozmiaru arkusza, z uwzględnieniem położenia
                 scale_value = result.get("scale_value", 100)
-                new_pdf_bytes = self._scale_only(pdf_bytes_val, indices, scale_value)
-                msg = f"Skalowano obraz do {scale_value}% bez zmiany rozmiaru arkusza."
+                position_mode = result.get("position_mode", "center")
+                offset_x_mm = result.get("offset_x_mm", 0)
+                offset_y_mm = result.get("offset_y_mm", 0)
+                new_pdf_bytes = self._scale_only(
+                    pdf_bytes_val, indices, scale_value,
+                    position_mode=position_mode,
+                    offset_x_mm=offset_x_mm,
+                    offset_y_mm=offset_y_mm
+                )
+                msg = f"Skalowano obraz do {scale_value}% bez zmiany rozmiaru arkusza (położenie: {position_mode})."
             else:
                 self._update_status("Nie wybrano żadnej operacji do wykonania.")
                 return
@@ -4996,7 +5017,7 @@ class SelectablePDFViewer:
         screen_width = self.master.winfo_screenwidth()
         screen_height = self.master.winfo_screenheight()
         initial_width = self.MIN_WINDOW_WIDTH
-        initial_height = int(screen_height * 0.50)  
+        initial_height = int(screen_height * 0.75)  
         self.master.minsize(self.MIN_WINDOW_WIDTH, initial_height)
         x_cordinate = int((screen_width / 2) - (initial_width / 2))
         y_cordinate = int((screen_height / 2) - (initial_height / 2))
