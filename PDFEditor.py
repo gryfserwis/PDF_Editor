@@ -126,6 +126,10 @@ def add_watermark_to_pdf(pdf_bytes):
     - Jasny kolor (jasny szary)
     - Powtarzający się w ukośnej siatce
     
+    Metoda:
+    - Tworzy prawdziwy Form XObject który może być łatwo usunięty
+    - Dodaje go do strony przez modyfikację content stream
+    
     Args:
         pdf_bytes: Bytes z PDF do przetworzenia
         
@@ -135,7 +139,8 @@ def add_watermark_to_pdf(pdf_bytes):
     from reportlab.pdfgen import canvas
     from reportlab.lib.pagesizes import letter
     from pypdf import PdfReader, PdfWriter
-    from pypdf.generic import NameObject, DictionaryObject, ArrayObject, FloatObject
+    from pypdf.generic import (NameObject, DictionaryObject, ArrayObject, 
+                               FloatObject, StreamObject, DecodedStreamObject)
     import io
     
     # Wczytaj PDF
@@ -188,10 +193,17 @@ def add_watermark_to_pdf(pdf_bytes):
     c.showPage()
     c.save()
     
-    # Wczytaj watermark jako PDF
+    # Wczytaj watermark jako PDF i wyciągnij jego content stream
     watermark_buffer.seek(0)
     watermark_pdf = PdfReader(watermark_buffer)
     watermark_page = watermark_pdf.pages[0]
+    
+    # Pobierz content stream z watermarku
+    if '/Contents' in watermark_page:
+        watermark_content = watermark_page['/Contents']
+    else:
+        # Jeśli brak contents, pomiń watermark
+        watermark_content = None
     
     # Dodaj watermark do każdej strony
     for page in reader.pages:
@@ -201,53 +213,69 @@ def add_watermark_to_pdf(pdf_bytes):
         page_h = float(page_rect.height)
         
         # Skaluj watermark do rozmiaru strony jeśli potrzeba
-        # (watermark został stworzony dla A4, więc może wymagać przeskalowania)
         scale_x = page_w / page_width
         scale_y = page_h / page_height
         
-        # Użyj merge_page aby dodać watermark jako warstwę
-        # Stwórz kopię watermarku i przeskaluj ją
-        watermark_copy_buffer = io.BytesIO()
-        watermark_copy_writer = PdfWriter()
-        watermark_copy_page = watermark_pdf.pages[0]
-        
-        # Dodaj transformację skalującą jeśli rozmiar strony różni się od A4
-        if abs(scale_x - 1.0) > 0.01 or abs(scale_y - 1.0) > 0.01:
-            from pypdf import Transformation
-            watermark_copy_page.add_transformation(Transformation().scale(sx=scale_x, sy=scale_y))
-        
-        watermark_copy_writer.add_page(watermark_copy_page)
-        watermark_copy_writer.write(watermark_copy_buffer)
-        watermark_copy_buffer.seek(0)
-        
-        # Wczytaj przeskalowany watermark
-        scaled_watermark = PdfReader(watermark_copy_buffer)
-        scaled_watermark_page = scaled_watermark.pages[0]
-        
-        # Merge watermark z główną stroną
-        # Watermark idzie POD zawartością strony (jako tło)
-        page.merge_page(scaled_watermark_page, over=False)
-        
-        # Dodaj nazwany XObject do zasobów strony, aby można było go łatwo zidentyfikować
-        # To pozwoli na łatwe usunięcie watermarku przez addon.py
-        if '/Resources' not in page:
-            page[NameObject('/Resources')] = DictionaryObject()
-        
-        resources = page['/Resources']
-        if '/XObject' not in resources:
-            resources[NameObject('/XObject')] = DictionaryObject()
-        
-        xobjects = resources['/XObject']
-        
-        # Dodaj marker XObject identyfikujący watermark GRYF
-        # Ten marker pozwoli addon.py znaleźć i usunąć watermark
-        xobjects[NameObject('/GRYF_WATERMARK')] = DictionaryObject({
-            NameObject('/Type'): NameObject('/XObject'),
-            NameObject('/Subtype'): NameObject('/Form'),
-            NameObject('/BBox'): ArrayObject([FloatObject(0), FloatObject(0), 
-                                             FloatObject(page_w), FloatObject(page_h)]),
-            NameObject('/FormType'): FloatObject(1),
-        })
+        # Utwórz Form XObject z watermarkiem
+        if watermark_content is not None:
+            # Przygotuj resources dla Form XObject
+            watermark_resources = watermark_page.get('/Resources', DictionaryObject())
+            
+            # Utwórz Form XObject
+            form_xobject = StreamObject()
+            form_xobject[NameObject('/Type')] = NameObject('/XObject')
+            form_xobject[NameObject('/Subtype')] = NameObject('/Form')
+            form_xobject[NameObject('/FormType')] = FloatObject(1)
+            form_xobject[NameObject('/BBox')] = ArrayObject([
+                FloatObject(0), FloatObject(0), 
+                FloatObject(page_width), FloatObject(page_height)
+            ])
+            form_xobject[NameObject('/Resources')] = watermark_resources
+            
+            # Ustaw matrix dla skalowania jeśli potrzeba
+            if abs(scale_x - 1.0) > 0.01 or abs(scale_y - 1.0) > 0.01:
+                form_xobject[NameObject('/Matrix')] = ArrayObject([
+                    FloatObject(scale_x), FloatObject(0), FloatObject(0),
+                    FloatObject(scale_y), FloatObject(0), FloatObject(0)
+                ])
+            
+            # Skopiuj content stream
+            if hasattr(watermark_content, 'get_data'):
+                form_xobject._data = watermark_content.get_data()
+            else:
+                form_xobject._data = watermark_content.get_object().get_data()
+            
+            # Dodaj Form XObject do resources strony
+            if '/Resources' not in page:
+                page[NameObject('/Resources')] = DictionaryObject()
+            
+            resources = page['/Resources']
+            if '/XObject' not in resources:
+                resources[NameObject('/XObject')] = DictionaryObject()
+            
+            xobjects = resources['/XObject']
+            xobjects[NameObject('/GRYF_WATERMARK')] = form_xobject
+            
+            # Dodaj odwołanie do watermarku w content stream strony
+            # Pobierz obecny content stream
+            if '/Contents' in page:
+                current_content = page['/Contents']
+                if hasattr(current_content, 'get_data'):
+                    current_data = current_content.get_data()
+                else:
+                    current_data = current_content.get_object().get_data()
+            else:
+                current_data = b''
+            
+            # Dodaj watermark NA POCZĄTKU (jako tło, pod zawartością)
+            # Komenda: q (save state), wywołaj XObject, Q (restore state)
+            watermark_invocation = b'q\n/GRYF_WATERMARK Do\nQ\n'
+            new_content_data = watermark_invocation + current_data
+            
+            # Utwórz nowy content stream
+            new_content = DecodedStreamObject()
+            new_content.set_data(new_content_data)
+            page[NameObject('/Contents')] = new_content
         
         writer.add_page(page)
     

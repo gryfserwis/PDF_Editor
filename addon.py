@@ -9,10 +9,12 @@ OWNER_PASSWORD = "bK@92!fJ#Lp*Xz7$wQv%Tg^Rm&nH_Us+oIq=Zl[Wj]Eo{Aq};:Vx,Pb.<D>y|c
 
 def remove_gryf_watermark(reader):
     """
-    Usuwa watermark GRYF z PDF przez usunięcie XObject o nazwie '/GRYF_WATERMARK' z każdej strony.
+    Usuwa watermark GRYF z PDF przez usunięcie XObject o nazwie '/GRYF_WATERMARK' z każdej strony
+    oraz usunięcie jego wywołania z content stream.
     
     Ta funkcja:
     - Bezpośrednio usuwa XObject watermarku po nazwie (nie szuka tekstu 'GRYF')
+    - Usuwa wywołanie watermarku z content stream strony
     - Nie maskuje tekstu ani nie używa redakcji
     - Jest odporna na brak watermarku (nie powoduje błędu)
     
@@ -22,29 +24,60 @@ def remove_gryf_watermark(reader):
     Returns:
         True jeśli znaleziono i usunięto watermark, False jeśli watermark nie istniał
     """
+    from pypdf.generic import NameObject, DecodedStreamObject
+    import re
+    
     watermark_found = False
     
     # Iteruj przez wszystkie strony
     for page in reader.pages:
         try:
+            page_modified = False
+            
             # Sprawdź czy strona ma zasoby
-            if '/Resources' not in page:
-                continue
+            if '/Resources' in page:
+                resources = page['/Resources']
+                
+                # Sprawdź czy są XObjecty
+                if '/XObject' in resources:
+                    xobjects = resources['/XObject']
+                    
+                    # Sprawdź czy istnieje watermark GRYF
+                    watermark_name = NameObject('/GRYF_WATERMARK')
+                    if watermark_name in xobjects:
+                        # Usuń watermark XObject
+                        del xobjects[watermark_name]
+                        watermark_found = True
+                        page_modified = True
             
-            resources = page['/Resources']
-            
-            # Sprawdź czy są XObjecty
-            if '/XObject' not in resources:
-                continue
-            
-            xobjects = resources['/XObject']
-            
-            # Sprawdź czy istnieje watermark GRYF
-            watermark_name = NameObject('/GRYF_WATERMARK')
-            if watermark_name in xobjects:
-                # Usuń watermark XObject
-                del xobjects[watermark_name]
-                watermark_found = True
+            # Jeśli usunęliśmy XObject, usuń też jego wywołanie z content stream
+            if page_modified and '/Contents' in page:
+                current_content = page['/Contents']
+                
+                # Pobierz dane content stream
+                if hasattr(current_content, 'get_data'):
+                    content_data = current_content.get_data()
+                else:
+                    content_data = current_content.get_object().get_data()
+                
+                # Dekoduj do tekstu (PDF content stream to ASCII/binary)
+                try:
+                    content_text = content_data.decode('latin-1')
+                except:
+                    content_text = content_data.decode('utf-8', errors='ignore')
+                
+                # Usuń wywołanie watermarku: "q\n/GRYF_WATERMARK Do\nQ\n"
+                # Używamy regex aby obsłużyć różne warianty białych znaków
+                pattern = r'q\s*/GRYF_WATERMARK\s+Do\s*Q\s*'
+                content_text = re.sub(pattern, '', content_text)
+                
+                # Zakoduj z powrotem i zaktualizuj content stream
+                new_content_data = content_text.encode('latin-1')
+                
+                # Utwórz nowy content stream
+                new_content = DecodedStreamObject()
+                new_content.set_data(new_content_data)
+                page[NameObject('/Contents')] = new_content
                 
         except Exception as e:
             # Ignoruj błędy dla pojedynczych stron - kontynuuj przetwarzanie
