@@ -41,3 +41,9 @@ Thumbs.db
 # Application specific
 preferences.txt
 *.pdf
+addon.bat
+.gitignore
+kompilacja.bat
+.gitignore
+Usuwanie restrykcji.spec
+GRYF PDF Editor.spec
