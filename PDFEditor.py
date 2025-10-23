@@ -7632,8 +7632,99 @@ class SelectablePDFViewer:
         except Exception as e:
             custom_messagebox(self.master, "Błąd", f"Nie udało się zapisać PDF bez hasła:\n{e}", typ="error")
     
+    def add_watermark_to_pdf(self, pdf_bytes):
+        """
+        Dodaje watermark "GRYF" do każdej strony PDF.
+        
+        Generuje powtarzającą się siatkę tekstową "GRYF" pod kątem 45 stopni
+        jako półprzezroczysty watermark na każdej stronie dokumentu PDF.
+        
+        Args:
+            pdf_bytes: Bajty dokumentu PDF do dodania watermarku
+            
+        Returns:
+            bytes: PDF z dodanym watermarkiem
+        """
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import letter
+        
+        try:
+            # Wczytaj oryginalny PDF
+            reader = PdfReader(io.BytesIO(pdf_bytes))
+            writer = PdfWriter()
+            
+            # Dla każdej strony dodaj watermark
+            for page_num, page in enumerate(reader.pages):
+                # Pobierz wymiary strony
+                page_width = float(page.mediabox.width)
+                page_height = float(page.mediabox.height)
+                
+                # Utwórz watermark dla tej strony
+                watermark_buffer = io.BytesIO()
+                c = canvas.Canvas(watermark_buffer, pagesize=(page_width, page_height))
+                
+                # Ustawienia watermarku
+                c.setFont("Helvetica-Bold", 40)
+                c.setFillColorRGB(0.9, 0.9, 0.9, alpha=0.3)  # Jasny szary, półprzezroczysty
+                
+                # Oblicz odstępy dla siatki
+                spacing_x = 200  # Odstęp poziomy między napisami
+                spacing_y = 150  # Odstęp pionowy między napisami
+                
+                # Obróć canvas o 45 stopni wokół środka strony
+                c.saveState()
+                
+                # Generuj siatkę napisów "GRYF"
+                # Oblicz zakres aby pokryć całą stronę po obrocie
+                diagonal = math.sqrt(page_width**2 + page_height**2)
+                start_x = -diagonal
+                end_x = diagonal
+                start_y = -diagonal
+                end_y = diagonal
+                
+                # Rysuj siatkę tekstów
+                y = start_y
+                while y < end_y:
+                    x = start_x
+                    # Przesunięcie co drugi rząd dla lepszego pokrycia
+                    if int((y - start_y) / spacing_y) % 2 == 1:
+                        x += spacing_x / 2
+                    
+                    while x < end_x:
+                        # Przesuń do pozycji i obróć
+                        c.saveState()
+                        c.translate(page_width / 2, page_height / 2)
+                        c.rotate(45)
+                        c.translate(-page_width / 2, -page_height / 2)
+                        c.drawString(x, y, "GRYF")
+                        c.restoreState()
+                        x += spacing_x
+                    y += spacing_y
+                
+                c.restoreState()
+                c.save()
+                
+                # Nałóż watermark na stronę
+                watermark_buffer.seek(0)
+                watermark_pdf = PdfReader(watermark_buffer)
+                watermark_page = watermark_pdf.pages[0]
+                
+                # Scal watermark ze stroną
+                page.merge_page(watermark_page)
+                writer.add_page(page)
+            
+            # Zapisz do bufora
+            output_buffer = io.BytesIO()
+            writer.write(output_buffer)
+            return output_buffer.getvalue()
+            
+        except Exception as e:
+            print(f"Błąd podczas dodawania watermarku: {e}")
+            # W przypadku błędu zwróć oryginalny PDF
+            return pdf_bytes
+    
     def save_pdf_with_print_restriction(self):
-        """Zapisuje PDF z restrykcjami drukowania i hasłem właściciela 'kserokopia12'"""
+        """Zapisuje PDF z restrykcjami drukowania i hasłem właściciela wraz z watermarkiem 'GRYF'"""
         if not self.pdf_document:
             custom_messagebox(self.master, "Błąd", "Brak otwartego dokumentu PDF.", typ="error")
             return
@@ -7662,7 +7753,12 @@ class SelectablePDFViewer:
         try:
             # Konwertuj PyMuPDF do PyPDF
             pdf_bytes = self.pdf_document.tobytes()
-            reader = PdfReader(io.BytesIO(pdf_bytes))
+            
+            # Dodaj watermark do PDF
+            pdf_with_watermark = self.add_watermark_to_pdf(pdf_bytes)
+            
+            # Wczytaj PDF z watermarkiem
+            reader = PdfReader(io.BytesIO(pdf_with_watermark))
             writer = PdfWriter()
             
             for page in reader.pages:
@@ -7679,8 +7775,8 @@ class SelectablePDFViewer:
             with open(filepath, "wb") as output_file:
                 writer.write(output_file)
             
-            custom_messagebox(self.master, "Sukces", f"PDF z restrykcjami drukowania zapisany do:\n{filepath}", typ="info")
-            self._update_status(f"Zapisano PDF z restrykcjami drukowania: {filepath}")
+            custom_messagebox(self.master, "Sukces", f"PDF z restrykcjami drukowania i watermarkiem zapisany do:\n{filepath}", typ="info")
+            self._update_status(f"Zapisano PDF z restrykcjami drukowania i watermarkiem: {filepath}")
         except Exception as e:
             custom_messagebox(self.master, "Błąd", f"Nie udało się zapisać PDF z restrykcjami:\n{e}", typ="error")
     
