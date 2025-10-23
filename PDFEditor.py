@@ -700,6 +700,29 @@ class PageCropResizeDialog(tk.Toplevel):
         pady_row1 = (0, 6)
         pady_row2 = (0, 0)
 
+        # --- IMAGE SCALING SECTION ---
+        scale_frame = ttk.LabelFrame(self, text="Skalowanie obrazu")
+        scale_frame.pack(fill="x", padx=12, pady=(8, 0))
+        
+        scale_modes = [
+            ("Nie skaluj obrazu", "noscale"),
+            ("Skaluj obraz bez zmiany rozmiaru arkusza", "scale_only")
+        ]
+        self.scale_radiobuttons = []
+        for txt, val in scale_modes:
+            rb = ttk.Radiobutton(scale_frame, text=txt, variable=self.scale_mode, value=val, command=self.update_field_states)
+            rb.pack(anchor="w", **pad)
+            self.scale_radiobuttons.append(rb)
+        
+        # Scale value input
+        scale_value_frame = ttk.Frame(scale_frame)
+        scale_value_frame.pack(fill="x", padx=18, pady=(0, 0))
+        ttk.Label(scale_value_frame, text="Wartość skali [%]:").grid(row=0, column=0, sticky="w", padx=(0,6), pady=pady_row1)
+        self.e_scale_value = ttk.Entry(scale_value_frame, textvariable=self.scale_value, width=8, validate="key", validatecommand=self.vcmd_scale)
+        self.e_scale_value.grid(row=0, column=1, sticky="w", padx=(0,0), pady=pady_row1)
+        ttk.Label(scale_value_frame, text="Zakres: 1–500%", foreground="gray").grid(row=1, column=0, columnspan=2, sticky="w", pady=(0,0))
+        self.scale_entries = [self.e_scale_value]
+
         # --- CROP SECTION ---
         crop_frame = ttk.LabelFrame(self, text="Przycinanie strony")
         crop_frame.pack(fill="x", padx=12, pady=(12, 4))
@@ -792,28 +815,7 @@ class PageCropResizeDialog(tk.Toplevel):
         ttk.Label(self.offset_frame, text="Zakres: 0–500 mm", foreground="gray").grid(row=1, column=0, columnspan=4, sticky="w", pady=(0,0))
         self.offset_entries = [self.e_offset_x, self.e_offset_y]
 
-        # --- IMAGE SCALING SECTION ---
-        scale_frame = ttk.LabelFrame(self, text="Skalowanie obrazu")
-        scale_frame.pack(fill="x", padx=12, pady=(8, 0))
-        
-        scale_modes = [
-            ("Nie skaluj obrazu", "noscale"),
-            ("Skaluj obraz bez zmiany rozmiaru arkusza", "scale_only")
-        ]
-        self.scale_radiobuttons = []
-        for txt, val in scale_modes:
-            rb = ttk.Radiobutton(scale_frame, text=txt, variable=self.scale_mode, value=val, command=self.update_field_states)
-            rb.pack(anchor="w", **pad)
-            self.scale_radiobuttons.append(rb)
-        
-        # Scale value input
-        scale_value_frame = ttk.Frame(scale_frame)
-        scale_value_frame.pack(fill="x", padx=18, pady=(0, 0))
-        ttk.Label(scale_value_frame, text="Wartość skali [%]:").grid(row=0, column=0, sticky="w", padx=(0,6), pady=pady_row1)
-        self.e_scale_value = ttk.Entry(scale_value_frame, textvariable=self.scale_value, width=8, validate="key", validatecommand=self.vcmd_scale)
-        self.e_scale_value.grid(row=0, column=1, sticky="w", padx=(0,0), pady=pady_row1)
-        ttk.Label(scale_value_frame, text="Zakres: 1–500%", foreground="gray").grid(row=1, column=0, columnspan=2, sticky="w", pady=(0,0))
-        self.scale_entries = [self.e_scale_value]
+       
 
         # --- BUTTONS ---
         button_frame = ttk.Frame(self)
