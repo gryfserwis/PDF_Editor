@@ -467,6 +467,10 @@ class PreferencesManager:
             'color_detect_threshold': '5',
             'color_detect_samples': '300',
             'color_detect_scale': '0.2',
+            
+            # Watermark settings
+            'watermark_on_save': 'False',
+            'watermark_on_save_restricted': 'True',
         }
         self.load_preferences()
     
@@ -628,6 +632,24 @@ class PreferencesDialog(tk.Toplevel):
         
         color_detect_frame.columnconfigure(2, weight=1)
         
+        # Sekcja Watermark
+        watermark_frame = ttk.LabelFrame(main_frame, text="Watermark", padding="8")
+        watermark_frame.pack(fill="x", pady=(0, 8))
+        
+        # Watermark przy zwykłym zapisie PDF
+        ttk.Label(watermark_frame, text="Watermark przy zwykłym zapisie PDF:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
+        self.watermark_on_save_var = tk.BooleanVar()
+        watermark_save_check = ttk.Checkbutton(watermark_frame, variable=self.watermark_on_save_var)
+        watermark_save_check.grid(row=0, column=1, sticky="w", padx=4, pady=4)
+        
+        # Watermark przy zapisie z restrykcjami
+        ttk.Label(watermark_frame, text="Watermark przy zapisie z restrykcjami:").grid(row=1, column=0, sticky="w", padx=4, pady=4)
+        self.watermark_on_save_restricted_var = tk.BooleanVar()
+        watermark_restricted_check = ttk.Checkbutton(watermark_frame, variable=self.watermark_on_save_restricted_var)
+        watermark_restricted_check.grid(row=1, column=1, sticky="w", padx=4, pady=4)
+        
+        watermark_frame.columnconfigure(1, weight=1)
+        
         # Informacja
        # info_frame = ttk.Frame(main_frame)
        # info_frame.pack(fill="x", pady=8)
@@ -668,6 +690,8 @@ class PreferencesDialog(tk.Toplevel):
         self.color_threshold_var.set(self.prefs_manager.get('color_detect_threshold'))
         self.color_samples_var.set(self.prefs_manager.get('color_detect_samples'))
         self.color_scale_var.set(self.prefs_manager.get('color_detect_scale'))
+        self.watermark_on_save_var.set(self.prefs_manager.get('watermark_on_save') == 'True')
+        self.watermark_on_save_restricted_var.set(self.prefs_manager.get('watermark_on_save_restricted') == 'True')
     
     def reset_all_defaults(self):
         """Przywraca domyślne wartości we wszystkich dialogach"""
@@ -732,6 +756,8 @@ class PreferencesDialog(tk.Toplevel):
         self.prefs_manager.set('color_detect_threshold', str(threshold))
         self.prefs_manager.set('color_detect_samples', str(samples))
         self.prefs_manager.set('color_detect_scale', str(scale))
+        self.prefs_manager.set('watermark_on_save', 'True' if self.watermark_on_save_var.get() else 'False')
+        self.prefs_manager.set('watermark_on_save_restricted', 'True' if self.watermark_on_save_restricted_var.get() else 'False')
         self.result = True
         self.destroy()
     
@@ -6916,12 +6942,20 @@ class SelectablePDFViewer:
             self.pdf_document.save(temp_buffer, garbage=4, clean=True, pretty=True)
             pdf_bytes = temp_buffer.getvalue()
             
-            # Dodaj watermark GRYF jako XObject
-            pdf_with_watermark = add_watermark_to_pdf(pdf_bytes)
+            # Sprawdź czy dodać watermark na podstawie preferencji
+            add_watermark = self.prefs_manager.get('watermark_on_save', 'False') == 'True'
             
-            # Zapisz PDF z watermarkiem do pliku
-            with open(filepath, 'wb') as f:
-                f.write(pdf_with_watermark)
+            if add_watermark:
+                # Dodaj watermark GRYF jako XObject
+                pdf_with_watermark = add_watermark_to_pdf(pdf_bytes)
+                
+                # Zapisz PDF z watermarkiem do pliku
+                with open(filepath, 'wb') as f:
+                    f.write(pdf_with_watermark)
+            else:
+                # Zapisz PDF bez watermarku do pliku
+                with open(filepath, 'wb') as f:
+                    f.write(pdf_bytes)
             
             self._update_status(f"Dokument pomyślnie zapisany jako: {filepath}")
             self.prefs_manager.set('last_saved_file', filepath) 
@@ -7839,14 +7873,21 @@ class SelectablePDFViewer:
             self.prefs_manager.set('last_save_path', os.path.dirname(filepath))
         
         try:
-            # Konwertuj PyMuPDF do PyPDF i dodaj watermark
+            # Konwertuj PyMuPDF do PyPDF
             pdf_bytes = self.pdf_document.tobytes()
             
-            # Dodaj watermark GRYF jako XObject
-            pdf_with_watermark = add_watermark_to_pdf(pdf_bytes)
+            # Sprawdź czy dodać watermark na podstawie preferencji
+            add_watermark = self.prefs_manager.get('watermark_on_save_restricted', 'True') == 'True'
             
-            # Wczytaj PDF z watermarkiem
-            reader = PdfReader(io.BytesIO(pdf_with_watermark))
+            if add_watermark:
+                # Dodaj watermark GRYF jako XObject
+                pdf_with_watermark = add_watermark_to_pdf(pdf_bytes)
+                # Wczytaj PDF z watermarkiem
+                reader = PdfReader(io.BytesIO(pdf_with_watermark))
+            else:
+                # Wczytaj PDF bez watermarku
+                reader = PdfReader(io.BytesIO(pdf_bytes))
+            
             writer = PdfWriter()
             
             for page in reader.pages:
