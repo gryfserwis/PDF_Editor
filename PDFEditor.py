@@ -7523,8 +7523,16 @@ class SelectablePDFViewer:
             self._reconfigure_grid()
             self.update_tool_button_states()
             self.update_focus_display()
+            
+            # Informacja o użytym trybie skalowania
+            mode_text = {
+                "stretch": "rozciąganie",
+                "fit": "dopasowanie z proporcjami",
+                "dimensions": f"wymiary {page_width_mm}×{page_height_mm}mm"
+            }.get(scaling_mode, "rozciąganie")
+            
             self._update_status(
-                f"Scalono {num_pages} stron w siatkę {rows}x{cols} na nowym arkuszu {params['format_name']} (bitmapy 600dpi). Odświeżanie miniatur..."
+                f"Scalono {num_pages} stron w siatkę {rows}x{cols} na nowym arkuszu {params['format_name']} (tryb: {mode_text}, {TARGET_DPI}dpi). Odświeżanie miniatur..."
             )
         except Exception as e:
             self.hide_progressbar()
