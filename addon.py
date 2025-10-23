@@ -3,30 +3,169 @@ import os
 import tkinter as tk
 from tkinterdnd2 import DND_FILES, TkinterDnD
 from pypdf import PdfReader, PdfWriter
+from pypdf.generic import NameObject
 
 OWNER_PASSWORD = "bK@92!fJ#Lp*Xz7$wQv%Tg^Rm&nH_Us+oIq=Zl[Wj]Eo{Aq};:Vx,Pb.<D>y|cS/0t1u2v3w4x5y6z7a8b9C0D1E2F3G4H5I6J7K8L9M0N1O2P3Q4R5S6T7U8V9W0X1Y2Z3AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz"
 
+def remove_gryf_watermark(reader):
+    """
+    Usuwa watermark GRYF z PDF przez usunięcie XObject o nazwie '/GRYF_WATERMARK' z każdej strony
+    oraz usunięcie jego wywołania z content stream.
+    
+    Ta funkcja:
+    - Bezpośrednio usuwa XObject watermarku po nazwie (nie szuka tekstu 'GRYF')
+    - Usuwa wywołanie watermarku z content stream strony
+    - Nie maskuje tekstu ani nie używa redakcji
+    - Jest odporna na brak watermarku (nie powoduje błędu)
+    
+    Args:
+        reader: PdfReader object z załadowanym PDF
+        
+    Returns:
+        True jeśli znaleziono i usunięto watermark, False jeśli watermark nie istniał
+    """
+    from pypdf.generic import NameObject, DecodedStreamObject
+    import re
+    
+    watermark_found = False
+    
+    # Iteruj przez wszystkie strony
+    for page in reader.pages:
+        try:
+            page_modified = False
+            
+            # Sprawdź czy strona ma zasoby
+            if '/Resources' in page:
+                resources = page['/Resources']
+                
+                # Sprawdź czy są XObjecty
+                if '/XObject' in resources:
+                    xobjects = resources['/XObject']
+                    
+                    # Sprawdź czy istnieje watermark GRYF
+                    watermark_name = NameObject('/GRYF_WATERMARK')
+                    if watermark_name in xobjects:
+                        # Usuń watermark XObject
+                        del xobjects[watermark_name]
+                        watermark_found = True
+                        page_modified = True
+            
+            # Jeśli usunęliśmy XObject, usuń też jego wywołanie z content stream
+            if page_modified and '/Contents' in page:
+                current_content = page['/Contents']
+                
+                # Pobierz dane content stream
+                if hasattr(current_content, 'get_data'):
+                    content_data = current_content.get_data()
+                else:
+                    content_data = current_content.get_object().get_data()
+                
+                # Dekoduj do tekstu (PDF content stream to ASCII/binary)
+                try:
+                    content_text = content_data.decode('latin-1')
+                except:
+                    content_text = content_data.decode('utf-8', errors='ignore')
+                
+                # Usuń wywołanie watermarku: "q\n/GRYF_WATERMARK Do\nQ\n"
+                # Używamy regex aby obsłużyć różne warianty białych znaków
+                pattern = r'q\s*/GRYF_WATERMARK\s+Do\s*Q\s*'
+                content_text = re.sub(pattern, '', content_text)
+                
+                # Zakoduj z powrotem i zaktualizuj content stream
+                new_content_data = content_text.encode('latin-1')
+                
+                # Utwórz nowy content stream
+                new_content = DecodedStreamObject()
+                new_content.set_data(new_content_data)
+                page[NameObject('/Contents')] = new_content
+                
+        except Exception as e:
+            # Ignoruj błędy dla pojedynczych stron - kontynuuj przetwarzanie
+            print(f"Ostrzeżenie: Nie można przetworzyć strony: {e}")
+            continue
+    
+    return watermark_found
+
 def remove_pdf_restrictions(pdf_path):
+    """
+    Usuwa restrykcje z PDF oraz watermark GRYF.
+    
+    Funkcja:
+    1. Usuwa restrykcje drukowania/edycji (używając hasła właściciela)
+    2. Usuwa watermark GRYF przez bezpośrednie usunięcie XObject '/GRYF_WATERMARK'
+    3. Zapisuje oczyszczony PDF do tego samego pliku
+    """
     try:
+        # Wczytaj PDF z hasłem właściciela (jeśli jest zaszyfrowany)
         reader = PdfReader(pdf_path, password=OWNER_PASSWORD)
         filename = os.path.basename(pdf_path)
+        
+        # Jeśli PDF jest zaszyfrowany, odszyfruj go
+        was_encrypted = False
         if reader.is_encrypted:
             if not reader.decrypt(OWNER_PASSWORD):
                 raise ValueError("Nieprawidłowe hasło lub plik nie może zostać odszyfrowany.")
-            writer = PdfWriter()
-            for page in reader.pages:
-                writer.add_page(page)
-            with open(pdf_path, "wb") as f:
-                writer.write(f)
-            return f"Ograniczenia usunięte: {filename}"
+            was_encrypted = True
+        
+        # Usuń watermark GRYF z wszystkich stron
+        watermark_removed = remove_gryf_watermark(reader)
+        
+        # Utwórz writer i skopiuj strony (bez restrykcji i watermarku)
+        writer = PdfWriter()
+        for page in reader.pages:
+            writer.add_page(page)
+        
+        # Zapisz oczyszczony PDF (bez hasła i restrykcji)
+        with open(pdf_path, "wb") as f:
+            writer.write(f)
+        
+        # Przygotuj komunikat zwrotny
+        messages = []
+        if was_encrypted:
+            messages.append("Ograniczenia usunięte")
+        if watermark_removed:
+            messages.append("Watermark GRYF usunięty")
+        
+        if messages:
+            return f"{', '.join(messages)}: {filename}"
         else:
-            return f"Plik nie był zabezpieczony: {filename}"
+            return f"Plik nie był zabezpieczony ani nie miał watermarku: {filename}"
+            
     except Exception as e:
         filename = os.path.basename(pdf_path)
+        # Obsługa komunikatów o plikach niezaszyfrowanych
         if isinstance(e, ValueError) and "Not an encrypted file" in str(e):
-            return f"Plik nie był zabezpieczony: {filename}"
+            # Nawet jeśli nie był zaszyfrowany, spróbuj usunąć watermark
+            try:
+                reader = PdfReader(pdf_path)
+                watermark_removed = remove_gryf_watermark(reader)
+                if watermark_removed:
+                    writer = PdfWriter()
+                    for page in reader.pages:
+                        writer.add_page(page)
+                    with open(pdf_path, "wb") as f:
+                        writer.write(f)
+                    return f"Watermark GRYF usunięty: {filename}"
+                else:
+                    return f"Plik nie był zabezpieczony ani nie miał watermarku: {filename}"
+            except:
+                return f"Plik nie był zabezpieczony: {filename}"
         if "Not an encrypted file" in str(e):
-            return f"Plik nie był zabezpieczony: {filename}"
+            # Nawet jeśli nie był zaszyfrowany, spróbuj usunąć watermark
+            try:
+                reader = PdfReader(pdf_path)
+                watermark_removed = remove_gryf_watermark(reader)
+                if watermark_removed:
+                    writer = PdfWriter()
+                    for page in reader.pages:
+                        writer.add_page(page)
+                    with open(pdf_path, "wb") as f:
+                        writer.write(f)
+                    return f"Watermark GRYF usunięty: {filename}"
+                else:
+                    return f"Plik nie był zabezpieczony ani nie miał watermarku: {filename}"
+            except:
+                return f"Plik nie był zabezpieczony: {filename}"
         return f"Błąd: {e} ({filename})"
 
 def on_drop(event):

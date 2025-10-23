@@ -115,6 +115,174 @@ def resource_path(relative_path):
         base_path = os.path.dirname(os.path.abspath(__file__))
         
     return os.path.join(base_path, relative_path)
+
+def add_watermark_to_pdf(pdf_bytes):
+    """
+    Dodaje watermark 'GRYF' jako osobny XObject (warstwę graficzną) do każdej strony PDF.
+    
+    Watermark jest:
+    - Dodawany jako XObject o nazwie '/GRYF_WATERMARK'
+    - Półprzezroczysty (opacity ~0.1)
+    - Jasny kolor (jasny szary)
+    - Powtarzający się w ukośnej siatce
+    
+    Metoda:
+    - Tworzy prawdziwy Form XObject który może być łatwo usunięty
+    - Dodaje go do strony przez modyfikację content stream
+    
+    Args:
+        pdf_bytes: Bytes z PDF do przetworzenia
+        
+    Returns:
+        Bytes z PDF z dodanym watermarkiem
+    """
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import letter
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import (NameObject, DictionaryObject, ArrayObject, 
+                               FloatObject, StreamObject, DecodedStreamObject)
+    import io
+    
+    # Wczytaj PDF
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    writer = PdfWriter()
+    
+    # Utwórz watermark jako osobną stronę PDF używając reportlab
+    watermark_buffer = io.BytesIO()
+    
+    # Rozmiar bazowy watermarku (użyjemy A4 jako bazowego rozmiaru)
+    page_width = 595.276  # A4 width in points
+    page_height = 841.89  # A4 height in points
+    
+    # Utwórz canvas reportlab
+    c = canvas.Canvas(watermark_buffer, pagesize=(page_width, page_height))
+    
+    # Parametry watermarku
+    watermark_text = "GRYF"
+    font_size = 60
+    opacity = 0.1  # Bardzo półprzezroczysty
+    gray_color = 0.85  # Jasny szary (0=czarny, 1=biały)
+    angle = 45  # Kąt obrotu (ukośnie)
+    
+    # Ustawienia czcionki i koloru
+    c.setFont("Helvetica-Bold", font_size)
+    c.setFillColorRGB(gray_color, gray_color, gray_color)
+    c.setFillAlpha(opacity)
+    
+    # Siatka watermarków - powtarzaj co ~200 punktów w obu kierunkach
+    spacing_x = 200
+    spacing_y = 150
+    
+    # Obróć canvas
+    c.saveState()
+    
+    # Rysuj siatkę watermarków
+    for x in range(-int(page_width), int(page_width * 2), spacing_x):
+        for y in range(-int(page_height), int(page_height * 2), spacing_y):
+            c.saveState()
+            # Przesuń do pozycji
+            c.translate(x, y)
+            # Obróć
+            c.rotate(angle)
+            # Narysuj tekst wyśrodkowany
+            text_width = c.stringWidth(watermark_text, "Helvetica-Bold", font_size)
+            c.drawString(-text_width / 2, 0, watermark_text)
+            c.restoreState()
+    
+    c.restoreState()
+    c.showPage()
+    c.save()
+    
+    # Wczytaj watermark jako PDF i wyciągnij jego content stream
+    watermark_buffer.seek(0)
+    watermark_pdf = PdfReader(watermark_buffer)
+    watermark_page = watermark_pdf.pages[0]
+    
+    # Pobierz content stream z watermarku
+    if '/Contents' in watermark_page:
+        watermark_content = watermark_page['/Contents']
+    else:
+        # Jeśli brak contents, pomiń watermark
+        watermark_content = None
+    
+    # Dodaj watermark do każdej strony
+    for page in reader.pages:
+        # Pobierz wymiary strony
+        page_rect = page.mediabox
+        page_w = float(page_rect.width)
+        page_h = float(page_rect.height)
+        
+        # Skaluj watermark do rozmiaru strony jeśli potrzeba
+        scale_x = page_w / page_width
+        scale_y = page_h / page_height
+        
+        # Utwórz Form XObject z watermarkiem
+        if watermark_content is not None:
+            # Przygotuj resources dla Form XObject
+            watermark_resources = watermark_page.get('/Resources', DictionaryObject())
+            
+            # Utwórz Form XObject
+            form_xobject = StreamObject()
+            form_xobject[NameObject('/Type')] = NameObject('/XObject')
+            form_xobject[NameObject('/Subtype')] = NameObject('/Form')
+            form_xobject[NameObject('/FormType')] = FloatObject(1)
+            form_xobject[NameObject('/BBox')] = ArrayObject([
+                FloatObject(0), FloatObject(0), 
+                FloatObject(page_width), FloatObject(page_height)
+            ])
+            form_xobject[NameObject('/Resources')] = watermark_resources
+            
+            # Ustaw matrix dla skalowania jeśli potrzeba
+            if abs(scale_x - 1.0) > 0.01 or abs(scale_y - 1.0) > 0.01:
+                form_xobject[NameObject('/Matrix')] = ArrayObject([
+                    FloatObject(scale_x), FloatObject(0), FloatObject(0),
+                    FloatObject(scale_y), FloatObject(0), FloatObject(0)
+                ])
+            
+            # Skopiuj content stream
+            if hasattr(watermark_content, 'get_data'):
+                form_xobject._data = watermark_content.get_data()
+            else:
+                form_xobject._data = watermark_content.get_object().get_data()
+            
+            # Dodaj Form XObject do resources strony
+            if '/Resources' not in page:
+                page[NameObject('/Resources')] = DictionaryObject()
+            
+            resources = page['/Resources']
+            if '/XObject' not in resources:
+                resources[NameObject('/XObject')] = DictionaryObject()
+            
+            xobjects = resources['/XObject']
+            xobjects[NameObject('/GRYF_WATERMARK')] = form_xobject
+            
+            # Dodaj odwołanie do watermarku w content stream strony
+            # Pobierz obecny content stream
+            if '/Contents' in page:
+                current_content = page['/Contents']
+                if hasattr(current_content, 'get_data'):
+                    current_data = current_content.get_data()
+                else:
+                    current_data = current_content.get_object().get_data()
+            else:
+                current_data = b''
+            
+            # Dodaj watermark NA POCZĄTKU (jako tło, pod zawartością)
+            # Komenda: q (save state), wywołaj XObject, Q (restore state)
+            watermark_invocation = b'q\n/GRYF_WATERMARK Do\nQ\n'
+            new_content_data = watermark_invocation + current_data
+            
+            # Utwórz nowy content stream
+            new_content = DecodedStreamObject()
+            new_content.set_data(new_content_data)
+            page[NameObject('/Contents')] = new_content
+        
+        writer.add_page(page)
+    
+    # Zapisz wynikowy PDF
+    output_buffer = io.BytesIO()
+    writer.write(output_buffer)
+    return output_buffer.getvalue()
   
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -6743,7 +6911,18 @@ class SelectablePDFViewer:
             self.prefs_manager.set('last_save_path', os.path.dirname(filepath))
         
         try:
-            self.pdf_document.save(filepath, garbage=4, clean=True, pretty=True)  
+            # Zapisz PDF do bufora
+            temp_buffer = io.BytesIO()
+            self.pdf_document.save(temp_buffer, garbage=4, clean=True, pretty=True)
+            pdf_bytes = temp_buffer.getvalue()
+            
+            # Dodaj watermark GRYF jako XObject
+            pdf_with_watermark = add_watermark_to_pdf(pdf_bytes)
+            
+            # Zapisz PDF z watermarkiem do pliku
+            with open(filepath, 'wb') as f:
+                f.write(pdf_with_watermark)
+            
             self._update_status(f"Dokument pomyślnie zapisany jako: {filepath}")
             self.prefs_manager.set('last_saved_file', filepath) 
             # Po zapisaniu czyścimy stosy undo/redo
@@ -7660,9 +7839,14 @@ class SelectablePDFViewer:
             self.prefs_manager.set('last_save_path', os.path.dirname(filepath))
         
         try:
-            # Konwertuj PyMuPDF do PyPDF
+            # Konwertuj PyMuPDF do PyPDF i dodaj watermark
             pdf_bytes = self.pdf_document.tobytes()
-            reader = PdfReader(io.BytesIO(pdf_bytes))
+            
+            # Dodaj watermark GRYF jako XObject
+            pdf_with_watermark = add_watermark_to_pdf(pdf_bytes)
+            
+            # Wczytaj PDF z watermarkiem
+            reader = PdfReader(io.BytesIO(pdf_with_watermark))
             writer = PdfWriter()
             
             for page in reader.pages:
