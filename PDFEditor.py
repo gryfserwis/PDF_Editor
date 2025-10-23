@@ -447,6 +447,7 @@ class PreferencesManager:
             'MergePageGridDialog.spacing_x_mm': '10',
             'MergePageGridDialog.spacing_y_mm': '10',
             'MergePageGridDialog.dpi_var': '300',
+            'MergePageGridDialog.output_mode': 'new_file',
             
             # EnhancedPageRangeDialog
             'EnhancedPageRangeDialog.last_range': '',
@@ -2458,6 +2459,7 @@ class MergePageGridDialog(tk.Toplevel):
         'scaling_mode': 'stretch',
         'page_width_mm': '100',
         'page_height_mm': '100',
+        'output_mode': 'new_file',  # 'new_file' or 'append'
     }
 
     def __init__(self, parent, page_count, prefs_manager=None):
@@ -2486,6 +2488,7 @@ class MergePageGridDialog(tk.Toplevel):
         self.scaling_mode = tk.StringVar(value=self._get_pref('scaling_mode'))
         self.page_width_mm = tk.StringVar(value=self._get_pref('page_width_mm'))
         self.page_height_mm = tk.StringVar(value=self._get_pref('page_height_mm'))
+        self.output_mode = tk.StringVar(value=self._get_pref('output_mode'))
         self.page_count = page_count
 
         self.vcmd_200 = (self.register(lambda v: validate_float_range(v, 0, 200)), "%P")
@@ -2551,6 +2554,12 @@ class MergePageGridDialog(tk.Toplevel):
         if self.scaling_mode.get() == "dimensions":
             self._calculate_auto_grid()
             self._update_grid_preview()
+    
+    def _on_sheet_or_margin_changed(self):
+        """Wywoływane gdy zmieni się format arkusza lub marginesy w trybie 'dimensions'"""
+        if self.scaling_mode.get() == "dimensions":
+            self._calculate_auto_grid()
+            # Preview is already updated by the existing trace
     
     def _calculate_auto_grid(self):
         """Automatycznie oblicza liczbę wierszy i kolumn na podstawie wymiarów stron"""
@@ -2620,14 +2629,14 @@ class MergePageGridDialog(tk.Toplevel):
             width=8
         )
         format_combo.grid(row=0, column=1, sticky="w", padx=4, pady=4)
-        format_combo.bind("<<ComboboxSelected>>", lambda e: self._update_grid_preview())
+        format_combo.bind("<<ComboboxSelected>>", lambda e: (self._update_grid_preview(), self._on_sheet_or_margin_changed()))
         orient_label = ttk.Label(format_frame, text="Orientacja:")
         orient_label.grid(row=1, column=0, sticky="e", padx=4, pady=4)
         orient_radio_frame = ttk.Frame(format_frame)
         orient_radio_frame.grid(row=1, column=1, sticky="w", padx=4, pady=4)
-        orient_pion = ttk.Radiobutton(orient_radio_frame, text="Pionowa", variable=self.orientation, value="Pionowa", command=self._update_grid_preview)
+        orient_pion = ttk.Radiobutton(orient_radio_frame, text="Pionowa", variable=self.orientation, value="Pionowa", command=lambda: (self._update_grid_preview(), self._on_sheet_or_margin_changed()))
         orient_pion.pack(side="left", padx=(0,8))
-        orient_poz = ttk.Radiobutton(orient_radio_frame, text="Pozioma", variable=self.orientation, value="Pozioma", command=self._update_grid_preview)
+        orient_poz = ttk.Radiobutton(orient_radio_frame, text="Pozioma", variable=self.orientation, value="Pozioma", command=lambda: (self._update_grid_preview(), self._on_sheet_or_margin_changed()))
         orient_poz.pack(side="left")
 
         margin_frame = ttk.LabelFrame(left_frame, text="Marginesy [mm]")
@@ -2720,12 +2729,31 @@ class MergePageGridDialog(tk.Toplevel):
         self.cols_var.trace_add("write", lambda *a: self._update_grid_preview())
         
         # Dodaj trace dla marginesów i odstępów, aby podgląd aktualizował się natychmiast
-        self.margin_top_mm.trace_add("write", lambda *a: self._update_grid_preview())
-        self.margin_bottom_mm.trace_add("write", lambda *a: self._update_grid_preview())
-        self.margin_left_mm.trace_add("write", lambda *a: self._update_grid_preview())
-        self.margin_right_mm.trace_add("write", lambda *a: self._update_grid_preview())
-        self.spacing_x_mm.trace_add("write", lambda *a: self._update_grid_preview())
-        self.spacing_y_mm.trace_add("write", lambda *a: self._update_grid_preview())
+        # W trybie "dimensions" marginesy również wpływają na automatyczne przeliczanie siatki
+        self.margin_top_mm.trace_add("write", lambda *a: (self._update_grid_preview(), self._on_sheet_or_margin_changed()))
+        self.margin_bottom_mm.trace_add("write", lambda *a: (self._update_grid_preview(), self._on_sheet_or_margin_changed()))
+        self.margin_left_mm.trace_add("write", lambda *a: (self._update_grid_preview(), self._on_sheet_or_margin_changed()))
+        self.margin_right_mm.trace_add("write", lambda *a: (self._update_grid_preview(), self._on_sheet_or_margin_changed()))
+        self.spacing_x_mm.trace_add("write", lambda *a: (self._update_grid_preview(), self._on_sheet_or_margin_changed()))
+        self.spacing_y_mm.trace_add("write", lambda *a: (self._update_grid_preview(), self._on_sheet_or_margin_changed()))
+
+        # NOWA SEKCJA: Wybór miejsca docelowego wyniku
+        output_frame = ttk.LabelFrame(left_frame, text="Miejsce docelowe wyniku")
+        output_frame.pack(fill="x", pady=(0, 8))
+        
+        ttk.Radiobutton(
+            output_frame, 
+            text="Zapisz do nowego pliku PDF", 
+            variable=self.output_mode, 
+            value="new_file"
+        ).grid(row=0, column=0, sticky="w", padx=4, pady=2)
+        
+        ttk.Radiobutton(
+            output_frame, 
+            text="Dodaj jako nowe strony na końcu dokumentu", 
+            variable=self.output_mode, 
+            value="append"
+        ).grid(row=1, column=0, sticky="w", padx=4, pady=2)
 
         preview_frame = ttk.LabelFrame(right_frame, text="Podgląd rozkładu stron")
         preview_frame.pack(fill="both", expand=True)
@@ -2768,6 +2796,7 @@ class MergePageGridDialog(tk.Toplevel):
             self.prefs_manager.set('MergePageGridDialog.scaling_mode', self.scaling_mode.get())
             self.prefs_manager.set('MergePageGridDialog.page_width_mm', self.page_width_mm.get())
             self.prefs_manager.set('MergePageGridDialog.page_height_mm', self.page_height_mm.get())
+            self.prefs_manager.set('MergePageGridDialog.output_mode', self.output_mode.get())
     
     def restore_defaults(self):
         """Przywraca wartości domyślne"""
@@ -2783,6 +2812,7 @@ class MergePageGridDialog(tk.Toplevel):
         self.scaling_mode.set(self.DEFAULTS['scaling_mode'])
         self.page_width_mm.set(self.DEFAULTS['page_width_mm'])
         self.page_height_mm.set(self.DEFAULTS['page_height_mm'])
+        self.output_mode.set(self.DEFAULTS['output_mode'])
         self._on_scaling_mode_changed()
         self._update_grid_preview()
 
@@ -2886,8 +2916,8 @@ class MergePageGridDialog(tk.Toplevel):
             cols = int(self.cols_var.get())
             if not (1 <= rows <= 10 and 1 <= cols <= 10):
                 raise ValueError("Liczba wierszy i kolumn musi być z zakresu 1–10.")
-            if rows * cols < self.page_count:
-                raise ValueError("Liczba komórek siatki musi być nie mniejsza niż liczba scalanych stron.")
+            # Usunięto walidację że liczba komórek musi być >= liczba stron
+            # Teraz obsługujemy wiele arkuszy automatycznie
             
             # Walidacja dla trybu wymiarów
             scaling_mode = self.scaling_mode.get()
@@ -2926,6 +2956,7 @@ class MergePageGridDialog(tk.Toplevel):
                 "scaling_mode": scaling_mode,
                 "page_width_mm": page_width,
                 "page_height_mm": page_height,
+                "output_mode": self.output_mode.get(),
             }
             # Zapisz preferencje przed zamknięciem
             self._save_prefs()
@@ -7362,12 +7393,15 @@ class SelectablePDFViewer:
   
     def merge_pages_to_grid(self):
         """
-        Scala zaznaczone strony w siatkę na nowym arkuszu.
-        Bitmapy renderowane są w 600dpi (bardzo wysoka jakość do druku).
+        Scala zaznaczone strony w siatkę na nowych arkuszach.
+        Bitmapy renderowane są w wysokiej jakości (domyślnie 300dpi).
         Przed renderowaniem każda strona jest automatycznie obracana jeśli jej orientacja nie pasuje do komórki siatki.
         Marginesy i odstępy pobierane są z dialogu (osobno dla każdej krawędzi/osi).
+        Obsługuje wiele arkuszy gdy liczba stron przekracza liczbę komórek w gridzie.
+        Wynik może być zapisany do nowego pliku lub dodany jako nowe strony na końcu dokumentu.
         """
         import io
+        from tkinter import filedialog
 
         if not self.pdf_document:
             self._update_status("BŁĄD: Otwórz najpierw dokument PDF.")
@@ -7399,17 +7433,11 @@ class SelectablePDFViewer:
             scaling_mode = params.get("scaling_mode", "stretch")
             page_width_mm = params.get("page_width_mm")
             page_height_mm = params.get("page_height_mm")
+            output_mode = params.get("output_mode", "new_file")
 
             TARGET_DPI = params.get("dpi", 600)
             PT_TO_INCH = 1 / 72
-
             total_cells = rows * cols
-
-            # Poprawka: powielaj tylko jeśli jedna strona, przy wielu nie powielaj żadnej
-            if num_pages == 1:
-                source_pages = [selected_indices[0]] * total_cells
-            else:
-                source_pages = [selected_indices[i] if i < num_pages else None for i in range(total_cells)]
 
             # Oblicz rozmiar komórki (punkt PDF)
             if scaling_mode == "dimensions":
@@ -7427,23 +7455,9 @@ class SelectablePDFViewer:
                 else:
                     cell_height = (sheet_height_pt - margin_top_pt - margin_bottom_pt - (rows - 1) * spacing_y_pt) / rows
 
-            self._save_state_to_undo()
-            new_page = self.pdf_document.new_page(width=sheet_width_pt, height=sheet_height_pt)
-
-            self.show_progressbar(maximum=len(source_pages))
-            self._update_status("Scalanie stron w siatkę...")
-            
-            for idx, src_idx in enumerate(source_pages):
-                row = idx // cols
-                col = idx % cols
-                if row >= rows:
-                    break
-                if src_idx is None:
-                    continue  # Pusta komórka
-
-                x = margin_left_pt + col * (cell_width + spacing_x_pt)
-                y = margin_top_pt + row * (cell_height + spacing_y_pt)
-
+            # Funkcja pomocnicza do renderowania jednej strony w komórce
+            def render_page_to_cell(new_page, src_idx, cell_x, cell_y):
+                """Renderuje stronę src_idx w komórce o pozycji (cell_x, cell_y) na new_page"""
                 src_page = self.pdf_document[src_idx]
                 page_rect = src_page.rect
                 page_w = page_rect.width
@@ -7493,7 +7507,7 @@ class SelectablePDFViewer:
                     # Renderuj bitmapę z zachowaniem proporcji
                     pix = src_page.get_pixmap(matrix=fitz.Matrix(scale_x, scale_y).prerotate(rotate), alpha=False)
                     img_bytes = pix.tobytes("png")
-                    rect = fitz.Rect(x + offset_x, y + offset_y, x + offset_x + render_width, y + offset_y + render_height)
+                    rect = fitz.Rect(cell_x + offset_x, cell_y + offset_y, cell_x + offset_x + render_width, cell_y + offset_y + render_height)
                     new_page.insert_image(rect, stream=img_bytes)
                 else:
                     # Tryb "stretch" lub "dimensions" - rozciągnij do komórki
@@ -7510,19 +7524,65 @@ class SelectablePDFViewer:
                     # Renderuj bitmapę w bardzo wysokiej rozdzielczości, z ewentualnym obrotem
                     pix = src_page.get_pixmap(matrix=fitz.Matrix(scale_x, scale_y).prerotate(rotate), alpha=False)
                     img_bytes = pix.tobytes("png")
-                    rect = fitz.Rect(x, y, x + cell_width, y + cell_height)
+                    rect = fitz.Rect(cell_x, cell_y, cell_x + cell_width, cell_y + cell_height)
                     new_page.insert_image(rect, stream=img_bytes)
-                self.update_progressbar(idx + 1)
 
-            # Odświeżenie GUI
+            # Przypadek specjalny: jeśli 1 strona, powiel ją na wszystkich komórkach jednego arkusza
+            if num_pages == 1:
+                if output_mode == "new_file":
+                    # Utwórz nowy dokument dla zapisu do pliku
+                    result_doc = fitz.open()
+                else:
+                    # Dla append używamy bieżącego dokumentu
+                    self._save_state_to_undo()
+                    result_doc = self.pdf_document
+                
+                new_page = result_doc.new_page(width=sheet_width_pt, height=sheet_height_pt)
+                self.show_progressbar(maximum=total_cells)
+                self._update_status("Scalanie stron w siatkę...")
+                
+                for idx in range(total_cells):
+                    row = idx // cols
+                    col = idx % cols
+                    x = margin_left_pt + col * (cell_width + spacing_x_pt)
+                    y = margin_top_pt + row * (cell_height + spacing_y_pt)
+                    render_page_to_cell(new_page, selected_indices[0], x, y)
+                    self.update_progressbar(idx + 1)
+                
+                num_sheets = 1
+            else:
+                # Wiele stron - podziel na arkusze
+                num_sheets = (num_pages + total_cells - 1) // total_cells  # Zaokrąglenie w górę
+                
+                if output_mode == "new_file":
+                    # Utwórz nowy dokument dla zapisu do pliku
+                    result_doc = fitz.open()
+                else:
+                    # Dla append używamy bieżącego dokumentu
+                    self._save_state_to_undo()
+                    result_doc = self.pdf_document
+                
+                self.show_progressbar(maximum=num_pages)
+                self._update_status(f"Scalanie {num_pages} stron na {num_sheets} arkusz(y)...")
+                
+                page_idx = 0
+                for sheet_num in range(num_sheets):
+                    new_page = result_doc.new_page(width=sheet_width_pt, height=sheet_height_pt)
+                    
+                    for cell_idx in range(total_cells):
+                        if page_idx >= num_pages:
+                            break  # Skończono wszystkie strony
+                        
+                        row = cell_idx // cols
+                        col = cell_idx % cols
+                        x = margin_left_pt + col * (cell_width + spacing_x_pt)
+                        y = margin_top_pt + row * (cell_height + spacing_y_pt)
+                        
+                        render_page_to_cell(new_page, selected_indices[page_idx], x, y)
+                        page_idx += 1
+                        self.update_progressbar(page_idx)
+
             self.hide_progressbar()
-            self.tk_images.clear()
-            for widget in list(self.scrollable_frame.winfo_children()):
-                widget.destroy()
-            self.thumb_frames.clear()
-            self._reconfigure_grid()
-            self.update_tool_button_states()
-            self.update_focus_display()
             
             # Informacja o użytym trybie skalowania
             mode_text = {
@@ -7531,9 +7591,49 @@ class SelectablePDFViewer:
                 "dimensions": f"wymiary {page_width_mm}×{page_height_mm}mm"
             }.get(scaling_mode, "rozciąganie")
             
-            self._update_status(
-                f"Scalono {num_pages} stron w siatkę {rows}x{cols} na nowym arkuszu {params['format_name']} (tryb: {mode_text}, {TARGET_DPI}dpi). Odświeżanie miniatur..."
-            )
+            # Obsługa wyniku w zależności od trybu
+            if output_mode == "new_file":
+                # Zapisz do nowego pliku
+                default_save_path = self.prefs_manager.get('default_save_path', '')
+                if default_save_path:
+                    initialdir = default_save_path
+                else:
+                    initialdir = self.prefs_manager.get('last_save_path', '')
+                
+                filepath = filedialog.asksaveasfilename(
+                    defaultextension=".pdf",
+                    filetypes=[("Pliki PDF", "*.pdf")],
+                    title="Zapisz scalony PDF",
+                    initialdir=initialdir if initialdir else None
+                )
+                
+                if filepath:
+                    result_doc.save(filepath)
+                    result_doc.close()
+                    
+                    if not default_save_path:
+                        self.prefs_manager.set('last_save_path', os.path.dirname(filepath))
+                    
+                    self._update_status(
+                        f"Scalono {num_pages} stron w siatkę {rows}x{cols} na {num_sheets} arkusz(y) (tryb: {mode_text}, {TARGET_DPI}dpi). Zapisano do: {filepath}"
+                    )
+                else:
+                    result_doc.close()
+                    self._update_status("Anulowano zapisywanie.")
+            else:
+                # Dodano do bieżącego dokumentu - odśwież GUI
+                self.tk_images.clear()
+                for widget in list(self.scrollable_frame.winfo_children()):
+                    widget.destroy()
+                self.thumb_frames.clear()
+                self._reconfigure_grid()
+                self.update_tool_button_states()
+                self.update_focus_display()
+                
+                self._update_status(
+                    f"Scalono {num_pages} stron w siatkę {rows}x{cols} na {num_sheets} arkusz(y) (tryb: {mode_text}, {TARGET_DPI}dpi). Dodano {num_sheets} nowych stron. Odświeżanie miniatur..."
+                )
+                
         except Exception as e:
             self.hide_progressbar()
             self._update_status(f"BŁĄD: Nie udało się scalić stron: {e}")
