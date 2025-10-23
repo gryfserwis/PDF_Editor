@@ -37,7 +37,7 @@ FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
  
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
-PROGRAM_VERSION = "5.6.0"
+PROGRAM_VERSION = "5.7.0"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
 # === STAŁE DLA A4 [w punktach PDF i mm] ===
