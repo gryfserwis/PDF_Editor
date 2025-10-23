@@ -242,6 +242,8 @@ class PreferencesManager:
             'PageCropResizeDialog.position_mode': 'center',
             'PageCropResizeDialog.offset_x': '0',
             'PageCropResizeDialog.offset_y': '0',
+            'PageCropResizeDialog.scale_mode': 'noscale',
+            'PageCropResizeDialog.scale_value': '100',
             
             # PageNumberingDialog
             'PageNumberingDialog.margin_left': '35',
@@ -596,6 +598,8 @@ class PageCropResizeDialog(tk.Toplevel):
         'position_mode': 'center',
         'offset_x': '0',
         'offset_y': '0',
+        'scale_mode': 'noscale',
+        'scale_value': '100',
     }
 
     def __init__(self, parent, prefs_manager=None):
@@ -622,11 +626,16 @@ class PageCropResizeDialog(tk.Toplevel):
         self.position_mode = tk.StringVar(value=self._get_pref('position_mode'))
         self.offset_x = tk.StringVar(value=self._get_pref('offset_x'))
         self.offset_y = tk.StringVar(value=self._get_pref('offset_y'))
+        
+        # Nowe zmienne dla skalowania obrazu
+        self.scale_mode = tk.StringVar(value=self._get_pref('scale_mode'))
+        self.scale_value = tk.StringVar(value=self._get_pref('scale_value'))
 
         # Walidatory dla marginesów, rozmiarów i położenia
         self.vcmd_margin = (self.register(lambda v: validate_float_range(v, 0, 200)), "%P")
         self.vcmd_size = (self.register(lambda v: validate_float_range(v, 1, 4000)), "%P")
         self.vcmd_offset = (self.register(lambda v: validate_float_range(v, 0, 500)), "%P")
+        self.vcmd_scale = (self.register(lambda v: validate_float_range(v, 1, 500)), "%P")
 
         self.build_ui()
         self.update_field_states()
@@ -663,6 +672,8 @@ class PageCropResizeDialog(tk.Toplevel):
             self.prefs_manager.set('PageCropResizeDialog.position_mode', self.position_mode.get())
             self.prefs_manager.set('PageCropResizeDialog.offset_x', self.offset_x.get())
             self.prefs_manager.set('PageCropResizeDialog.offset_y', self.offset_y.get())
+            self.prefs_manager.set('PageCropResizeDialog.scale_mode', self.scale_mode.get())
+            self.prefs_manager.set('PageCropResizeDialog.scale_value', self.scale_value.get())
     
     def restore_defaults(self):
         """Przywraca wartości domyślne"""
@@ -678,6 +689,8 @@ class PageCropResizeDialog(tk.Toplevel):
         self.position_mode.set(self.DEFAULTS['position_mode'])
         self.offset_x.set(self.DEFAULTS['offset_x'])
         self.offset_y.set(self.DEFAULTS['offset_y'])
+        self.scale_mode.set(self.DEFAULTS['scale_mode'])
+        self.scale_value.set(self.DEFAULTS['scale_value'])
         self.update_field_states()
 
         self.wait_window(self)
@@ -779,6 +792,29 @@ class PageCropResizeDialog(tk.Toplevel):
         ttk.Label(self.offset_frame, text="Zakres: 0–500 mm", foreground="gray").grid(row=1, column=0, columnspan=4, sticky="w", pady=(0,0))
         self.offset_entries = [self.e_offset_x, self.e_offset_y]
 
+        # --- IMAGE SCALING SECTION ---
+        scale_frame = ttk.LabelFrame(self, text="Skalowanie obrazu")
+        scale_frame.pack(fill="x", padx=12, pady=(8, 0))
+        
+        scale_modes = [
+            ("Nie skaluj obrazu", "noscale"),
+            ("Skaluj obraz bez zmiany rozmiaru arkusza", "scale_only")
+        ]
+        self.scale_radiobuttons = []
+        for txt, val in scale_modes:
+            rb = ttk.Radiobutton(scale_frame, text=txt, variable=self.scale_mode, value=val, command=self.update_field_states)
+            rb.pack(anchor="w", **pad)
+            self.scale_radiobuttons.append(rb)
+        
+        # Scale value input
+        scale_value_frame = ttk.Frame(scale_frame)
+        scale_value_frame.pack(fill="x", padx=18, pady=(0, 0))
+        ttk.Label(scale_value_frame, text="Wartość skali [%]:").grid(row=0, column=0, sticky="w", padx=(0,6), pady=pady_row1)
+        self.e_scale_value = ttk.Entry(scale_value_frame, textvariable=self.scale_value, width=8, validate="key", validatecommand=self.vcmd_scale)
+        self.e_scale_value.grid(row=0, column=1, sticky="w", padx=(0,0), pady=pady_row1)
+        ttk.Label(scale_value_frame, text="Zakres: 1–500%", foreground="gray").grid(row=1, column=0, columnspan=2, sticky="w", pady=(0,0))
+        self.scale_entries = [self.e_scale_value]
+
         # --- BUTTONS ---
         button_frame = ttk.Frame(self)
         button_frame.pack(fill="x", padx=12, pady=(12,10))
@@ -789,24 +825,32 @@ class PageCropResizeDialog(tk.Toplevel):
     def update_field_states(self):
         crop_selected = self.crop_mode.get() != "nocrop"
         resize_selected = self.resize_mode.get() != "noresize"
+        scale_selected = self.scale_mode.get() == "scale_only"
 
+        # Disable resize radiobuttons if crop or scale is selected
         for rb in self.resize_radiobuttons:
-            rb["state"] = tk.DISABLED if crop_selected else tk.NORMAL
+            rb["state"] = tk.DISABLED if (crop_selected or scale_selected) else tk.NORMAL
+        
+        # Disable crop radiobuttons if resize or scale is selected
         for rb in self.crop_radiobuttons:
-            rb["state"] = tk.DISABLED if resize_selected else tk.NORMAL
+            rb["state"] = tk.DISABLED if (resize_selected or scale_selected) else tk.NORMAL
+        
+        # Disable scale radiobuttons if crop or resize is selected
+        for rb in self.scale_radiobuttons:
+            rb["state"] = tk.DISABLED if (crop_selected or resize_selected) else tk.NORMAL
 
-        enable_crop = self.crop_mode.get() != "nocrop" and not resize_selected
+        enable_crop = self.crop_mode.get() != "nocrop" and not resize_selected and not scale_selected
         for entry in self.margin_entries:
             entry["state"] = tk.NORMAL if enable_crop else tk.DISABLED
 
-        enable_format = self.resize_mode.get() != "noresize" and not crop_selected
+        enable_format = self.resize_mode.get() != "noresize" and not crop_selected and not scale_selected
         self.format_combo["state"] = "readonly" if enable_format else tk.DISABLED
         enable_custom = enable_format and self.target_format.get() == "Niestandardowy"
         for entry in self.custom_entries:
             entry["state"] = tk.NORMAL if enable_custom else tk.DISABLED
 
         enable_position = (
-            (self.resize_mode.get() == "resize_noscale" and not crop_selected)
+            (self.resize_mode.get() == "resize_noscale" and not crop_selected and not scale_selected)
         )
         state_radio = tk.NORMAL if enable_position else tk.DISABLED
         for rb in self.position_radiobuttons:
@@ -815,6 +859,11 @@ class PageCropResizeDialog(tk.Toplevel):
         enable_offsets = enable_position and self.position_mode.get() == "custom"
         for entry in self.offset_entries:
             entry["state"] = tk.NORMAL if enable_offsets else tk.DISABLED
+        
+        # Enable scale value entry only if scale_only is selected
+        enable_scale_value = scale_selected and not crop_selected and not resize_selected
+        for entry in self.scale_entries:
+            entry["state"] = tk.NORMAL if enable_scale_value else tk.DISABLED
 
     def center_dialog(self, parent):
         self.update_idletasks()
@@ -832,6 +881,7 @@ class PageCropResizeDialog(tk.Toplevel):
         try:
             crop_mode = self.crop_mode.get()
             resize_mode = self.resize_mode.get()
+            scale_mode = self.scale_mode.get()
 
             # Marginesy
             if crop_mode == "nocrop":
@@ -862,7 +912,7 @@ class PageCropResizeDialog(tk.Toplevel):
 
             # Pozycjonowanie
             enable_position = (
-                (self.resize_mode.get() == "resize_noscale" and not (self.crop_mode.get() != "nocrop"))
+                (self.resize_mode.get() == "resize_noscale" and not (self.crop_mode.get() != "nocrop") and not (scale_mode == "scale_only"))
             )
             if enable_position:
                 position_mode = self.position_mode.get()
@@ -875,6 +925,13 @@ class PageCropResizeDialog(tk.Toplevel):
             else:
                 position_mode = None
                 offset_x = offset_y = None
+            
+            # Skalowanie obrazu
+            scale_value = None
+            if scale_mode == "scale_only":
+                scale_value = float(self.scale_value.get().replace(",", "."))
+                if scale_value < 1 or scale_value > 500:
+                    raise ValueError("Wartość skali musi być z zakresu 1–500%.")
 
             self.result = {
                 "crop_mode": crop_mode,
@@ -889,6 +946,8 @@ class PageCropResizeDialog(tk.Toplevel):
                 "position_mode": position_mode if enable_position else None,
                 "offset_x_mm": offset_x if enable_position else None,
                 "offset_y_mm": offset_y if enable_position else None,
+                "scale_mode": scale_mode,
+                "scale_value": scale_value,
             }
             # Zapisz preferencje przed zamknięciem
             self._save_prefs()
@@ -3810,6 +3869,56 @@ class SelectablePDFViewer:
         out.seek(0)
         return out.read()
 
+    def _scale_only(self, pdf_bytes, selected_indices, scale_percent):
+        """
+        Skaluje zawartość strony bez zmiany rozmiaru arkusza (mediabox/cropbox pozostają bez zmian).
+        
+        Args:
+            pdf_bytes: Bajty dokumentu PDF
+            selected_indices: Lista indeksów stron do skalowania
+            scale_percent: Wartość skali w procentach (np. 100 = 100%)
+        
+        Returns:
+            Bajty przetworzonego dokumentu PDF
+        """
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        writer = PdfWriter()
+        scale_factor = scale_percent / 100.0
+        total_pages = len(reader.pages)
+        
+        self._update_status(f"Skalowanie obrazu do {scale_percent}%...")
+        self.show_progressbar(maximum=total_pages)
+        
+        for i, page in enumerate(reader.pages):
+            if i not in selected_indices:
+                writer.add_page(page)
+                self.update_progressbar(i + 1)
+                continue
+            
+            # Pobierz oryginalne wymiary strony
+            orig_w = float(page.mediabox.width)
+            orig_h = float(page.mediabox.height)
+            
+            # Oblicz przesunięcie, aby wyśrodkować skalowaną zawartość
+            # Po skalowaniu zawartość będzie miała rozmiar (orig_w * scale_factor, orig_h * scale_factor)
+            # Musimy ją wyśrodkować w oryginalnym mediabox
+            dx = (orig_w - orig_w * scale_factor) / 2
+            dy = (orig_h - orig_h * scale_factor) / 2
+            
+            # Zastosuj transformację: najpierw skaluj, potem przesuń do środka
+            transform = Transformation().scale(sx=scale_factor, sy=scale_factor).translate(tx=dx, ty=dy)
+            page.add_transformation(transform)
+            
+            # Nie zmieniamy mediabox ani cropbox - pozostawiamy oryginalne wymiary
+            writer.add_page(page)
+            self.update_progressbar(i + 1)
+        
+        self.hide_progressbar()
+        out = io.BytesIO()
+        writer.write(out)
+        out.seek(0)
+        return out.read()
+
     def apply_page_crop_resize_dialog(self):
         """
         Wywołaj ten kod np. w obsłudze przycisku „Kadruj/Zmień rozmiar”.
@@ -3832,6 +3941,7 @@ class SelectablePDFViewer:
 
         crop_mode = result["crop_mode"]
         resize_mode = result["resize_mode"]
+        scale_mode = result.get("scale_mode", "noscale")
 
         try:
             if crop_mode == "crop_only" and resize_mode == "noresize":
@@ -3864,6 +3974,11 @@ class SelectablePDFViewer:
                     offset_y_mm=result.get("offset_y_mm") or 0,
                 )
                 msg = "Zmieniono rozmiar strony (bez skalowania zawartości)."
+            elif scale_mode == "scale_only":
+                # Nowa funkcjonalność: skalowanie obrazu bez zmiany rozmiaru arkusza
+                scale_value = result.get("scale_value", 100)
+                new_pdf_bytes = self._scale_only(pdf_bytes_val, indices, scale_value)
+                msg = f"Skalowano obraz do {scale_value}% bez zmiany rozmiaru arkusza."
             else:
                 self._update_status("Nie wybrano żadnej operacji do wykonania.")
                 return
