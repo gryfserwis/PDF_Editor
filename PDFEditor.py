@@ -7668,15 +7668,12 @@ class SelectablePDFViewer:
             for page in reader.pages:
                 writer.add_page(page)
             
-            # Ustaw hasło właściciela i zablokuj drukowanie
-            # Wszystkie uprawnienia OPRÓCZ drukowania (bit 3)
-            from pypdf.constants import UserAccessPermissions
-            permissions_no_print = UserAccessPermissions.all() & ~UserAccessPermissions.PRINT
-            
+            # Ustaw hasło właściciela i zablokuj WSZYSTKO oprócz czytania
+            # Zablokuj wszystkie uprawnienia oprócz czytania (permissions_flag=0)
             writer.encrypt(
                 user_password="",  # Brak hasła użytkownika - można otworzyć bez hasła
                 owner_password="bK@92!fJ#Lp*Xz7$wQv%Tg^Rm&nH_Us+oIq=Zl[Wj]Eo{Aq};:Vx,Pb.<D>y|cS/0t1u2v3w4x5y6z7a8b9C0D1E2F3G4H5I6J7K8L9M0N1O2P3Q4R5S6T7U8V9W0X1Y2Z3AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz",  # Hasło właściciela
-                permissions_flag=permissions_no_print  # Wszystkie uprawnienia oprócz drukowania
+                permissions_flag=0  # Tylko czytanie
             )
             
             with open(filepath, "wb") as output_file:
