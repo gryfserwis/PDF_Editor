@@ -16,6 +16,9 @@ from pypdf.generic import RectangleObject, FloatObject, ArrayObject
 # wystarczyłoby, jeśli pypdf je konwertuje. Zostawiam dla pełnej kompatybilności.
 from pypdf.generic import NameObject # Dodaj import dla NameObject
 import json
+# pdf2image dla generowania miniatur PDF
+# Wymaga Poppler - patrz requirements.txt dla instrukcji instalacji
+from pdf2image import convert_from_bytes
 
 # Definicja BASE_DIR i inne stałe
 if getattr(sys, 'frozen', False):
@@ -5202,6 +5205,7 @@ class SelectablePDFViewer:
         self._init_macro_system()
 
         self.pdf_document = None
+        self.pdf_password = None  # Store password for pdf2image thumbnail generation
         self.selected_pages: Set[int] = set()
         # Multi-width thumbnail cache: {page_index: {width: ImageTk.PhotoImage}}
         self.tk_images: Dict[int, Dict[int, ImageTk.PhotoImage]] = {}
@@ -6141,6 +6145,11 @@ class SelectablePDFViewer:
                     )
                     self._update_status("BŁĄD: Nieprawidłowe hasło do pliku PDF.")
                     return
+                # Store password for pdf2image thumbnail generation
+                self.pdf_password = password
+            else:
+                # No password needed
+                self.pdf_password = None
                 
             
             # Krok 4: czyszczenie i GUI
@@ -7852,16 +7861,30 @@ class SelectablePDFViewer:
 
     
     def _render_and_scale(self, page_index, column_width):
+        """
+        Generuje miniaturę pojedynczej strony PDF używając pdf2image.
+        
+        Args:
+            page_index: Indeks strony (0-based)
+            column_width: Docelowa szerokość miniatury w pikselach
+            
+        Returns:
+            ImageTk.PhotoImage: Miniatura gotowa do wyświetlenia w Tkinter
+        """
         # Diagnostyka cache miniaturek
         if page_index in self.tk_images and column_width in self.tk_images[page_index]:
             print(f"[CACHE] Używam cache dla strony {page_index}, szerokość {column_width}")
             return self.tk_images[page_index][column_width]
 
         print(f"[RENDER] Generuję miniaturę dla strony {page_index}, szerokość {column_width}")
+        
+        # Pobierz wymiary strony z PyMuPDF (do obliczenia proporcji)
         page = self.pdf_document.load_page(page_index)
         page_width = page.rect.width
         page_height = page.rect.height
         aspect_ratio = page_height / page_width if page_width != 0 else 1
+        
+        # Oblicz docelowe wymiary miniatury
         final_thumb_width = column_width
         final_thumb_height = int(final_thumb_width * aspect_ratio)
         if final_thumb_width <= 0:
@@ -7871,27 +7894,57 @@ class SelectablePDFViewer:
 
         print(f"final_thumb_width={final_thumb_width}, final_thumb_height={final_thumb_height}")
 
-        mat = fitz.Matrix(self.render_dpi_factor, self.render_dpi_factor)
-        pix = page.get_pixmap(matrix=mat, alpha=False)
-
-        img_data = pix.tobytes("ppm")
-        image = Image.open(io.BytesIO(img_data))
-
-        print(f"Image.size (oryginalny render): {image.size}")
-
-        resized_image = image.resize((final_thumb_width, final_thumb_height), Image.BILINEAR)
-        print(f"Resized image size: {resized_image.size}")
-
-        img_tk = ImageTk.PhotoImage(resized_image)
+        # Konwertuj dokument PDF do bytes (dla pdf2image)
+        pdf_bytes = self.pdf_document.tobytes()
         
-        # Cache the thumbnail for this width
-        if page_index not in self.tk_images:
-            self.tk_images[page_index] = {}
-        self.tk_images[page_index][column_width] = img_tk
+        # Użyj pdf2image do wygenerowania miniatury pojedynczej strony
+        # first_page i last_page są 1-based w pdf2image
+        try:
+            images = convert_from_bytes(
+                pdf_bytes,
+                first_page=page_index + 1,  # pdf2image używa numeracji 1-based
+                last_page=page_index + 1,
+                dpi=72,  # Bazowe DPI dla miniatury (zostanie przeskalowane)
+                fmt='png',
+                userpw=self.pdf_password  # Przekaż hasło jeśli dokument zaszyfrowany
+            )
+            
+            if not images:
+                raise Exception("pdf2image nie zwróciło żadnego obrazu")
+            
+            # Pierwszy (i jedyny) obraz z listy
+            image = images[0]
+            
+            print(f"Image.size (pdf2image render): {image.size}")
 
-        print(f"[CACHE UPDATE] Dodano do cache: strona {page_index}, szerokość {column_width}")
+            # Skaluj do docelowego rozmiaru używając Pillow
+            resized_image = image.resize((final_thumb_width, final_thumb_height), Image.BILINEAR)
+            print(f"Resized image size: {resized_image.size}")
 
-        return img_tk
+            # Konwertuj na ImageTk.PhotoImage dla Tkinter
+            img_tk = ImageTk.PhotoImage(resized_image)
+            
+            # Cache the thumbnail for this width
+            if page_index not in self.tk_images:
+                self.tk_images[page_index] = {}
+            self.tk_images[page_index][column_width] = img_tk
+
+            print(f"[CACHE UPDATE] Dodano do cache: strona {page_index}, szerokość {column_width}")
+
+            return img_tk
+            
+        except Exception as e:
+            print(f"[ERROR] Błąd podczas generowania miniatury dla strony {page_index}: {e}")
+            # Fallback: stwórz pusty placeholder image
+            placeholder = Image.new('RGB', (final_thumb_width, final_thumb_height), color='lightgray')
+            img_tk = ImageTk.PhotoImage(placeholder)
+            
+            # Cache the placeholder
+            if page_index not in self.tk_images:
+                self.tk_images[page_index] = {}
+            self.tk_images[page_index][column_width] = img_tk
+            
+            return img_tk
 
     def _clear_thumbnail_cache(self, page_index):
         """
