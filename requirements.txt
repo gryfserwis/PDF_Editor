@@ -1,0 +1,22 @@
+# GRYF PDF Editor - Wymagane biblioteki / Required libraries
+
+# PDF handling
+PyMuPDF>=1.23.0
+pypdf>=3.0.0
+
+# Image processing
+Pillow>=10.0.0
+
+# PDF thumbnail generation
+# UWAGA: pdf2image wymaga zainstalowanego Poppler!
+# Windows: Pobierz Poppler z https://github.com/oschwartz10612/poppler-windows/releases
+#          i dodaj bin/ do PATH systemowego
+# Linux: sudo apt-get install poppler-utils
+# macOS: brew install poppler
+pdf2image>=1.16.0
+
+# GUI
+tkinterdnd2>=0.3.0
+
+# PDF reporting (optional)
+reportlab>=4.0.0
