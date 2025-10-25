@@ -2375,6 +2375,7 @@ class PagePreviewPopup(tk.Toplevel):
     
     def __init__(self, parent, pdf_document, page_index, viewer_app=None):
         super().__init__(parent)
+        self.overrideredirect(True)  # Usuń ramkę i belkę tytulową
         self.pdf_document = pdf_document
         self.page_index = page_index
         self.photo_image = None
@@ -2401,14 +2402,17 @@ class PagePreviewPopup(tk.Toplevel):
         
         # Show window after positioning
         self.deiconify()
-        
+
+        # Ustaw modalność (blokuj dostęp do okna głównego)
+        self.grab_set()
+
         # Set focus to the popup
         self.focus_set()
-        
+
         # Bind close events
         self.protocol("WM_DELETE_WINDOW", self._cleanup_and_close)
         self.bind("<Escape>", lambda e: self._cleanup_and_close())
-        
+
         # Make window non-resizable
         self.resizable(False, False)
         
@@ -2450,16 +2454,14 @@ class PagePreviewPopup(tk.Toplevel):
         # Image label
         image_label = tk.Label(image_frame, image=self.photo_image, bg="white")
         image_label.pack()
-        
-        # Bind click on background (outside image) to close
-        # Only close if clicking directly on the window background, not on child widgets
-        def on_background_click(event):
-            # Only close if the click target is the background (self or main_frame)
-            if event.widget in (self, main_frame):
-                self._cleanup_and_close()
-        
-        main_frame.bind("<Button-1>", on_background_click)
-        self.bind("<Button-1>", on_background_click)
+
+        # Zamknij popup po kliknięciu w obrazek lub tło
+        def on_any_click(event):
+            self._cleanup_and_close()
+
+        image_label.bind("<Button-1>", on_any_click)
+        main_frame.bind("<Button-1>", on_any_click)
+        self.bind("<Button-1>", on_any_click)
         
     def _center_window(self, parent):
         """Center the window relative to parent"""
@@ -2568,6 +2570,7 @@ class ThumbnailFrame(tk.Frame):
             page_index,
             self.viewer_app
         )
+        return "break"  # Prevent event propagation to single-click handler
 
     def _handle_ppm_click(self, event, page_index):
         self.viewer_app.active_page_index = page_index
