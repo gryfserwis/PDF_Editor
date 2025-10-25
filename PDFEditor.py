@@ -7842,6 +7842,13 @@ class SelectablePDFViewer:
             self.canvas.config(scrollregion=self.canvas.bbox("all"))
             return
 
+        # Save current scroll position (fractional, 0.0-1.0)
+        try:
+            yview = self.canvas.yview()
+            saved_scroll = yview[0] if yview else 0.0
+        except Exception:
+            saved_scroll = 0.0
+
         self.master.update_idletasks()
         actual_canvas_width = self.canvas.winfo_width()
         scrollbar_safety = 25  
@@ -7859,31 +7866,31 @@ class SelectablePDFViewer:
 
         # Clean up non-thumbnail widgets
         for widget in list(self.scrollable_frame.grid_slaves()):
-             if not isinstance(widget, ThumbnailFrame):
-                 widget.destroy()
+            if not isinstance(widget, ThumbnailFrame):
+                widget.destroy()
 
         # Configure grid columns
         for col in range(self.max_cols):  
-             if col < num_cols:
-                 self.scrollable_frame.grid_columnconfigure(col, weight=0, minsize=column_width)
-             else:
-                 self.scrollable_frame.grid_columnconfigure(col, weight=0, minsize=0)
+            if col < num_cols:
+                self.scrollable_frame.grid_columnconfigure(col, weight=0, minsize=column_width)
+            else:
+                self.scrollable_frame.grid_columnconfigure(col, weight=0, minsize=0)
 
         # Create or update widgets
         if not self.thumb_frames:
-             self._create_widgets(num_cols, column_width)
+            self._create_widgets(num_cols, column_width)
         else:
-             self._update_widgets(num_cols, column_width)
+            self._update_widgets(num_cols, column_width)
 
         self.scrollable_frame.update_idletasks()  
         bbox = self.canvas.bbox("all")
         if bbox is not None:
-              self.canvas.config(scrollregion=(bbox[0], 0, bbox[2], bbox[3]))
-              self.canvas.yview_moveto(0.0)  
-              self.canvas.coords(self.canvas_window_id, 0, 0)
-              self.canvas.yview_moveto(0.0)
+            self.canvas.config(scrollregion=(bbox[0], 0, bbox[2], bbox[3]))
+            self.canvas.coords(self.canvas_window_id, 0, 0)
+            # Restore previous scroll position
+            self.canvas.yview_moveto(saved_scroll)
         else:
-              self.canvas.config(scrollregion=(0, 0, actual_canvas_width, 10))
+            self.canvas.config(scrollregion=(0, 0, actual_canvas_width, 10))
 
 
     def _get_page_size_label(self, page_index):
