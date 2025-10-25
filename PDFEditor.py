@@ -2411,7 +2411,6 @@ class PagePreviewPopup(tk.Toplevel):
 
         # Bind close events
         self.protocol("WM_DELETE_WINDOW", self._cleanup_and_close)
-        self.bind("<Escape>", lambda e: self._cleanup_and_close())
 
         # Make window non-resizable
         self.resizable(False, False)
@@ -2455,13 +2454,14 @@ class PagePreviewPopup(tk.Toplevel):
         image_label = tk.Label(image_frame, image=self.photo_image, bg="white")
         image_label.pack()
 
-        # Zamknij popup po kliknięciu w obrazek lub tło
+        # Zamknij popup po kliknięciu dowolnym przyciskiem myszy w obrazek lub tło
         def on_any_click(event):
             self._cleanup_and_close()
 
-        image_label.bind("<Button-1>", on_any_click)
-        main_frame.bind("<Button-1>", on_any_click)
-        self.bind("<Button-1>", on_any_click)
+        for btn in ("<Button-1>", "<Button-2>", "<Button-3>"):
+            image_label.bind(btn, on_any_click)
+            main_frame.bind(btn, on_any_click)
+            self.bind(btn, on_any_click)
         
     def _center_window(self, parent):
         """Center the window relative to parent"""
@@ -2541,13 +2541,11 @@ class ThumbnailFrame(tk.Frame):
         tk.Label(parent_frame, text=format_label, fg="gray", bg=self.bg_normal, font=("Helvetica", 9)).pack(pady=(0, 5))
 
         self._bind_all_children("<Button-1>", lambda event, idx=self.page_index: self.viewer_app._handle_lpm_click(idx, event))
-        
-        # Double-click handler - needs to stop propagation to prevent selection changes
-        def double_click_handler(event, idx):
+        # Handler środkowego przycisku myszy (Mouse-3) do otwierania popupu
+        def mouse3_handler(event, idx):
             self._handle_double_click(idx)
             return "break"
-        
-        self._bind_all_children("<Double-Button-1>", lambda event, idx=self.page_index: double_click_handler(event, idx))
+        self._bind_all_children("<Button-2>", lambda event, idx=self.page_index: mouse3_handler(event, idx) or "break")
 
         self._bind_all_children("<Button-3>", lambda event, idx=self.page_index: self._handle_ppm_click(event, idx))
        # parent_frame.bind("<Enter>", lambda event, idx=self.page_index: self.viewer_app._focus_by_mouse(idx))
