@@ -4720,11 +4720,13 @@ class SelectablePDFViewer:
             
             # Optymalizacja: odśwież tylko zmienione miniatury (nie zmienia się liczba stron)
             self.show_progressbar(maximum=len(indices))
-            for i, page_index in enumerate(indices):
-                self._update_status("Operacja zakończona. Odświeżanie miniatur...")
-                self.update_single_thumbnail(page_index)
-                self.update_progressbar(i + 1)
-            self.hide_progressbar()
+            try:
+                for i, page_index in enumerate(indices):
+                    self._update_status("Operacja zakończona. Odświeżanie miniatur...")
+                    self.update_single_thumbnail(page_index)
+                    self.update_progressbar(i + 1)
+            finally:
+                self.hide_progressbar()
             
             if hasattr(self, "update_selection_display"):
                 self.update_selection_display()
@@ -4735,6 +4737,7 @@ class SelectablePDFViewer:
             self._record_action('apply_page_crop_resize', **result)
 
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"Błąd podczas przetwarzania PDF: {e}")
             import traceback; traceback.print_exc()
                 
@@ -4903,12 +4906,14 @@ class SelectablePDFViewer:
             
             # Optymalizacja: odśwież tylko zmienione miniatury
             self.show_progressbar(maximum=len(selected_indices))
-            for i, page_index in enumerate(selected_indices):
-                self._update_status(f"Numeracja wstawiona na {len(selected_indices)} stronach. Odświeżanie miniatur...")
-               
-                self.update_single_thumbnail(page_index)
-                self.update_progressbar(i + 1)
-            self.hide_progressbar()
+            try:
+                for i, page_index in enumerate(selected_indices):
+                    self._update_status(f"Numeracja wstawiona na {len(selected_indices)} stronach. Odświeżanie miniatur...")
+                   
+                    self.update_single_thumbnail(page_index)
+                    self.update_progressbar(i + 1)
+            finally:
+                self.hide_progressbar()
             
             self._update_status(f"Numeracja wstawiona na {len(selected_indices)} stronach.")
             self._record_action('insert_page_numbers', 
@@ -5018,12 +5023,14 @@ class SelectablePDFViewer:
           #      self._save_state_to_undo()
                 # Optymalizacja: odśwież tylko zmienione miniatury
                 self.show_progressbar(maximum=len(pages_to_process))
-                for i, page_index in enumerate(pages_to_process):
-                    self._update_status(f"Usunięto numery stron na {modified_count} stronach, używając marginesów: G={top_mm:.1f}mm, D={bottom_mm:.1f}mm. Odświeżanie miniatur...")
+                try:
+                    for i, page_index in enumerate(pages_to_process):
+                        self._update_status(f"Usunięto numery stron na {modified_count} stronach, używając marginesów: G={top_mm:.1f}mm, D={bottom_mm:.1f}mm. Odświeżanie miniatur...")
 
-                    self.update_single_thumbnail(page_index)
-                    self.update_progressbar(i + 1)
-                self.hide_progressbar()
+                        self.update_single_thumbnail(page_index)
+                        self.update_progressbar(i + 1)
+                finally:
+                    self.hide_progressbar()
                 
                 self._update_status(f"Usunięto numery stron na {modified_count} stronach, używając marginesów: G={top_mm:.1f}mm, D={bottom_mm:.1f}mm.")
                 self._record_action('remove_page_numbers', top_mm=top_mm, bottom_mm=bottom_mm)
@@ -5252,11 +5259,13 @@ class SelectablePDFViewer:
             
             # Optymalizacja: odśwież tylko zmienione miniatury (nie zmienia się liczba stron)
             self.show_progressbar(maximum=len(pages_to_shift))
-            for i, page_index in enumerate(pages_to_shift):
-                self._update_status(f"Przesunięto zawartość na {len(pages_to_shift)} stronach o {result['x_mm']} mm (X) i {result['y_mm']} mm (Y). Odświeżanie miniatur...")
-                self.update_single_thumbnail(page_index)
-                self.update_progressbar(i + 1)
-            self.hide_progressbar()
+            try:
+                for i, page_index in enumerate(pages_to_shift):
+                    self._update_status(f"Przesunięto zawartość na {len(pages_to_shift)} stronach o {result['x_mm']} mm (X) i {result['y_mm']} mm (Y). Odświeżanie miniatur...")
+                    self.update_single_thumbnail(page_index)
+                    self.update_progressbar(i + 1)
+            finally:
+                self.hide_progressbar()
             
             self._update_status(f"Przesunięto zawartość na {len(pages_to_shift)} stronach o {result['x_mm']} mm (X) i {result['y_mm']} mm (Y).")
             self._record_action('shift_page_content',
@@ -6883,8 +6892,15 @@ class SelectablePDFViewer:
             self.clipboard = self._get_page_bytes(self.selected_pages)
             self.pages_in_clipboard_count = len(self.selected_pages)
             pages_to_delete = sorted(list(self.selected_pages), reverse=True)
-            for page_index in pages_to_delete:
+            
+            # Show progressbar for delete operation
+            self.show_progressbar(maximum=len(pages_to_delete), mode="determinate")
+            self._update_status("Wycinanie stron...")
+            
+            for idx, page_index in enumerate(pages_to_delete):
                 self.pdf_document.delete_page(page_index)
+                self.update_progressbar(idx + 1)
+            
             deleted_count = len(self.selected_pages)
             self.selected_pages.clear()
             
@@ -6901,8 +6917,10 @@ class SelectablePDFViewer:
             self._reconfigure_grid()
             self.update_tool_button_states()
             self.update_focus_display()
+            self.hide_progressbar()
             self._update_status(f"Wycięto {deleted_count} stron i skopiowano do schowka. Odświeżanie miniatur...")
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"BŁĄD Wycinania: {e}")
             
     def paste_pages_before(self):
@@ -7447,12 +7465,14 @@ class SelectablePDFViewer:
             
             # Optymalizacja: odśwież tylko zmienione miniatury
             self.show_progressbar(maximum=len(pages_to_rotate))
-            for i, page_index in enumerate(pages_to_rotate):
-                self._update_status(f"Obrócono {rotated_count} stron o {angle} stopni. Odświeżanie miniatur...")
-               
-                self.update_single_thumbnail(page_index)
-                self.update_progressbar(i + 1)
-            self.hide_progressbar()
+            try:
+                for i, page_index in enumerate(pages_to_rotate):
+                    self._update_status(f"Obrócono {rotated_count} stron o {angle} stopni. Odświeżanie miniatur...")
+                   
+                    self.update_single_thumbnail(page_index)
+                    self.update_progressbar(i + 1)
+            finally:
+                self.hide_progressbar()
             
             self.update_tool_button_states()
             self.update_focus_display()
@@ -7993,10 +8013,21 @@ class SelectablePDFViewer:
                 self.scrollable_frame.grid_columnconfigure(col, weight=0, minsize=0)
 
         # Create or update widgets
+        # Show overlay for grid rebuild operations when updating existing widgets
+        # (create_widgets already has progressbar which shows overlay)
         if not self.thumb_frames:
             self._create_widgets(num_cols, column_width)
         else:
-            self._update_widgets(num_cols, column_width)
+            # Show overlay when updating widgets without progressbar for smaller grids
+            page_count = len(self.pdf_document)
+            needs_overlay = page_count <= 10  # Small grids that don't show progressbar
+            if needs_overlay:
+                self.show_overlay()
+            try:
+                self._update_widgets(num_cols, column_width)
+            finally:
+                if needs_overlay:
+                    self.hide_overlay()
 
         self.scrollable_frame.update_idletasks()  
         bbox = self.canvas.bbox("all")
@@ -8076,36 +8107,47 @@ class SelectablePDFViewer:
         page_count = len(self.pdf_document)
         frame_bg = "#F5F5F5"
 
-        # Dodaj brakujące ramki miniaturek
-        for i in range(page_count):
-            if i not in self.thumb_frames:
-                page_frame = ThumbnailFrame(
-                    parent=self.scrollable_frame,
-                    viewer_app=self,
-                    page_index=i,
-                    column_width=column_width
-                )
-                self.thumb_frames[i] = page_frame
+        # Show progressbar for large page counts
+        if page_count > 10:
+            self.show_progressbar(maximum=page_count, mode="determinate")
 
-        # Usuń nadmiarowe ramki (jeśli stron jest mniej niż widgetów)
-        to_remove = [idx for idx in self.thumb_frames if idx >= page_count]
-        for idx in to_remove:
-            self.thumb_frames[idx].destroy()
-            del self.thumb_frames[idx]
+        try:
+            # Dodaj brakujące ramki miniaturek
+            for i in range(page_count):
+                if i not in self.thumb_frames:
+                    page_frame = ThumbnailFrame(
+                        parent=self.scrollable_frame,
+                        viewer_app=self,
+                        page_index=i,
+                        column_width=column_width
+                    )
+                    self.thumb_frames[i] = page_frame
 
-        for i in range(page_count):
-            page_frame = self.thumb_frames[i]
-            page_frame.grid(row=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")
-            img_tk = self._render_and_scale(i, column_width)
-            page_frame.img_label.config(image=img_tk)
-            page_frame.img_label.image = img_tk
-            outer_frame_children = page_frame.outer_frame.winfo_children()
-            if len(outer_frame_children) > 2:
-                outer_frame_children[1].config(text=f"Strona {i + 1}", bg=frame_bg)
-                outer_frame_children[2].config(text=self._get_page_size_label(i), bg=frame_bg)
+            # Usuń nadmiarowe ramki (jeśli stron jest mniej niż widgetów)
+            to_remove = [idx for idx in self.thumb_frames if idx >= page_count]
+            for idx in to_remove:
+                self.thumb_frames[idx].destroy()
+                del self.thumb_frames[idx]
 
-        self.update_selection_display()
-        self.update_focus_display()
+            for i in range(page_count):
+                page_frame = self.thumb_frames[i]
+                page_frame.grid(row=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")
+                img_tk = self._render_and_scale(i, column_width)
+                page_frame.img_label.config(image=img_tk)
+                page_frame.img_label.image = img_tk
+                outer_frame_children = page_frame.outer_frame.winfo_children()
+                if len(outer_frame_children) > 2:
+                    outer_frame_children[1].config(text=f"Strona {i + 1}", bg=frame_bg)
+                    outer_frame_children[2].config(text=self._get_page_size_label(i), bg=frame_bg)
+                
+                if page_count > 10:
+                    self.update_progressbar(i + 1)
+
+            self.update_selection_display()
+            self.update_focus_display()
+        finally:
+            if page_count > 10:
+                self.hide_progressbar()
 
     
     def _render_and_scale(self, page_index, column_width):
