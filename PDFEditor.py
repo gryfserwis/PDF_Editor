@@ -4905,12 +4905,14 @@ class SelectablePDFViewer:
     def show_shortcuts_dialog(self):
         shortcuts_left = [
             ("Otwórz PDF", "Ctrl+O"),
+            ("Otwórz obraz jako PDF", "Ctrl+Shift+O"),
             ("Zapisz jako...", "Ctrl+S"),
+            ("Zapisz z restrykcjami drukowania", "Ctrl+Shift+S"),
             ("Zamknij plik", "Ctrl+Q"),
             ("Importuj PDF", "Ctrl+I"),
-            ("Importuj obraz", "Ctrl+Shift+I"),
+            ("Importuj obraz na nową stronę", "Ctrl+Shift+I"),
             ("Eksportuj PDF", "Ctrl+E"),
-            ("Eksportuj obrazy", "Ctrl+Shift+E"),
+            ("Eksportuj strony jako obrazy PNG", "Ctrl+Shift+E"),
             ("Cofnij", "Ctrl+Z"),
             ("Ponów", "Ctrl+Y"),
             ("Wytnij strony", "Ctrl+X"),
@@ -4937,12 +4939,11 @@ class SelectablePDFViewer:
             ("Kadruj/zmień rozmiar", "F8"),
             ("Analiza PDF", "F11"),
             ("Lista makr", "F12"),
-            ("Zoom +", "+"),
-            ("Zoom -", "-"),
             ("Pierwsza strona", "Home"),
             ("Ostatnia strona", "End"),
             ("Poprzednia strona", "PageUp"),
             ("Następna strona", "PageDown"),
+            ("Podgląd strony (popup)", "Środkowy przycisk myszy"),
             ("Nawigacja", "Strzałki, Spacja, Esc"),
         ]
 
@@ -4954,9 +4955,10 @@ class SelectablePDFViewer:
 
         bg = "white"
         grid_color = "#e3e3e3"
+
         screen_height = dialog.winfo_screenheight()
         max_height = int(screen_height * 0.8)
-        width = 631
+        width = 757
 
         outer_frame = tk.Frame(dialog, bg=bg)
         outer_frame.pack(fill="both", expand=True, padx=24, pady=24)
