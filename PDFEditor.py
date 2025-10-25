@@ -2482,13 +2482,21 @@ class PagePreviewPopup(tk.Toplevel):
         # Clear reference in viewer_app to prevent memory leaks
         if self.viewer_app and self.viewer_app.current_preview_popup is self:
             self.viewer_app.current_preview_popup = None
-        
+
         # Clear references to prevent memory leaks
         if self.pix:
             self.pix = None
         if self.photo_image:
             self.photo_image = None
-        
+
+        # Przywróć focus i grab do głównego okna
+        if self.master:
+            try:
+                self.master.focus_set()
+                self.master.grab_set()
+            except Exception:
+                pass
+
         self.destroy()
 
 # ====================================================================
@@ -4958,7 +4966,7 @@ class SelectablePDFViewer:
 
         screen_height = dialog.winfo_screenheight()
         max_height = int(screen_height * 0.8)
-        width = 757
+        width = 758
 
         outer_frame = tk.Frame(dialog, bg=bg)
         outer_frame.pack(fill="both", expand=True, padx=24, pady=24)
