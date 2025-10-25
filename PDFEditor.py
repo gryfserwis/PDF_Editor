@@ -2373,12 +2373,13 @@ class EnhancedPageRangeDialog(tk.Toplevel):
 class PagePreviewPopup(tk.Toplevel):
     """Popup window showing high-resolution preview of a PDF page"""
     
-    def __init__(self, parent, pdf_document, page_index):
+    def __init__(self, parent, pdf_document, page_index, viewer_app=None):
         super().__init__(parent)
         self.pdf_document = pdf_document
         self.page_index = page_index
         self.photo_image = None
         self.pix = None
+        self.viewer_app = viewer_app  # Reference to viewer to clear popup reference
         
         # Configure window
         self.title(f"Podgląd strony {page_index + 1}")
@@ -2476,6 +2477,10 @@ class PagePreviewPopup(tk.Toplevel):
         
     def _cleanup_and_close(self):
         """Clean up resources and close window"""
+        # Clear reference in viewer_app to prevent memory leaks
+        if self.viewer_app and self.viewer_app.current_preview_popup is self:
+            self.viewer_app.current_preview_popup = None
+        
         # Clear references to prevent memory leaks
         if self.pix:
             self.pix = None
@@ -2548,14 +2553,20 @@ class ThumbnailFrame(tk.Frame):
     def _handle_double_click(self, page_index):
         """Handle double-click to show page preview popup"""
         # Close previous popup if exists
-        if self.viewer_app.current_preview_popup and self.viewer_app.current_preview_popup.winfo_exists():
-            self.viewer_app.current_preview_popup._cleanup_and_close()
+        if self.viewer_app.current_preview_popup:
+            try:
+                if self.viewer_app.current_preview_popup.winfo_exists():
+                    self.viewer_app.current_preview_popup._cleanup_and_close()
+            except tk.TclError:
+                # Widget already destroyed, just clear the reference
+                self.viewer_app.current_preview_popup = None
         
         # Create new popup and store reference
         self.viewer_app.current_preview_popup = PagePreviewPopup(
             self.viewer_app.master, 
             self.viewer_app.pdf_document, 
-            page_index
+            page_index,
+            self.viewer_app
         )
 
     def _handle_ppm_click(self, event, page_index):
