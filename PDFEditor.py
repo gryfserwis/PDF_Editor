@@ -8772,7 +8772,6 @@ class SelectablePDFViewer:
             
             self._update_status("Makro: Przesunięto zawartość stron zgodnie z parametrami.")
         except Exception as e:
-            self.hide_progressbar()
             self._update_status(f"BŁĄD podczas odtwarzania shift_page_content: {e}")
     
     def _replay_insert_page_numbers(self, params):
@@ -8920,7 +8919,6 @@ class SelectablePDFViewer:
             self._update_status(f"Makro: Numeracja wstawiona na {len(selected_indices)} stronach.")
             
         except Exception as e:
-            self.hide_progressbar()
             self._update_status(f"Makro: Błąd przy dodawaniu numeracji: {e}")
     
     def _replay_remove_page_numbers(self, params):
@@ -8998,7 +8996,6 @@ class SelectablePDFViewer:
                 self._update_status("Makro: Nie znaleziono numerów stron do usunięcia.")
                 
         except Exception as e:
-            self.hide_progressbar()
             self._update_status(f"Makro: Błąd przy usuwaniu numeracji: {e}")
     
     def _replay_apply_page_crop_resize(self, params):
@@ -9072,7 +9069,6 @@ class SelectablePDFViewer:
                 self.update_focus_display()
                 
         except Exception as e:
-            self.hide_progressbar()
             self._update_status(f"Makro: Błąd podczas przetwarzania PDF: {e}")
 
     def update_focus_display(self, hide_mouse_focus: bool = False):
