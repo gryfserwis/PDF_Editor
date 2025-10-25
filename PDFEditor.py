@@ -4190,6 +4190,97 @@ class PDFAnalysisDialog(tk.Toplevel):
 
 
 # ====================================================================
+# WAIT OVERLAY - Modal popup for blocking UI during operations
+# ====================================================================
+
+class WaitOverlay:
+    """
+    Lightweight modal overlay that blocks interaction during long operations.
+    Displays "Proszę czekać..." message over the main window.
+    """
+    
+    def __init__(self, parent):
+        """
+        Create a modal wait overlay.
+        
+        Args:
+            parent: Parent window (should be the main Tk window)
+        """
+        self.parent = parent
+        self.overlay = None
+    
+    def show(self):
+        """Display the wait overlay."""
+        if self.overlay is not None:
+            return  # Already shown
+        
+        # Create a toplevel window without decorations
+        self.overlay = tk.Toplevel(self.parent)
+        self.overlay.overrideredirect(True)  # Remove window decorations
+        
+        # Make it modal - block interaction with parent
+        self.overlay.transient(self.parent)
+        self.overlay.grab_set()
+        
+        # Create dark semi-transparent background
+        frame = tk.Frame(self.overlay, bg="#222222", relief=tk.FLAT, bd=0)
+        frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Add "Proszę czekać..." text
+        label = tk.Label(
+            frame,
+            text="Proszę czekać...",
+            font=("Arial", 14, "bold"),
+            bg="#222222",
+            fg="#CCCCCC",
+            relief=tk.FLAT,
+            bd=0
+        )
+        label.pack(pady=10)
+        
+        # Position the overlay in the center of parent window
+        self._center_on_parent()
+        
+        # Prevent closing
+        self.overlay.protocol("WM_DELETE_WINDOW", lambda: None)
+        
+        # Update to ensure window is visible
+        self.overlay.update_idletasks()
+    
+    def hide(self):
+        """Hide and destroy the wait overlay."""
+        if self.overlay is not None:
+            try:
+                self.overlay.grab_release()
+                self.overlay.destroy()
+            except:
+                pass  # Ignore errors if already destroyed
+            finally:
+                self.overlay = None
+    
+    def _center_on_parent(self):
+        """Center the overlay on the parent window."""
+        self.parent.update_idletasks()
+        
+        # Get parent window dimensions and position
+        parent_x = self.parent.winfo_x()
+        parent_y = self.parent.winfo_y()
+        parent_width = self.parent.winfo_width()
+        parent_height = self.parent.winfo_height()
+        
+        # Get overlay dimensions
+        self.overlay.update_idletasks()
+        overlay_width = self.overlay.winfo_reqwidth()
+        overlay_height = self.overlay.winfo_reqheight()
+        
+        # Calculate centered position
+        x = parent_x + (parent_width - overlay_width) // 2
+        y = parent_y + (parent_height - overlay_height) // 2
+        
+        self.overlay.geometry(f"{overlay_width}x{overlay_height}+{x}+{y}")
+
+
+# ====================================================================
 # GŁÓWNA KLASA PROGRAMU: SELECTABLEPDFVIEWER
 # ====================================================================
 
@@ -5577,6 +5668,9 @@ class SelectablePDFViewer:
         self.canvas.bind_all("<Button-4>", self._on_mousewheel)
         self.canvas.bind_all("<Button-5>", self._on_mousewheel)
         
+        # Initialize wait overlay for blocking UI during operations
+        self.wait_overlay = WaitOverlay(self.master)
+        
         self.update_tool_button_states() 
         self._setup_drag_and_drop_file()
 
@@ -6694,6 +6788,9 @@ class SelectablePDFViewer:
             maximum: Maksymalna wartość paska postępu (liczba kroków)
             mode: "determinate" (znana liczba kroków) lub "indeterminate" (nieznana liczba kroków)
         """
+        # Show overlay to block UI interaction
+        self.show_overlay()
+        
         self.progress_bar["mode"] = mode
         self.progress_bar["maximum"] = maximum
         self.progress_bar["value"] = 0
@@ -6719,6 +6816,21 @@ class SelectablePDFViewer:
         self.progress_bar.stop()  # Zatrzymaj animację (jeśli była)
         self.progress_bar.pack_forget()
         self.master.update_idletasks()
+        
+        # Hide overlay to restore UI interaction
+        self.hide_overlay()
+    
+    def show_overlay(self):
+        """
+        Pokazuje modalny overlay "Proszę czekać..." aby zablokować interakcję.
+        """
+        self.wait_overlay.show()
+    
+    def hide_overlay(self):
+        """
+        Ukrywa modalny overlay i przywraca interakcję z oknem.
+        """
+        self.wait_overlay.hide()
             
     def _save_state_to_undo(self):
         """Zapisuje bieżący stan dokumentu na stosie undo i czyści stos redo."""
