@@ -2445,8 +2445,9 @@ class PagePreviewPopup(tk.Toplevel):
         close_button = ttk.Button(main_frame, text="Zamknij", command=self._cleanup_and_close)
         close_button.pack()
         
-        # Bind click outside image to close
-        image_label.bind("<Button-1>", lambda e: self._cleanup_and_close())
+        # Bind click on background (outside image) to close
+        main_frame.bind("<Button-1>", lambda e: self._cleanup_and_close())
+        self.bind("<Button-1>", lambda e: self._cleanup_and_close())
         
     def _center_window(self, parent):
         """Center the window relative to parent"""
