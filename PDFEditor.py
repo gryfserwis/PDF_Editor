@@ -2446,8 +2446,14 @@ class PagePreviewPopup(tk.Toplevel):
         close_button.pack()
         
         # Bind click on background (outside image) to close
-        main_frame.bind("<Button-1>", lambda e: self._cleanup_and_close())
-        self.bind("<Button-1>", lambda e: self._cleanup_and_close())
+        # Only close if clicking directly on the window background, not on child widgets
+        def on_background_click(event):
+            # Only close if the click target is the background (self or main_frame)
+            if event.widget in (self, main_frame):
+                self._cleanup_and_close()
+        
+        main_frame.bind("<Button-1>", on_background_click)
+        self.bind("<Button-1>", on_background_click)
         
     def _center_window(self, parent):
         """Center the window relative to parent"""
