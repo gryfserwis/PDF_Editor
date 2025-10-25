@@ -37,7 +37,7 @@ FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
  
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
-PROGRAM_VERSION = "5.7.5"
+PROGRAM_VERSION = "5.7.99"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
 # === STAŁE DLA A4 [w punktach PDF i mm] ===
@@ -3444,21 +3444,38 @@ class MacrosListDialog(tk.Toplevel):
         self.load_macros()
     
     def center_dialog(self, parent):
-        """Ustaw okno obok okna głównego (np. po prawej stronie)"""
+        """Ustaw oba dialogi zawsze pod sobą w jednej kolumnie, niezależnie od kolejności otwarcia."""
         self.update_idletasks()
         dialog_w = self.winfo_width()
         dialog_h = self.winfo_height()
         parent_x = parent.winfo_rootx()
         parent_y = parent.winfo_rooty()
         parent_w = parent.winfo_width()
-        # Ustaw po prawej stronie z odstępem 30 pikseli
         x = parent_x + parent_w + 30
         y = parent_y
-        # Jeśli nie mieści się na ekranie, przenieś po lewej
         screen_w = self.winfo_screenwidth()
         if x + dialog_w > screen_w:
             x = max(0, parent_x - dialog_w - 30)
-        self.geometry(f"+{x}+{y}")
+
+        pdf_dialog = getattr(self.viewer, 'pdf_analysis_dialog', None)
+        # Sprawdź, czy oba dialogi są otwarte
+        if pdf_dialog and pdf_dialog.winfo_exists():
+            # Ustal, który dialog był otwarty pierwszy (ten jest wyżej)
+            dialogs = sorted([
+                (self, self.winfo_toplevel().winfo_id()),
+                (pdf_dialog, pdf_dialog.winfo_toplevel().winfo_id())
+            ], key=lambda t: t[1])
+            top_dialog, bottom_dialog = dialogs[0][0], dialogs[1][0]
+            top_dialog.update_idletasks()
+            bottom_dialog.update_idletasks()
+            # Pobierz aktualną wysokość po update_idletasks
+            top_h = top_dialog.winfo_height()
+            bottom_h = bottom_dialog.winfo_height()
+            # Ustaw większy odstęp (40px)
+            top_dialog.geometry(f"+{x}+{y}")
+            bottom_dialog.geometry(f"+{x}+{y + top_h + 40}")
+        else:
+            self.geometry(f"+{x}+{y}")
     
     def build_ui(self):
         main_frame = ttk.Frame(self, padding="12")
@@ -3871,34 +3888,40 @@ class PDFAnalysisDialog(tk.Toplevel):
         self.after(100, self.analyze_pdf)
     
     def position_below_macros(self, parent):
-        """Ustaw okno pod oknem makr (jeśli istnieje) lub obok głównego okna"""
+        """Ustaw oba dialogi zawsze pod sobą w jednej kolumnie, niezależnie od kolejności otwarcia."""
         self.update_idletasks()
         dialog_w = self.winfo_width()
         dialog_h = self.winfo_height()
         parent_x = parent.winfo_rootx()
         parent_y = parent.winfo_rooty()
         parent_w = parent.winfo_width()
-        parent_h = parent.winfo_height()
-        
-        # Check if macros window exists and is visible
-        if hasattr(self.viewer, 'macros_list_dialog') and self.viewer.macros_list_dialog and self.viewer.macros_list_dialog.winfo_exists():
-            macros_window = self.viewer.macros_list_dialog
-            macros_x = macros_window.winfo_rootx()
-            macros_y = macros_window.winfo_rooty()
-            macros_h = macros_window.winfo_height()
-            # Position below macros window
-            x = macros_x
-            y = macros_y + macros_h + 10
+        x = parent_x + parent_w + 30
+        y = parent_y
+        screen_w = self.winfo_screenwidth()
+        if x + dialog_w > screen_w:
+            x = max(0, parent_x - dialog_w - 30)
+
+        macros_dialog = getattr(self.viewer, 'macros_list_dialog', None)
+        # Sprawdź, czy oba dialogi są otwarte
+        if macros_dialog and macros_dialog.winfo_exists():
+            dialogs = sorted([
+                (macros_dialog, macros_dialog.winfo_toplevel().winfo_id()),
+                (self, self.winfo_toplevel().winfo_id())
+            ], key=lambda t: t[1])
+            top_dialog, bottom_dialog = dialogs[0][0], dialogs[1][0]
+            top_dialog.update_idletasks()
+            bottom_dialog.update_idletasks()
+            # Pobierz aktualną wysokość po update_idletasks
+            top_h = top_dialog.winfo_height()
+            bottom_h = bottom_dialog.winfo_height()
+            # Ustaw większy odstęp (40px)
+            top_dialog.geometry(f"+{x}+{y}")
+            bottom_dialog.geometry(f"+{x}+{y + top_h + 40}")
         else:
-            # Position to the right of main window (same as macros default)
-            x = parent_x + parent_w + 30
-            y = parent_y
-            # If doesn't fit on screen, move to left
-            screen_w = self.winfo_screenwidth()
-            if x + dialog_w > screen_w:
-                x = max(0, parent_x - dialog_w - 30)
-        
-        self.geometry(f"+{x}+{y}")
+            self.geometry(f"+{x}+{y}")
+
+    def _reposition_with_macros(self):
+        self.position_below_macros(self.parent)
     
     def build_ui(self):
         main_frame = ttk.Frame(self, padding="12")
@@ -4157,6 +4180,12 @@ class PDFAnalysisDialog(tk.Toplevel):
     
     def close(self):
         """Zamknij okno"""
+        # Wyczyść referencję w viewerze przed zamknięciem
+        if self.viewer.pdf_analysis_dialog == self:
+            self.viewer.pdf_analysis_dialog = None
+        # Jeśli zamykamy pierwszy otwarty dialog, resetuj znacznik
+        if hasattr(self.viewer, '_dialog_first_opened') and self.viewer._dialog_first_opened == 'analysis':
+            self.viewer._dialog_first_opened = None
         self.destroy()
 
 
