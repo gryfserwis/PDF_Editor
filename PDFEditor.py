@@ -4253,7 +4253,7 @@ class WaitOverlay:
             try:
                 self.overlay.grab_release()
                 self.overlay.destroy()
-            except:
+            except (tk.TclError, Exception):
                 pass  # Ignore errors if already destroyed
             finally:
                 self.overlay = None
@@ -4273,9 +4273,13 @@ class WaitOverlay:
         overlay_width = self.overlay.winfo_reqwidth()
         overlay_height = self.overlay.winfo_reqheight()
         
-        # Calculate centered position
+        # Calculate centered position with bounds checking
         x = parent_x + (parent_width - overlay_width) // 2
         y = parent_y + (parent_height - overlay_height) // 2
+        
+        # Ensure overlay stays on screen (non-negative coordinates)
+        x = max(0, x)
+        y = max(0, y)
         
         self.overlay.geometry(f"{overlay_width}x{overlay_height}+{x}+{y}")
 
