@@ -2367,6 +2367,112 @@ class EnhancedPageRangeDialog(tk.Toplevel):
         return sorted(list(selected_pages))
 
 # ====================================================================
+# KLASA: POPUP PODGLĄDU STRONY
+# ====================================================================
+
+class PagePreviewPopup(tk.Toplevel):
+    """Popup window showing high-resolution preview of a PDF page"""
+    
+    def __init__(self, parent, pdf_document, page_index):
+        super().__init__(parent)
+        self.pdf_document = pdf_document
+        self.page_index = page_index
+        self.photo_image = None
+        self.pix = None
+        
+        # Configure window
+        self.title(f"Podgląd strony {page_index + 1}")
+        self.transient(parent)
+        self.configure(bg="#F0F0F0")
+        
+        # Render high-resolution page
+        self._render_page()
+        
+        # Create UI
+        self._create_ui()
+        
+        # Center window
+        self.update_idletasks()
+        self._center_window(parent)
+        
+        # Bind close events
+        self.protocol("WM_DELETE_WINDOW", self._cleanup_and_close)
+        self.bind("<Escape>", lambda e: self._cleanup_and_close())
+        
+        # Make window non-resizable
+        self.resizable(False, False)
+        
+    def _render_page(self):
+        """Render page at high resolution"""
+        page = self.pdf_document.load_page(self.page_index)
+        
+        # Calculate target width (600px or more, keeping aspect ratio)
+        target_width = 600
+        page_width = page.rect.width
+        page_height = page.rect.height
+        
+        # Calculate zoom factor to achieve target width
+        zoom = target_width / page_width
+        
+        # Create matrix for rendering
+        mat = fitz.Matrix(zoom, zoom)
+        
+        # Render page
+        self.pix = page.get_pixmap(matrix=mat, alpha=False)
+        
+        # Convert to PIL Image
+        img_data = self.pix.tobytes("ppm")
+        pil_image = Image.open(io.BytesIO(img_data))
+        
+        # Convert to PhotoImage
+        self.photo_image = ImageTk.PhotoImage(pil_image)
+        
+    def _create_ui(self):
+        """Create the popup UI"""
+        # Main frame
+        main_frame = tk.Frame(self, bg="#F0F0F0", padx=10, pady=10)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Image frame with border
+        image_frame = tk.Frame(main_frame, bg="white", relief=tk.SOLID, borderwidth=1)
+        image_frame.pack(pady=(0, 10))
+        
+        # Image label
+        image_label = tk.Label(image_frame, image=self.photo_image, bg="white")
+        image_label.pack()
+        
+        # Close button
+        close_button = ttk.Button(main_frame, text="Zamknij", command=self._cleanup_and_close)
+        close_button.pack()
+        
+        # Bind click outside image to close
+        image_label.bind("<Button-1>", lambda e: self._cleanup_and_close())
+        
+    def _center_window(self, parent):
+        """Center the window relative to parent"""
+        window_width = self.winfo_width()
+        window_height = self.winfo_height()
+        parent_x = parent.winfo_rootx()
+        parent_y = parent.winfo_rooty()
+        parent_width = parent.winfo_width()
+        parent_height = parent.winfo_height()
+        
+        x = parent_x + (parent_width - window_width) // 2
+        y = parent_y + (parent_height - window_height) // 2
+        
+        self.geometry(f"+{x}+{y}")
+        
+    def _cleanup_and_close(self):
+        """Clean up resources and close window"""
+        # Clear references to prevent memory leaks
+        if self.pix:
+            self.pix = None
+        if self.photo_image:
+            self.photo_image = None
+        
+        self.destroy()
+
+# ====================================================================
 # KLASA: RAMKA MINIATURY (Bez zmian)
 # ====================================================================
 
@@ -2416,9 +2522,15 @@ class ThumbnailFrame(tk.Frame):
         tk.Label(parent_frame, text=format_label, fg="gray", bg=self.bg_normal, font=("Helvetica", 9)).pack(pady=(0, 5))
 
         self._bind_all_children("<Button-1>", lambda event, idx=self.page_index: self.viewer_app._handle_lpm_click(idx, event))
+        
+        self._bind_all_children("<Double-Button-1>", lambda event, idx=self.page_index: self._handle_double_click(idx))
 
         self._bind_all_children("<Button-3>", lambda event, idx=self.page_index: self._handle_ppm_click(event, idx))
        # parent_frame.bind("<Enter>", lambda event, idx=self.page_index: self.viewer_app._focus_by_mouse(idx))
+    
+    def _handle_double_click(self, page_index):
+        """Handle double-click to show page preview popup"""
+        PagePreviewPopup(self.viewer_app.master, self.viewer_app.pdf_document, page_index)
 
     def _handle_ppm_click(self, event, page_index):
         self.viewer_app.active_page_index = page_index
@@ -5213,14 +5325,11 @@ class SelectablePDFViewer:
         self.clipboard: Optional[bytes] = None 
         self.pages_in_clipboard_count: int = 0 
         
-        # Thumbnail zoom settings - now based on width, not column count
-        self.thumb_width = 205          # Current thumbnail width (controlled by zoom)
-        self.min_thumb_width = 205      # Minimum thumbnail width
-        self.max_thumb_width = 410      # Maximum thumbnail width
-        self.zoom_step = 1           # Zoom step (10% change)
-        self.THUMB_PADDING = 0         # Padding between thumbnails
+        # Thumbnail settings - fixed width, no zoom
+        self.thumb_width = 205          # Fixed thumbnail width
+        self.THUMB_PADDING = 0          # Padding between thumbnails
         self.min_cols = 2               # Minimum columns (for safety)
-        self.max_cols = 8              # Maximum columns (for safety)
+        self.max_cols = 8               # Maximum columns (for safety)
         self.MIN_WINDOW_WIDTH = 950
         self.render_dpi_factor = self._get_render_dpi_factor()
         
@@ -5358,23 +5467,6 @@ class SelectablePDFViewer:
         Tooltip(self.remove_nums_btn, "Usuwanie numeracji. \n" "Wymaga zaznaczenia przynajniej jednej strony.")
         Tooltip(self.add_nums_btn, "Wstawianie numeracji. \n" "Wymaga zaznaczenia przynajniej jednej strony.")
 
-        # ZOOM 
-        zoom_frame = tk.Frame(main_control_panel, bg=BG_SECONDARY)
-        zoom_frame.pack(side=tk.RIGHT, padx=10)
-        
-        ZOOM_BG = GRAY_BG 
-        ZOOM_FONT = ("Arial", 14, "bold") 
-        ZOOM_WIDTH = 2
-        
-        self.zoom_in_button = create_tool_button(zoom_frame, 'zoom_in', self.zoom_in, ZOOM_BG, fg_color=GRAY_FG, padx=(2, 2), state=tk.DISABLED) 
-        if not isinstance(self.icons['zoom_in'], ImageTk.PhotoImage):
-             self.zoom_in_button.config(width=ZOOM_WIDTH, height=1, font=ZOOM_FONT)
-
-        self.zoom_out_button = create_tool_button(zoom_frame, 'zoom_out', self.zoom_out, ZOOM_BG, fg_color=GRAY_FG, padx=(2, 5), state=tk.DISABLED) 
-        if not isinstance(self.icons['zoom_out'], ImageTk.PhotoImage):
-             self.zoom_out_button.config(width=ZOOM_WIDTH, height=1, font=ZOOM_FONT)
-        
-        
         # Pasek statusu z paskiem postępu
         status_frame = tk.Frame(master, bd=1, relief=tk.SUNKEN, bg="#f0f0f0")
         status_frame.pack(side=tk.BOTTOM, fill=tk.X)
@@ -5464,8 +5556,6 @@ class SelectablePDFViewer:
             'insert_a': ('⬇️➕', "insert_after.png"),  
             'rotate_l': ('↺', "rotate_left.png"),
             'rotate_r': ('↻', "rotate_right.png"),
-            'zoom_in': ('➖', "zoom_in.png"),  
-            'zoom_out': ('➕', "zoom_out.png"),
             'export': ('📤', "export.png"), 
             'export_image': ('🖼️', "export_image.png"),
             'import': ('📥', "import.png"), # Import PDF
@@ -5717,8 +5807,6 @@ class SelectablePDFViewer:
             'remove_numbers': doc_loaded and has_selection,
             'add_numbers': doc_loaded and has_selection,
             'crop': doc_loaded and has_selection,
-            'zoom_in': doc_loaded and self.thumb_width < self.max_thumb_width,
-            'zoom_out': doc_loaded and self.thumb_width > self.min_thumb_width,
         }
         
         return conditions.get(action_name, True)
@@ -5750,10 +5838,6 @@ class SelectablePDFViewer:
         self.master.bind('<F6>', lambda e: self._check_action_allowed('remove_numbers') and self.remove_page_numbers())
         self.master.bind('<F7>', lambda e: self._check_action_allowed('add_numbers') and self.insert_page_numbers())
         self.master.bind('<F8>', lambda e: self._check_action_allowed('crop') and self.apply_page_crop_resize_dialog())
-        self.master.bind('<plus>', lambda e: self._check_action_allowed('zoom_in') and self.zoom_in())
-        self.master.bind('<minus>', lambda e: self._check_action_allowed('zoom_out') and self.zoom_out())
-        self.master.bind('<KP_Add>', lambda e: self._check_action_allowed('zoom_in') and self.zoom_in())
-        self.master.bind('<KP_Subtract>', lambda e: self._check_action_allowed('zoom_out') and self.zoom_out())
         self.master.bind('<Control-q>', lambda e: self.close_pdf())
         self.master.bind('<Control-Q>', lambda e: self.close_pdf())
                      
@@ -5994,16 +6078,6 @@ class SelectablePDFViewer:
         self.shift_content_btn.config(state=delete_state)
         self.remove_nums_btn.config(state=delete_state)
         self.add_nums_btn.config(state=delete_state)
-        
-        if doc_loaded:
-             zoom_in_state = tk.NORMAL if self.thumb_width < self.max_thumb_width else tk.DISABLED
-             zoom_out_state = tk.NORMAL if self.thumb_width > self.min_thumb_width else tk.DISABLED
-        else:
-             zoom_in_state = tk.DISABLED
-             zoom_out_state = tk.DISABLED
-             
-        self.zoom_in_button.config(state=zoom_in_state)
-        self.zoom_out_button.config(state=zoom_out_state)
 
         # 2. Aktualizacja pozycji w menu
         menus_to_update = [self.file_menu, self.edit_menu, self.select_menu]
@@ -7665,26 +7739,6 @@ class SelectablePDFViewer:
         num_cols = max(self.min_cols, int(available_width / thumb_with_padding))
         num_cols = min(self.max_cols, num_cols)
         return max(1, num_cols)
-
-    def zoom_in(self):
-        self.master.state('zoomed')
-        """Increase thumbnail size (zoom in)"""
-        if self.pdf_document:
-            new_width = int(self.thumb_width * (1 + self.zoom_step))
-            self.thumb_width = min(self.max_thumb_width, new_width)
-            self._reconfigure_grid()
-            self.update_tool_button_states()  
-            print(f"Zoom in: thumb_width = {self.thumb_width}")
-
-    def zoom_out(self):
-        self.master.state('normal')
-        """Decrease thumbnail size (zoom out)"""
-        if self.pdf_document:
-            new_width = int(self.thumb_width * (1 - self.zoom_step))
-            self.thumb_width = max(self.min_thumb_width, new_width)
-            self._reconfigure_grid()
-            self.update_tool_button_states()
-            print(f"Zoom out: thumb_width = {self.thumb_width}")
 
     def _reconfigure_grid(self, event=None):
         # Poprawka: sprawdzanie, czy dokument istnieje i nie jest zamknięty (NIE używaj "not self.pdf_document"!)
