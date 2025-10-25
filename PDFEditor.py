@@ -2385,15 +2385,24 @@ class PagePreviewPopup(tk.Toplevel):
         self.transient(parent)
         self.configure(bg="#F0F0F0")
         
+        # Hide window initially to prevent flickering
+        self.withdraw()
+        
         # Render high-resolution page
         self._render_page()
         
         # Create UI
         self._create_ui()
         
-        # Center window
+        # Center window before showing
         self.update_idletasks()
         self._center_window(parent)
+        
+        # Show window after positioning
+        self.deiconify()
+        
+        # Set focus to the popup
+        self.focus_set()
         
         # Bind close events
         self.protocol("WM_DELETE_WINDOW", self._cleanup_and_close)
@@ -2435,15 +2444,11 @@ class PagePreviewPopup(tk.Toplevel):
         
         # Image frame with border
         image_frame = tk.Frame(main_frame, bg="white", relief=tk.SOLID, borderwidth=1)
-        image_frame.pack(pady=(0, 10))
+        image_frame.pack()
         
         # Image label
         image_label = tk.Label(image_frame, image=self.photo_image, bg="white")
         image_label.pack()
-        
-        # Close button
-        close_button = ttk.Button(main_frame, text="Zamknij", command=self._cleanup_and_close)
-        close_button.pack()
         
         # Bind click on background (outside image) to close
         # Only close if clicking directly on the window background, not on child widgets
@@ -2530,14 +2535,28 @@ class ThumbnailFrame(tk.Frame):
 
         self._bind_all_children("<Button-1>", lambda event, idx=self.page_index: self.viewer_app._handle_lpm_click(idx, event))
         
-        self._bind_all_children("<Double-Button-1>", lambda event, idx=self.page_index: self._handle_double_click(idx))
+        # Double-click handler - needs to stop propagation to prevent selection changes
+        def double_click_handler(event, idx):
+            self._handle_double_click(idx)
+            return "break"
+        
+        self._bind_all_children("<Double-Button-1>", lambda event, idx=self.page_index: double_click_handler(event, idx))
 
         self._bind_all_children("<Button-3>", lambda event, idx=self.page_index: self._handle_ppm_click(event, idx))
        # parent_frame.bind("<Enter>", lambda event, idx=self.page_index: self.viewer_app._focus_by_mouse(idx))
     
     def _handle_double_click(self, page_index):
         """Handle double-click to show page preview popup"""
-        PagePreviewPopup(self.viewer_app.master, self.viewer_app.pdf_document, page_index)
+        # Close previous popup if exists
+        if self.viewer_app.current_preview_popup and self.viewer_app.current_preview_popup.winfo_exists():
+            self.viewer_app.current_preview_popup._cleanup_and_close()
+        
+        # Create new popup and store reference
+        self.viewer_app.current_preview_popup = PagePreviewPopup(
+            self.viewer_app.master, 
+            self.viewer_app.pdf_document, 
+            page_index
+        )
 
     def _handle_ppm_click(self, event, page_index):
         self.viewer_app.active_page_index = page_index
@@ -5331,6 +5350,9 @@ class SelectablePDFViewer:
 
         self.clipboard: Optional[bytes] = None 
         self.pages_in_clipboard_count: int = 0 
+        
+        # Track current page preview popup (only one at a time)
+        self.current_preview_popup: Optional['PagePreviewPopup'] = None
         
         # Thumbnail settings - fixed width, no zoom
         self.thumb_width = 205          # Fixed thumbnail width
