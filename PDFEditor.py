@@ -5454,24 +5454,25 @@ class SelectablePDFViewer:
             self.show_progressbar(maximum=total_pages)
             self._update_status("Eksportowanie stron do obrazów...")
             
-            for idx, index in enumerate(selected_indices):
-                if index < len(self.pdf_document):
-                    page = self.pdf_document.load_page(index)
-                    
-                    pix = page.get_pixmap(matrix=matrix, alpha=False)
-                    
-                    # Generuj unikalną nazwę pliku
-                    single_page_range = str(index + 1)
-                    output_path = generate_unique_export_filename(
-                        output_dir, base_filename, single_page_range, "png"
-                    )
-                    
-                    pix.save(output_path)
-                    exported_count += 1
-                    self.update_progressbar(idx + 1)
-            
-            self.hide_progressbar()
-            self.master.config(cursor="")
+            try:
+                for idx, index in enumerate(selected_indices):
+                    if index < len(self.pdf_document):
+                        page = self.pdf_document.load_page(index)
+                        
+                        pix = page.get_pixmap(matrix=matrix, alpha=False)
+                        
+                        # Generuj unikalną nazwę pliku
+                        single_page_range = str(index + 1)
+                        output_path = generate_unique_export_filename(
+                            output_dir, base_filename, single_page_range, "png"
+                        )
+                        
+                        pix.save(output_path)
+                        exported_count += 1
+                        self.update_progressbar(idx + 1)
+            finally:
+                self.hide_progressbar()
+                self.master.config(cursor="")
             
             self._update_status(f"Pomyślnie wyeksportowano {exported_count} stron do folderu: {output_dir}")   
         except Exception as e:
