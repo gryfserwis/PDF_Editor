@@ -8761,15 +8761,18 @@ class SelectablePDFViewer:
             
             # Optymalizacja: odśwież tylko zmienione miniatury
             self.show_progressbar(maximum=len(pages_to_shift))
-            for i, page_index in enumerate(pages_to_shift):
-                self._update_status("Makro: Przesunięto zawartość stron zgodnie z parametrami. Odświeżanie miniatur...")
-                
-                self.update_single_thumbnail(page_index)
-                self.update_progressbar(i + 1)
-            self.hide_progressbar()
+            try:
+                for i, page_index in enumerate(pages_to_shift):
+                    self._update_status("Makro: Przesunięto zawartość stron zgodnie z parametrami. Odświeżanie miniatur...")
+                    
+                    self.update_single_thumbnail(page_index)
+                    self.update_progressbar(i + 1)
+            finally:
+                self.hide_progressbar()
             
             self._update_status("Makro: Przesunięto zawartość stron zgodnie z parametrami.")
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"BŁĄD podczas odtwarzania shift_page_content: {e}")
     
     def _replay_insert_page_numbers(self, params):
@@ -8905,16 +8908,19 @@ class SelectablePDFViewer:
             
             # Optymalizacja: odśwież tylko zmienione miniatury
             self.show_progressbar(maximum=len(selected_indices))
-            for i, page_index in enumerate(selected_indices):
-                self._update_status(f"Makro: Numeracja wstawiona na {len(selected_indices)} stronach. Odświeżanie miniatur...")
-              
-                self.update_single_thumbnail(page_index)
-                self.update_progressbar(i + 1)
-            self.hide_progressbar()
+            try:
+                for i, page_index in enumerate(selected_indices):
+                    self._update_status(f"Makro: Numeracja wstawiona na {len(selected_indices)} stronach. Odświeżanie miniatur...")
+                  
+                    self.update_single_thumbnail(page_index)
+                    self.update_progressbar(i + 1)
+            finally:
+                self.hide_progressbar()
             
             self._update_status(f"Makro: Numeracja wstawiona na {len(selected_indices)} stronach.")
             
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"Makro: Błąd przy dodawaniu numeracji: {e}")
     
     def _replay_remove_page_numbers(self, params):
@@ -8978,18 +8984,21 @@ class SelectablePDFViewer:
             if modified_count > 0:
                 # Optymalizacja: odśwież tylko zmienione miniatury
                 self.show_progressbar(maximum=len(pages_to_process))
-                for i, page_index in enumerate(pages_to_process):
-                    self._update_status(f"Makro: Usunięto numery stron na {modified_count} stronach. Odświeżanie miniatur...")
+                try:
+                    for i, page_index in enumerate(pages_to_process):
+                        self._update_status(f"Makro: Usunięto numery stron na {modified_count} stronach. Odświeżanie miniatur...")
 
-                    self.update_single_thumbnail(page_index)
-                    self.update_progressbar(i + 1)
-                self.hide_progressbar()
+                        self.update_single_thumbnail(page_index)
+                        self.update_progressbar(i + 1)
+                finally:
+                    self.hide_progressbar()
                 
                 self._update_status(f"Makro: Usunięto numery stron na {modified_count} stronach.")
             else:
                 self._update_status("Makro: Nie znaleziono numerów stron do usunięcia.")
                 
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"Makro: Błąd przy usuwaniu numeracji: {e}")
     
     def _replay_apply_page_crop_resize(self, params):
@@ -9049,11 +9058,13 @@ class SelectablePDFViewer:
             
             # Optymalizacja: odśwież tylko zmienione miniatury
             self.show_progressbar(maximum=len(indices))
-            for i, page_index in enumerate(indices):
-                self._update_status("Operacja zakończona. Odświeżanie miniatur...")
-                self.update_single_thumbnail(page_index)
-                self.update_progressbar(i + 1)
-            self.hide_progressbar()
+            try:
+                for i, page_index in enumerate(indices):
+                    self._update_status("Operacja zakończona. Odświeżanie miniatur...")
+                    self.update_single_thumbnail(page_index)
+                    self.update_progressbar(i + 1)
+            finally:
+                self.hide_progressbar()
             
             if hasattr(self, "update_selection_display"):
                 self.update_selection_display()
@@ -9061,6 +9072,7 @@ class SelectablePDFViewer:
                 self.update_focus_display()
                 
         except Exception as e:
+            self.hide_progressbar()
             self._update_status(f"Makro: Błąd podczas przetwarzania PDF: {e}")
 
     def update_focus_display(self, hide_mouse_focus: bool = False):
