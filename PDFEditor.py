@@ -4349,13 +4349,13 @@ class SelectablePDFViewer:
             if right_pt > 0:
                 mask_rect = fitz.Rect(rect.x1 - right_pt, rect.y0, rect.x1, rect.y1)
                 page.draw_rect(mask_rect, color=(1,1,1), fill=(1,1,1), overlay=True)
-            # Górny margines
+            # Górny margines (od góry strony)
             if top_pt > 0:
-                mask_rect = fitz.Rect(rect.x0, rect.y1 - top_pt, rect.x1, rect.y1)
+                mask_rect = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y0 + top_pt)
                 page.draw_rect(mask_rect, color=(1,1,1), fill=(1,1,1), overlay=True)
-            # Dolny margines
+            # Dolny margines (od dołu strony)
             if bottom_pt > 0:
-                mask_rect = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y0 + bottom_pt)
+                mask_rect = fitz.Rect(rect.x0, rect.y1 - bottom_pt, rect.x1, rect.y1)
                 page.draw_rect(mask_rect, color=(1,1,1), fill=(1,1,1), overlay=True)
             
             self.update_progressbar(idx_progress + 1)
