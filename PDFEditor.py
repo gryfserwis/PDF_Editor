@@ -3923,15 +3923,118 @@ class PDFAnalysisDialog(tk.Toplevel):
     def build_ui(self):
         main_frame = ttk.Frame(self, padding="12")
         main_frame.pack(fill="both", expand=True)
-        
+
         # Button to manually trigger analysis
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill="x", pady=(0, 8))
-        ttk.Button(button_frame, text="Analizuj PDF", command=self.analyze_pdf, width=15).pack()
-        
+        ttk.Button(button_frame, text="Analizuj PDF", command=self.analyze_pdf, width=15).pack(side="left", padx=(0, 8))
+        ttk.Button(button_frame, text="Kopiuj wynik", command=self.copy_results_to_clipboard, width=15).pack(side="left")
+
         # Results area with scrollbar
         results_frame = ttk.LabelFrame(main_frame, text="Wyniki analizy")
         results_frame.pack(fill="both", expand=True, pady=(0, 8))
+
+        # Create scrollable canvas
+        canvas = tk.Canvas(results_frame, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(results_frame, orient="vertical", command=canvas.yview)
+        self.results_container = ttk.Frame(canvas)
+
+        self.results_container.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=self.results_container, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        self.canvas = canvas
+
+        # Close button
+        ttk.Button(main_frame, text="Zamknij", command=self.close, width=15).pack()
+
+    def copy_results_to_clipboard(self):
+        """Kopiuje sformatowane wyniki analizy do schowka"""
+        text = self.format_analysis_results_text()
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        self.update()  # Upewnij się, że schowek jest zaktualizowany
+
+    def format_analysis_results_text(self):
+        """Zwraca wyniki w formacie:
+        A4 czarny : xx
+        A4 kolor : xx
+        ...
+        Niestandardowy czarny : xxm2
+        Niestandardowy kolor : xxm2
+        Letter i A4 oraz niestandardowe A4-podobne sumowane do A4. 'Czarno-biały' zamienione na 'czarny'.
+        """
+        if not self.analysis_results:
+            return ""
+        # Przygotuj strukturę wyników
+        result_map = {
+            'A4': {'czarny': 0, 'kolor': 0},
+            'A3': {'czarny': 0, 'kolor': 0},
+            'A2': {'czarny': 0, 'kolor': 0},
+            'A1': {'czarny': 0, 'kolor': 0},
+            'A0': {'czarny': 0, 'kolor': 0},
+            'Niestandardowy': {'czarny': 0.0, 'kolor': 0.0},
+        }
+        # Stałe wymiarów
+        format_mm = {
+            'A0': (841, 1189),
+            'A1': (594, 841),
+            'A2': (420, 594),
+            'A3': (297, 420),
+            'A4': (210, 297),
+        }
+        tol = 5
+        # Przetwarzanie stron
+        for key, data in self.analysis_results.items():
+            color = data['color']
+            color_label = 'kolor' if color.lower().startswith('kolor') else 'czarny'
+            fmt = data['format']
+            if fmt in ['A4', 'Letter']:
+                result_map['A4'][color_label] += len(data['pages'])
+            elif fmt == 'A3':
+                result_map['A3'][color_label] += len(data['pages'])
+            elif fmt == 'A2':
+                result_map['A2'][color_label] += len(data['pages'])
+            elif fmt == 'A1':
+                result_map['A1'][color_label] += len(data['pages'])
+            elif fmt == 'A0':
+                result_map['A0'][color_label] += len(data['pages'])
+            elif fmt == 'Niestandardowy' and data['pages']:
+                for idx in data['pages']:
+                    page = self.viewer.pdf_document[idx]
+                    rect = page.rect
+                    width_mm = round(rect.width / 72 * 25.4)
+                    height_mm = round(rect.height / 72 * 25.4)
+                    w, h = min(width_mm, height_mm), max(width_mm, height_mm)
+                    # Letter (216x279) i inne "A4-podobne" zalicz do A4
+                    if (w >= 210-tol and w <= 216+tol and h >= 279-tol and h <= 297+tol) or (w <= format_mm['A4'][0]+tol and h <= format_mm['A4'][1]+tol):
+                        result_map['A4'][color_label] += 1
+                    # A3: większe niż A4, mieszczące się w A3
+                    elif w > format_mm['A4'][0]+tol and w <= format_mm['A3'][0]+tol and h > format_mm['A4'][1]+tol and h <= format_mm['A3'][1]+tol:
+                        result_map['A3'][color_label] += 1
+                    else:
+                        # Wszystko powyżej A3 licz jako m2
+                        area_m2 = (w * h) / 1_000_000
+                        result_map['Niestandardowy'][color_label] += area_m2
+        # Buduj tekst
+        lines = []
+        for fmt in ['A4', 'A3', 'A2', 'A1', 'A0']:
+            for color in ['czarny', 'kolor']:
+                lines.append(f"{fmt} {color} : {result_map[fmt][color]}")
+        for color in ['czarny', 'kolor']:
+            val = result_map['Niestandardowy'][color]
+            if val > 0:
+                lines.append(f"Niestandardowy {color} : {val:.2f}m2")
+            else:
+                lines.append(f"Niestandardowy {color} : 0m2")
+        return "\n".join(lines)
         
         # Create scrollable canvas
         canvas = tk.Canvas(results_frame, highlightthickness=0)
@@ -4145,7 +4248,7 @@ class PDFAnalysisDialog(tk.Toplevel):
             for page_format in sorted_formats:
                 for data in color_format_groups[color][page_format]:
                     pages = data['pages']
-                    landscape_count = data['landscape_count']
+                    # landscape_count = data['landscape_count']  # nie używamy już tutaj
                     # Jeśli format to niestandardowy (czyli label zawiera 'x' i 'mm')
                     if "x" in page_format and "mm" in page_format:
                         try:
@@ -4170,9 +4273,7 @@ class PDFAnalysisDialog(tk.Toplevel):
                     # Pogrub ilość stron
                     text = f"{fmt_label}: "
                     text_bold = f"{len(pages)}"
-                    if page_format in ['A4', 'Letter'] and landscape_count > 0:
-                        text += f" (poziomych: {landscape_count})"
-                    # Użyj dwóch labeli: zwykły i pogrubiony dla ilości
+                    # NIE dodawaj info o (poziomych: ...)
                     frame = tk.Frame(self.results_container, bg="#f0f0f0")
                     label_fmt = tk.Label(frame, text=text, anchor="w", bg="#f0f0f0", fg="#0066cc", font=("Arial", 10))
                     label_bold = tk.Label(frame, text=text_bold, anchor="w", bg="#f0f0f0", fg="#0066cc", font=("Arial", 10, "bold"))
