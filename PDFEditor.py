@@ -4194,27 +4194,6 @@ class PDFAnalysisDialog(tk.Toplevel):
 # ====================================================================
 
 class WaitOverlay:
-    def _block_events(self):
-        # Blokuj kliknięcia i klawiaturę w oknie głównym
-        self._blocked_events = []
-        for seq in ("<Button>", "<ButtonPress>", "<ButtonRelease>", "<Key>", "<KeyPress>", "<KeyRelease>", "<FocusIn>", "<FocusOut>"):
-            bind_id = self.parent.bind_all(seq, lambda e: "break", add='+')
-            self._blocked_events.append((seq, bind_id))
-
-    def _unblock_events(self):
-        # Przywróć obsługę zdarzeń
-        if hasattr(self, '_blocked_events'):
-            for seq, bind_id in self._blocked_events:
-                try:
-                    self.parent.unbind_all(seq)
-                except Exception:
-                    pass
-            self._blocked_events = []
-    """
-    Lightweight modal overlay that blocks interaction during long operations.
-    Displays "Proszę czekać..." message over the main window.
-    """
-    
     def __init__(self, parent, timeout_ms=2000):
         self.parent = parent
         self._overlay = None
@@ -4222,13 +4201,14 @@ class WaitOverlay:
 
     def show(self):
         if self._overlay is not None:
+            print("[WaitOverlay] show(): overlay już istnieje, nie pokazuję ponownie.")
             return
+        print("[WaitOverlay] show(): pokazuję overlay natychmiast!")
         self._overlay = tk.Toplevel(self.parent)
-        self._overlay.withdraw()  # Ukryj na czas ustawiania
+        self._overlay.withdraw()
         self._overlay.overrideredirect(True)
         self._overlay.transient(self.parent)
         self._overlay.attributes("-topmost", True)
-        self._overlay.configure(bg="#000000")
         min_width = 320
         min_height = 120
         self._overlay.minsize(min_width, min_height)
@@ -4247,26 +4227,71 @@ class WaitOverlay:
         )
         label.pack(expand=True)
         self._center_on_parent()
-        self._overlay.deiconify()  # Pokaż okno
+        self._overlay.deiconify()
         self._overlay.lift()
-        try:
-            self._overlay.grab_set_global()  # Wymuś globalną blokadę interakcji
-        except Exception:
-            self._overlay.grab_set()
-        self._block_events()
+    # self._overlay.grab_set()  # NIE blokuj interakcji, by skróty zawsze działały
         self._overlay.update()
-        # Automatyczne zamknięcie po timeout_ms
-        self._overlay.after(self._timeout_ms, self.hide)
+        self._overlay.after(self._timeout_ms, self._close_modal)
+
+    def _show_overlay(self):
+        self._show_after_id = None
+        if self._overlay is not None:
+            print("[WaitOverlay] _show_overlay(): overlay już istnieje, nie pokazuję ponownie.")
+            return
+        print("[WaitOverlay] _show_overlay(): pokazuję overlay!")
+        self._overlay = tk.Toplevel(self.parent)
+        self._overlay.withdraw()
+        self._overlay.overrideredirect(True)
+        self._overlay.transient(self.parent)
+        self._overlay.attributes("-topmost", True)
+        min_width = 320
+        min_height = 120
+        self._overlay.minsize(min_width, min_height)
+        frame = tk.Frame(self._overlay, bg="#000000", relief=tk.FLAT, bd=0, highlightthickness=0, width=min_width, height=min_height)
+        frame.pack_propagate(False)
+        frame.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
+        label = tk.Label(
+            frame,
+            text="Proszę czekać...",
+            font=("Arial", 14, "bold"),
+            bg="#000000",
+            fg="#CCCCCC",
+            relief=tk.FLAT,
+            bd=0,
+            highlightthickness=0
+        )
+        label.pack(expand=True)
+        self._center_on_parent()
+        self._overlay.deiconify()
+        self._overlay.lift()
+        self._overlay.grab_set()
+        self._overlay.update()
+        self._overlay.after(self._timeout_ms, self._close_modal)
+    # NIE wywołuj wait_window, żeby nie blokować kodu i umożliwić działanie progressbara
+
+    def _close_modal(self):
+        if self._overlay is not None:
+            self.hide()
 
     def hide(self):
         if self._overlay is not None:
+            print("[WaitOverlay] hide(): ukrywam overlay")
             try:
                 self._overlay.grab_release()
-                self._unblock_events()
                 self._overlay.destroy()
             except Exception:
                 pass
             self._overlay = None
+            try:
+                import tkinter as tk
+                if hasattr(tk, '_default_root') and tk._default_root is not None:
+                    tk._default_root.focus_force()
+                    tk._default_root.update()
+                self.parent.focus_force()
+                self.parent.update()
+                self.parent.event_generate('<FocusIn>')
+            except Exception:
+                pass
 
     def _center_on_parent(self):
         self.parent.update_idletasks()
