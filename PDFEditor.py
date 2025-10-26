@@ -393,7 +393,6 @@ class PreferencesManager:
             'default_read_path': '',
             'last_open_path': '',
             'last_save_path': '',
-            'thumbnail_quality': 'Średnia',
             'confirm_delete': 'False',
             'export_image_dpi': '300',  # DPI dla eksportu obrazów (150, 300, 600)
             
@@ -586,23 +585,17 @@ class PreferencesDialog(tk.Toplevel):
         ttk.Entry(path_frame, textvariable=self.default_path_var, width=30).pack(side="left", fill="x", expand=True)
         ttk.Button(path_frame, text="...", width=3, command=self.browse_path).pack(side="left", padx=(4, 0))
         
-        # Jakość miniatur
-        ttk.Label(general_frame, text="Jakość miniatur:").grid(row=2, column=0, sticky="w", padx=4, pady=4)
-        self.thumbnail_quality_var = tk.StringVar()
-        quality_combo = ttk.Combobox(general_frame, textvariable=self.thumbnail_quality_var, values=["Niska", "Średnia", "Wysoka"], state="readonly", width=10)
-        quality_combo.grid(row=2, column=1, sticky="w", padx=4, pady=4)
-        
         # Potwierdzenie przed usunięciem
-        ttk.Label(general_frame, text="Potwierdzenie przed usunięciem:").grid(row=3, column=0, sticky="w", padx=4, pady=4)
+        ttk.Label(general_frame, text="Potwierdzenie przed usunięciem:").grid(row=2, column=0, sticky="w", padx=4, pady=4)
         self.confirm_delete_var = tk.BooleanVar()
         confirm_check = ttk.Checkbutton(general_frame, variable=self.confirm_delete_var)
-        confirm_check.grid(row=3, column=1, sticky="w", padx=4, pady=4)
+        confirm_check.grid(row=2, column=1, sticky="w", padx=4, pady=4)
         
         # DPI eksportowanych obrazów
-        ttk.Label(general_frame, text="DPI eksportowanych obrazów:").grid(row=4, column=0, sticky="w", padx=4, pady=4)
+        ttk.Label(general_frame, text="DPI eksportowanych obrazów:").grid(row=3, column=0, sticky="w", padx=4, pady=4)
         self.export_image_dpi_var = tk.StringVar()
         dpi_combo = ttk.Combobox(general_frame, textvariable=self.export_image_dpi_var, values=["150", "300", "600"], state="readonly", width=10)
-        dpi_combo.grid(row=4, column=1, sticky="w", padx=4, pady=4)
+        dpi_combo.grid(row=3, column=1, sticky="w", padx=4, pady=4)
         
         general_frame.columnconfigure(1, weight=1)
         
@@ -685,7 +678,6 @@ class PreferencesDialog(tk.Toplevel):
         """Wczytuje obecne wartości preferencji"""
         self.default_read_path_var.set(self.prefs_manager.get('default_read_path'))
         self.default_path_var.set(self.prefs_manager.get('default_save_path'))
-        self.thumbnail_quality_var.set(self.prefs_manager.get('thumbnail_quality'))
         self.confirm_delete_var.set(self.prefs_manager.get('confirm_delete') == 'True')
         self.export_image_dpi_var.set(self.prefs_manager.get('export_image_dpi'))
         self.color_threshold_var.set(self.prefs_manager.get('color_detect_threshold'))
@@ -751,7 +743,6 @@ class PreferencesDialog(tk.Toplevel):
         
         self.prefs_manager.set('default_read_path', self.default_read_path_var.get())
         self.prefs_manager.set('default_save_path', self.default_path_var.get())
-        self.prefs_manager.set('thumbnail_quality', self.thumbnail_quality_var.get())
         self.prefs_manager.set('confirm_delete', 'True' if self.confirm_delete_var.get() else 'False')
         self.prefs_manager.set('export_image_dpi', self.export_image_dpi_var.get())
         self.prefs_manager.set('color_detect_threshold', str(threshold))
@@ -5702,7 +5693,6 @@ class SelectablePDFViewer:
         self.min_cols = 2               # Minimum columns (for safety)
         self.max_cols = 8               # Maximum columns (for safety)
         self.MIN_WINDOW_WIDTH = 950
-        self.render_dpi_factor = self._get_render_dpi_factor()
         
         self.undo_stack: List[bytes] = []
         self.redo_stack: List[bytes] = []
@@ -5873,15 +5863,6 @@ class SelectablePDFViewer:
         self._setup_drag_and_drop_file()
 
     # --- Metody obsługi GUI i zdarzeń (Bez zmian) ---
-    def _get_render_dpi_factor(self):
-        """Zwraca współczynnik DPI dla miniatur na podstawie ustawienia jakości"""
-        quality = self.prefs_manager.get('thumbnail_quality', 'Średnia')
-        quality_map = {
-            'Niska': 0.4,
-            'Średnia': 0.8,
-            'Wysoka': 1.2
-        }
-        return quality_map.get(quality, 0.8)
     
     def on_close_window(self):
         # Sprawdź czy są niezapisane zmiany (niepusty stos undo)
@@ -8328,16 +8309,34 @@ class SelectablePDFViewer:
 
     
     def _render_and_scale(self, page_index, column_width):
-        # Diagnostyka cache miniaturek
+        """
+        Renderuje miniaturę strony PDF bezpośrednio w docelowym rozmiarze.
+        
+        Funkcja generuje miniaturę dla zadanej strony PDF, renderując ją 
+        bezpośrednio w docelowej szerokości (column_width), zachowując 
+        proporcje strony. Wykorzystuje cache dla optymalizacji.
+        
+        Args:
+            page_index: Indeks strony do renderowania (0-based)
+            column_width: Docelowa szerokość miniatury w pikselach
+            
+        Returns:
+            ImageTk.PhotoImage: Obiekt z miniaturą gotową do wyświetlenia w Tkinter
+        """
+        # Sprawdź cache
         if page_index in self.tk_images and column_width in self.tk_images[page_index]:
             print(f"[CACHE] Używam cache dla strony {page_index}, szerokość {column_width}")
             return self.tk_images[page_index][column_width]
 
         print(f"[RENDER] Generuję miniaturę dla strony {page_index}, szerokość {column_width}")
+        
+        # Załaduj stronę i pobierz jej wymiary
         page = self.pdf_document.load_page(page_index)
         page_width = page.rect.width
         page_height = page.rect.height
         aspect_ratio = page_height / page_width if page_width != 0 else 1
+        
+        # Oblicz docelowe wymiary miniatury
         final_thumb_width = column_width
         final_thumb_height = int(final_thumb_width * aspect_ratio)
         if final_thumb_width <= 0:
@@ -8347,20 +8346,33 @@ class SelectablePDFViewer:
 
         print(f"final_thumb_width={final_thumb_width}, final_thumb_height={final_thumb_height}")
 
-        mat = fitz.Matrix(self.render_dpi_factor, self.render_dpi_factor)
+        # Oblicz współczynnik skalowania aby renderować bezpośrednio w docelowym rozmiarze
+        # PyMuPDF renderuje w 72 DPI domyślnie, więc obliczamy skalę na podstawie tego
+        scale_x = final_thumb_width / page_width
+        scale_y = final_thumb_height / page_height
+        # Użyj mniejszej skali aby zachować proporcje
+        scale = min(scale_x, scale_y)
+        
+        # Renderuj stronę w docelowym rozmiarze
+        mat = fitz.Matrix(scale, scale)
         pix = page.get_pixmap(matrix=mat, alpha=False)
 
+        # Konwertuj do PIL Image
         img_data = pix.tobytes("ppm")
         image = Image.open(io.BytesIO(img_data))
 
-        print(f"Image.size (oryginalny render): {image.size}")
+        print(f"Image.size (po renderowaniu): {image.size}")
 
-        resized_image = image.resize((final_thumb_width, final_thumb_height), Image.BILINEAR)
-        print(f"Resized image size: {resized_image.size}")
+        # Jeśli rozmiar nie jest dokładnie zgodny z targetem (przez zaokrąglenia),
+        # dostosuj do dokładnej wielkości
+        if image.size != (final_thumb_width, final_thumb_height):
+            image = image.resize((final_thumb_width, final_thumb_height), Image.BILINEAR)
+            print(f"Resized image size: {image.size}")
 
-        img_tk = ImageTk.PhotoImage(resized_image)
+        # Konwertuj do PhotoImage dla Tkinter
+        img_tk = ImageTk.PhotoImage(image)
         
-        # Cache the thumbnail for this width
+        # Zapisz w cache
         if page_index not in self.tk_images:
             self.tk_images[page_index] = {}
         self.tk_images[page_index][column_width] = img_tk
