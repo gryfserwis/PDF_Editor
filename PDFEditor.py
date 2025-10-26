@@ -9070,7 +9070,8 @@ class SelectablePDFViewer:
                 gs_command,
                 capture_output=True,
                 text=True,
-                timeout=300  # 5 minut timeout
+                timeout=300,  # 5 minut timeout
+                shell=False  # Explicitly disable shell for security
             )
             
             if result.returncode != 0:
@@ -9096,8 +9097,9 @@ class SelectablePDFViewer:
             try:
                 os.unlink(temp_input_path)
                 os.unlink(temp_output_path)
-            except:
-                pass  # Ignoruj błędy przy usuwaniu plików tymczasowych
+            except (OSError, FileNotFoundError) as cleanup_error:
+                # Ignoruj błędy przy usuwaniu plików tymczasowych
+                print(f"Ostrzeżenie: Nie udało się usunąć plików tymczasowych: {cleanup_error}")
             
             # 6. Odśwież miniatury zmienionych stron
             self.show_progressbar(maximum=len(selected_indices))
@@ -9126,8 +9128,6 @@ class SelectablePDFViewer:
                 "Sprawdź czy Ghostscript jest poprawnie zainstalowany\ni czy ścieżka w Preferencjach jest prawidłowa.",
                 typ="error"
             )
-            import traceback
-            traceback.print_exc()
     
     # ===================================================================
     # FUNKCJE MAKR
