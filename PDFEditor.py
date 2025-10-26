@@ -471,6 +471,9 @@ class PreferencesManager:
             # Watermark settings
             'watermark_on_save': 'False',
             'watermark_on_save_restricted': 'True',
+            
+            # Ghostscript settings
+            'ghostscript_path': '',
         }
         self.load_preferences()
     
@@ -644,6 +647,23 @@ class PreferencesDialog(tk.Toplevel):
         
         watermark_frame.columnconfigure(1, weight=1)
         
+        # Sekcja Ghostscript
+        ghostscript_frame = ttk.LabelFrame(main_frame, text="Ghostscript", padding="8")
+        ghostscript_frame.pack(fill="x", pady=(0, 8))
+        
+        # Ścieżka do Ghostscript
+        ttk.Label(ghostscript_frame, text="Ścieżka do Ghostscript:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
+        self.ghostscript_path_var = tk.StringVar()
+        gs_path_frame = ttk.Frame(ghostscript_frame)
+        gs_path_frame.grid(row=0, column=1, sticky="ew", padx=4, pady=4)
+        ttk.Entry(gs_path_frame, textvariable=self.ghostscript_path_var, width=30).pack(side="left", fill="x", expand=True)
+        ttk.Button(gs_path_frame, text="...", width=3, command=self.browse_ghostscript_path).pack(side="left", padx=(4, 0))
+        
+        # Informacja o domyślnej ścieżce
+        ttk.Label(ghostscript_frame, text="Domyślnie: gs\\bin\\gswin64.exe w katalogu programu", foreground="gray").grid(row=1, column=0, columnspan=2, sticky="w", padx=4, pady=(0, 4))
+        
+        ghostscript_frame.columnconfigure(1, weight=1)
+        
         # Informacja
        # info_frame = ttk.Frame(main_frame)
        # info_frame.pack(fill="x", pady=8)
@@ -674,6 +694,18 @@ class PreferencesDialog(tk.Toplevel):
         if path:
             self.default_path_var.set(path)
     
+    def browse_ghostscript_path(self):
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(
+            title="Wybierz plik wykonywalny Ghostscript",
+            filetypes=[
+                ("Pliki wykonywalne", "*.exe"),
+                ("Wszystkie pliki", "*.*")
+            ]
+        )
+        if path:
+            self.ghostscript_path_var.set(path)
+    
     def load_current_values(self):
         """Wczytuje obecne wartości preferencji"""
         self.default_read_path_var.set(self.prefs_manager.get('default_read_path'))
@@ -685,6 +717,7 @@ class PreferencesDialog(tk.Toplevel):
         self.color_scale_var.set(self.prefs_manager.get('color_detect_scale'))
         self.watermark_on_save_var.set(self.prefs_manager.get('watermark_on_save') == 'True')
         self.watermark_on_save_restricted_var.set(self.prefs_manager.get('watermark_on_save_restricted') == 'True')
+        self.ghostscript_path_var.set(self.prefs_manager.get('ghostscript_path'))
     
     def reset_all_defaults(self):
         """Przywraca domyślne wartości we wszystkich dialogach"""
@@ -741,6 +774,16 @@ class PreferencesDialog(tk.Toplevel):
             custom_messagebox(self, "Błąd", "Skala renderowania musi być liczbą.", typ="error")
             return
         
+        # Validate Ghostscript path if provided
+        gs_path = self.ghostscript_path_var.get().strip()
+        if gs_path:
+            if not os.path.isfile(gs_path):
+                custom_messagebox(self, "Błąd", "Podana ścieżka do Ghostscript nie istnieje lub nie jest plikiem wykonywalnym.", typ="error")
+                return
+            # Check if it's executable (on Unix systems) or .exe (on Windows)
+            if not (os.access(gs_path, os.X_OK) or gs_path.lower().endswith('.exe')):
+                custom_messagebox(self, "Ostrzeżenie", "Podany plik może nie być wykonywalny.", typ="warning")
+        
         self.prefs_manager.set('default_read_path', self.default_read_path_var.get())
         self.prefs_manager.set('default_save_path', self.default_path_var.get())
         self.prefs_manager.set('confirm_delete', 'True' if self.confirm_delete_var.get() else 'False')
@@ -750,6 +793,7 @@ class PreferencesDialog(tk.Toplevel):
         self.prefs_manager.set('color_detect_scale', str(scale))
         self.prefs_manager.set('watermark_on_save', 'True' if self.watermark_on_save_var.get() else 'False')
         self.prefs_manager.set('watermark_on_save_restricted', 'True' if self.watermark_on_save_restricted_var.get() else 'False')
+        self.prefs_manager.set('ghostscript_path', gs_path)
         self.result = True
         self.destroy()
     
@@ -6092,6 +6136,8 @@ class SelectablePDFViewer:
         self.external_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Programy", menu=self.external_menu)
         self.external_menu.add_command(label="Analiza PDF", command=self.show_pdf_analysis, state=tk.DISABLED, accelerator="F11")
+        self.external_menu.add_command(label="Konwertuj wybrane strony do grayscale (Ghostscript)", command=self.convert_selected_pages_to_grayscale, state=tk.DISABLED)
+        self.external_menu.add_separator()
         self.external_menu.add_command(label="Scalanie plików PDF", command=self.merge_pdf_files)
         self.external_menu.add_command(label="Porównianie PDF", command=self.run_compare_program)
         
@@ -6590,7 +6636,8 @@ class SelectablePDFViewer:
             "Zapisz z restrykcjami drukowania...": import_state,
             "Zamień strony miejscami": two_pages_state,
             "Usuń puste strony": reverse_state,
-            "Analiza PDF": reverse_state
+            "Analiza PDF": reverse_state,
+            "Konwertuj wybrane strony do grayscale (Ghostscript)": delete_state
             
         }
         
@@ -8888,6 +8935,199 @@ class SelectablePDFViewer:
         # Restore focus and mousewheel bindings after dialog closes
         self.master.focus_force()
         self._bind_mousewheel()
+    
+    # ===================================================================
+    # FUNKCJE GHOSTSCRIPT
+    # ===================================================================
+    
+    def _get_ghostscript_path(self):
+        """
+        Zwraca ścieżkę do Ghostscript.
+        Najpierw sprawdza ustawienia użytkownika, potem domyślną lokalizację.
+        
+        Returns:
+            str: Ścieżka do Ghostscript lub None jeśli nie znaleziono
+        """
+        # Sprawdź ustawienia użytkownika
+        user_path = self.prefs_manager.get('ghostscript_path', '').strip()
+        if user_path and os.path.isfile(user_path):
+            return user_path
+        
+        # Sprawdź domyślną lokalizację w katalogu programu
+        # Obsługa zarówno trybu portable jak i pyinstaller
+        default_paths = [
+            os.path.join(BASE_DIR, 'gs', 'bin', 'gswin64.exe'),
+            os.path.join(BASE_DIR, 'gs', 'bin', 'gswin32.exe'),
+            os.path.join(BASE_DIR, 'gs', 'bin', 'gs'),  # Unix
+        ]
+        
+        for path in default_paths:
+            if os.path.isfile(path):
+                return path
+        
+        # Sprawdź PATH systemowy
+        import shutil
+        gs_in_path = shutil.which('gswin64c') or shutil.which('gswin32c') or shutil.which('gs')
+        if gs_in_path:
+            return gs_in_path
+        
+        return None
+    
+    def convert_selected_pages_to_grayscale(self):
+        """
+        Konwertuje wybrane strony PDF na grayscale przez Ghostscript.
+        
+        Workflow:
+        1. Sprawdza czy Ghostscript jest dostępny
+        2. Eksportuje zaznaczone strony do tymczasowego PDF
+        3. Przetwarza przez Ghostscript z parametrami grayscale
+        4. Zamienia wybrane strony w głównym dokumencie na wersje z przetworzonego pliku
+        """
+        if not self.pdf_document:
+            custom_messagebox(self.master, "Błąd", "Brak otwartego dokumentu PDF.", typ="error")
+            return
+        
+        if not self.selected_pages:
+            custom_messagebox(self.master, "Błąd", "Nie zaznaczono żadnych stron.\nZaznacz strony do konwersji.", typ="error")
+            return
+        
+        # Sprawdź czy Ghostscript jest dostępny
+        gs_path = self._get_ghostscript_path()
+        if not gs_path:
+            message = (
+                "Nie znaleziono Ghostscript.\n\n"
+                "Aby używać tej funkcji, pobierz i zainstaluj Ghostscript lub:\n"
+                "1. Pobierz Ghostscript ze strony: https://www.ghostscript.com/\n"
+                "2. Wypakuj do podkatalogu 'gs' w katalogu programu\n"
+                "   lub ustaw ścieżkę w Preferencjach (Plik → Preferencje)\n\n"
+                "Oczekiwana struktura:\n"
+                "  [katalog programu]\\gs\\bin\\gswin64.exe"
+            )
+            custom_messagebox(self.master, "Ghostscript nie znaleziony", message, typ="error")
+            return
+        
+        # Potwierdź operację
+        num_pages = len(self.selected_pages)
+        response = custom_messagebox(
+            self.master,
+            "Konwersja do grayscale",
+            f"Czy konwertować {num_pages} zaznaczonych stron do grayscale (skala szarości)?\n\n"
+            "Ta operacja jest nieodwracalna (użyj Cofnij aby przywrócić).",
+            typ="question"
+        )
+        
+        if not response:
+            return
+        
+        import tempfile
+        import subprocess
+        
+        try:
+            # Zapisz stan do undo
+            self._save_state_to_undo()
+            
+            # Pokaż pasek postępu
+            self.show_progressbar(maximum=100, mode="indeterminate")
+            self._update_status("Przygotowywanie stron do konwersji...")
+            self.master.update()
+            
+            # 1. Eksportuj zaznaczone strony do tymczasowego PDF
+            selected_indices = sorted(list(self.selected_pages))
+            
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_input:
+                temp_input_path = temp_input.name
+                temp_doc = fitz.open()
+                for page_idx in selected_indices:
+                    temp_doc.insert_pdf(self.pdf_document, from_page=page_idx, to_page=page_idx)
+                temp_doc.save(temp_input_path)
+                temp_doc.close()
+            
+            # 2. Przygotuj plik wyjściowy
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_output:
+                temp_output_path = temp_output.name
+            
+            # 3. Wykonaj konwersję przez Ghostscript
+            self._update_status("Konwersja do grayscale przez Ghostscript...")
+            self.master.update()
+            
+            # Parametry Ghostscript dla konwersji do grayscale
+            gs_command = [
+                gs_path,
+                '-dSAFER',
+                '-dBATCH',
+                '-dNOPAUSE',
+                '-dQUIET',
+                '-sDEVICE=pdfwrite',
+                '-sColorConversionStrategy=Gray',
+                '-dProcessColorModel=/DeviceGray',
+                '-dCompatibilityLevel=1.4',
+                f'-sOutputFile={temp_output_path}',
+                temp_input_path
+            ]
+            
+            # Uruchom Ghostscript
+            result = subprocess.run(
+                gs_command,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minut timeout
+            )
+            
+            if result.returncode != 0:
+                raise Exception(f"Ghostscript zwrócił błąd:\n{result.stderr}")
+            
+            # 4. Wczytaj przetworzone strony
+            self._update_status("Zastępowanie stron w dokumencie...")
+            self.master.update()
+            
+            processed_doc = fitz.open(temp_output_path)
+            
+            # Zastąp strony w odwrotnej kolejności, aby nie zmienić indeksów
+            for i, page_idx in enumerate(reversed(selected_indices)):
+                # Usuń starą stronę
+                self.pdf_document.delete_page(page_idx)
+                # Wstaw nową stronę (grayscale) w to samo miejsce
+                processed_page_idx = len(selected_indices) - 1 - i
+                self.pdf_document.insert_pdf(processed_doc, from_page=processed_page_idx, to_page=processed_page_idx, start_at=page_idx)
+            
+            processed_doc.close()
+            
+            # 5. Posprzątaj pliki tymczasowe
+            try:
+                os.unlink(temp_input_path)
+                os.unlink(temp_output_path)
+            except:
+                pass  # Ignoruj błędy przy usuwaniu plików tymczasowych
+            
+            # 6. Odśwież miniatury zmienionych stron
+            self.show_progressbar(maximum=len(selected_indices))
+            for i, page_idx in enumerate(selected_indices):
+                self._update_status(f"Konwersja zakończona. Odświeżanie miniatur...")
+                self.update_single_thumbnail(page_idx)
+                self.update_progressbar(i + 1)
+            
+            self.hide_progressbar()
+            self._update_status(f"Konwersja do grayscale zakończona. Przetworzono {num_pages} stron.")
+            
+        except subprocess.TimeoutExpired:
+            self.hide_progressbar()
+            custom_messagebox(
+                self.master,
+                "Błąd",
+                "Ghostscript nie odpowiada. Operacja przekroczyła limit czasu (5 minut).",
+                typ="error"
+            )
+        except Exception as e:
+            self.hide_progressbar()
+            custom_messagebox(
+                self.master,
+                "Błąd konwersji",
+                f"Nie udało się skonwertować stron do grayscale:\n\n{str(e)}\n\n"
+                "Sprawdź czy Ghostscript jest poprawnie zainstalowany\ni czy ścieżka w Preferencjach jest prawidłowa.",
+                typ="error"
+            )
+            import traceback
+            traceback.print_exc()
     
     # ===================================================================
     # FUNKCJE MAKR
