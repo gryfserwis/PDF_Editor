@@ -8954,20 +8954,22 @@ class SelectablePDFViewer:
             return user_path
         
         # Sprawdź domyślną lokalizację w katalogu programu
-        # Obsługa zarówno trybu portable jak i pyinstaller
+        # Najpierw preferuj wersję konsolową (c), potem GUI
         default_paths = [
+            os.path.join(BASE_DIR, 'gs', 'bin', 'gswin64c.exe'),
+            os.path.join(BASE_DIR, 'gs', 'bin', 'gswin32c.exe'),
+            os.path.join(BASE_DIR, 'gs', 'bin', 'gs'),  # Unix
             os.path.join(BASE_DIR, 'gs', 'bin', 'gswin64.exe'),
             os.path.join(BASE_DIR, 'gs', 'bin', 'gswin32.exe'),
-            os.path.join(BASE_DIR, 'gs', 'bin', 'gs'),  # Unix
         ]
-        
+
         for path in default_paths:
             if os.path.isfile(path):
                 return path
-        
+
         # Sprawdź PATH systemowy
         import shutil
-        gs_in_path = shutil.which('gswin64c') or shutil.which('gswin32c') or shutil.which('gs')
+        gs_in_path = shutil.which('gswin64c') or shutil.which('gswin32c') or shutil.which('gs') or shutil.which('gswin64') or shutil.which('gswin32')
         if gs_in_path:
             return gs_in_path
         
