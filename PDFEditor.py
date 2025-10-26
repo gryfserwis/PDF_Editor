@@ -4212,18 +4212,24 @@ class WaitOverlay:
         self._overlay.overrideredirect(True)
         self._overlay.transient(self.parent)
         self._overlay.attributes("-topmost", True)
-        frame = tk.Frame(self._overlay, bg="#222222", relief=tk.FLAT, bd=0)
-        frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        self._overlay.configure(bg="#000000")
+        min_width = 320
+        min_height = 120
+        self._overlay.minsize(min_width, min_height)
+        frame = tk.Frame(self._overlay, bg="#000000", relief=tk.FLAT, bd=0, highlightthickness=0, width=min_width, height=min_height)
+        frame.pack_propagate(False)
+        frame.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
         label = tk.Label(
             frame,
             text="Proszę czekać...",
             font=("Arial", 14, "bold"),
-            bg="#222222",
+            bg="#000000",
             fg="#CCCCCC",
             relief=tk.FLAT,
-            bd=0
+            bd=0,
+            highlightthickness=0
         )
-        label.pack(pady=10)
+        label.pack(expand=True)
         self._center_on_parent()
         self._overlay.deiconify()  # Pokaż okno
         self._overlay.lift()
