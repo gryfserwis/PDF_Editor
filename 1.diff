@@ -1,0 +1,134 @@
+--- a/PDFEditor.py
++++ b/PDFEditor.py
+@@ class PreferencesManager:
+-            'thumbnail_quality': 'Średnia',
+@@ class PreferencesManager:
+-        self.defaults = {
+-            # Preferencje globalne
+-            'default_save_path': '',
+-            'default_read_path': '',
+-            'last_open_path': '',
+-            'last_save_path': '',
+-            'thumbnail_quality': 'Średnia',
+-            'confirm_delete': 'False',
+-            'export_image_dpi': '300',  # DPI dla eksportu obrazów (150, 300, 600)
++        self.defaults = {
++            # Preferencje globalne
++            'default_save_path': '',
++            'default_read_path': '',
++            'last_open_path': '',
++            'last_save_path': '',
++            'confirm_delete': 'False',
++            'export_image_dpi': '300',  # DPI dla eksportu obrazów (150, 300, 600)
+@@ class PreferencesManager:
+-        self.load_preferences()
++        self.load_preferences()
+@@ class PreferencesManager:
+-        for key, value in self.defaults.items():
+-            if key not in self.preferences:
+-                self.preferences[key] = value
++        for key, value in self.defaults.items():
++            if key not in self.preferences:
++                self.preferences[key] = value
+@@ class PreferencesManager:
+-        try:
+-            with open(self.filepath, 'w', encoding='utf-8') as f:
+-                for key, value in sorted(self.preferences.items()):
+-                    f.write(f"{key}={value}\n")
+-        except Exception as e:
+-            print(f"Błąd zapisywania preferencji: {e}")
++        try:
++            with open(self.filepath, 'w', encoding='utf-8') as f:
++                for key, value in sorted(self.preferences.items()):
++                    if key == "thumbnail_quality":
++                        continue  # Pomijamy zapis nieużywanego klucza
++                    f.write(f"{key}={value}\n")
++        except Exception as e:
++            print(f"Błąd zapisywania preferencji: {e}")
+@@ class PreferencesManager:
+-        return self.preferences.get(key, default if default is not None else self.defaults.get(key, ''))
++        return self.preferences.get(key, default if default is not None else self.defaults.get(key, ''))
+@@ class PreferencesDialog(tk.Toplevel):
+-        # Jakość miniatur
+-        ttk.Label(general_frame, text="Jakość miniatur:").grid(row=2, column=0, sticky="w", padx=4, pady=4)
+-        self.thumbnail_quality_var = tk.StringVar()
+-        quality_combo = ttk.Combobox(general_frame, textvariable=self.thumbnail_quality_var, values=["Niska", "Średnia", "Wysoka"], state="readonly", width=10)
+-        quality_combo.grid(row=2, column=1, sticky="w", padx=4, pady=4)
+@@ class PreferencesDialog(tk.Toplevel):
+-        self.thumbnail_quality_var.set(self.prefs_manager.get('thumbnail_quality'))
+@@ class PreferencesDialog(tk.Toplevel):
+-        self.prefs_manager.set('thumbnail_quality', self.thumbnail_quality_var.get())
+@@ class PreferencesDialog(tk.Toplevel):
+-        self.thumbnail_quality_var.set(self.prefs_manager.get('thumbnail_quality'))
+@@
+-        self.prefs_manager.set('thumbnail_quality', self.thumbnail_quality_var.get())
+@@
+-    def _render_and_scale(self, page_index, column_width):
+-        # Diagnostyka cache miniaturek
+-        if page_index in self.tk_images and column_width in self.tk_images[page_index]:
+-            print(f"[CACHE] Używam cache dla strony {page_index}, szerokość {column_width}")
+-            return self.tk_images[page_index][column_width]
+-
+-        print(f"[RENDER] Generuję miniaturę dla strony {page_index}, szerokość {column_width}")
+-        page = self.pdf_document.load_page(page_index)
+-        page_width = page.rect.width
+-        page_height = page.rect.height
+-        aspect_ratio = page_height / page_width if page_width != 0 else 1
+-        final_thumb_width = column_width
+-        final_thumb_height = int(final_thumb_width * aspect_ratio)
+-        if final_thumb_width <= 0:
+-            final_thumb_width = 1
+-        if final_thumb_height <= 0:
+-            final_thumb_height = 1
+-
+-        print(f"final_thumb_width={final_thumb_width}, final_thumb_height={final_thumb_height}")
+-
+-        mat = fitz.Matrix(self.render_dpi_factor, self.render_dpi_factor)
+-        pix = page.get_pixmap(matrix=mat, alpha=False)
+-
+-        img_data = pix.tobytes("ppm")
+-        image = Image.open(io.BytesIO(img_data))
+-
+-        print(f"Image.size (oryginalny render): {image.size}")
+-
+-        resized_image = image.resize((final_thumb_width, final_thumb_height), Image.BILINEAR)
+-        print(f"Resized image size: {resized_image.size}")
+-
+-        img_tk = ImageTk.PhotoImage(resized_image)
+-        # Cache the thumbnail for this width
+-        if page_index not in self.tk_images:
+-            self.tk_images[page_index] = {}
+-        self.tk_images[page_index][column_width] = img_tk
+-
+-        print(f"[CACHE UPDATE] Dodano do cache: strona {page_index}, szerokość {column_width}")
+-
+-        return img_tk
++    def _render_and_scale(self, page_index, column_width):
++        # Sprawdź cache
++        if page_index in self.tk_images and column_width in self.tk_images[page_index]:
++            return self.tk_images[page_index][column_width]
++
++        page = self.pdf_document.load_page(page_index)
++        page_width = page.rect.width
++        page_height = page.rect.height
++
++        # Zoom tak, aby bitmapa miała szerokość column_width
++        zoom = column_width / page_width
++        mat = fitz.Matrix(zoom, zoom)
++        pix = page.get_pixmap(matrix=mat, alpha=False)
++
++        img_data = pix.tobytes("ppm")
++        image = Image.open(io.BytesIO(img_data))
++
++        # Korekta wysokości (ew. zaokrąglenie)
++        final_thumb_width = column_width
++        final_thumb_height = int(final_thumb_width * (page_height / page_width))
++        if image.size[0] != final_thumb_width or image.size[1] != final_thumb_height:
++            image = image.resize((final_thumb_width, final_thumb_height), Image.BILINEAR)
++
++        img_tk = ImageTk.PhotoImage(image)
++        if page_index not in self.tk_images:
++            self.tk_images[page_index] = {}
++        self.tk_images[page_index][column_width] = img_tk
++
++        return img_tk
