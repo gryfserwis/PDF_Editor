@@ -160,12 +160,12 @@ def render_thumbnail_for_multiprocessing(pdf_bytes, page_index, thumb_width):
         mat = fitz.Matrix(scale, scale)
         pix = page.get_pixmap(matrix=mat, alpha=False)
         
-        # Konwertuj do PIL Image - użyj pil_image() dla najlepszej wydajności
+        # Konwertuj do PIL Image - użyj bezpośredniego dostępu do bufora pikseli
         try:
-            # Próbuj użyć pil_image() (najwydajniejsze - bezpośrednia konwersja)
+            # Bezpośrednie utworzenie obrazu z bufora pikseli (najbardziej wydajne)
             image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
         except Exception:
-            # Fallback do tradycyjnej metody
+            # Fallback do tradycyjnej metody przez PPM
             img_data = pix.tobytes("ppm")
             image = Image.open(io.BytesIO(img_data))
         
