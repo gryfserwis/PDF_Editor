@@ -4094,24 +4094,42 @@ class PDFAnalysisDialog(tk.Toplevel):
             self._show_message("Brak danych do wyświetlenia.")
             return
         
-        # Group by format and color, rozbij każdy niestandardowy rozmiar osobno
+        # Group by format and color, sumuj niestandardowe po wymiarach
         color_format_groups = {}
         for key, data in self.analysis_results.items():
             color = data['color']
             page_format = data['format']
-            # Jeśli niestandardowy, zamień na wymiary pierwszej strony
-            if page_format == "Niestandardowy" and data['pages']:
-                first_idx = data['pages'][0]
-                page = self.viewer.pdf_document[first_idx]
-                rect = page.rect
-                width_mm = round(rect.width / 72 * 25.4)
-                height_mm = round(rect.height / 72 * 25.4)
-                page_format = f"{width_mm}x{height_mm} mm"
             if color not in color_format_groups:
                 color_format_groups[color] = {}
-            if page_format not in color_format_groups[color]:
-                color_format_groups[color][page_format] = []
-            color_format_groups[color][page_format].append(data)
+            if page_format == "Niestandardowy" and data['pages']:
+                # Grupuj po wymiarach
+                dim_to_pages = {}
+                dim_to_landscape = {}
+                for idx in data['pages']:
+                    page = self.viewer.pdf_document[idx]
+                    rect = page.rect
+                    width_mm = round(rect.width / 72 * 25.4)
+                    height_mm = round(rect.height / 72 * 25.4)
+                    dim_label = f"{width_mm}x{height_mm} mm"
+                    if dim_label not in dim_to_pages:
+                        dim_to_pages[dim_label] = []
+                        dim_to_landscape[dim_label] = 0
+                    dim_to_pages[dim_label].append(idx)
+                    if self._is_landscape(page):
+                        dim_to_landscape[dim_label] += 1
+                for dim_label, idxs in dim_to_pages.items():
+                    if dim_label not in color_format_groups[color]:
+                        color_format_groups[color][dim_label] = []
+                    color_format_groups[color][dim_label].append({
+                        'color': color,
+                        'format': dim_label,
+                        'pages': idxs,
+                        'landscape_count': dim_to_landscape[dim_label]
+                    })
+            else:
+                if page_format not in color_format_groups[color]:
+                    color_format_groups[color][page_format] = []
+                color_format_groups[color][page_format].append(data)
         
         # Display grouped results
         row = 0
@@ -4171,21 +4189,32 @@ class PDFAnalysisDialog(tk.Toplevel):
         format_orientation_totals = {}
         for key, data in self.analysis_results.items():
             fmt = data['format']
-            # Jeśli niestandardowy, zamień na wymiary pierwszej strony
             if fmt == "Niestandardowy" and data['pages']:
-                first_idx = data['pages'][0]
-                page = self.viewer.pdf_document[first_idx]
-                rect = page.rect
-                width_mm = round(rect.width / 72 * 25.4)
-                height_mm = round(rect.height / 72 * 25.4)
-                fmt = f"{width_mm}x{height_mm} mm"
-            for idx in data['pages']:
-                # Ustal orientację strony
-                page = self.viewer.pdf_document[idx]
-                orient = 'Poziome' if self._is_landscape(page) else 'Pionowe'
-                if fmt not in format_orientation_totals:
-                    format_orientation_totals[fmt] = {'Pionowe': [], 'Poziome': []}
-                format_orientation_totals[fmt][orient].append(idx)
+                # Grupuj po wymiarach
+                dim_to_pages = {}
+                dim_to_orient = {}
+                for idx in data['pages']:
+                    page = self.viewer.pdf_document[idx]
+                    rect = page.rect
+                    width_mm = round(rect.width / 72 * 25.4)
+                    height_mm = round(rect.height / 72 * 25.4)
+                    dim_label = f"{width_mm}x{height_mm} mm"
+                    orient = 'Poziome' if self._is_landscape(page) else 'Pionowe'
+                    if dim_label not in dim_to_pages:
+                        dim_to_pages[dim_label] = {'Pionowe': [], 'Poziome': []}
+                    dim_to_pages[dim_label][orient].append(idx)
+                for dim_label, orient_dict in dim_to_pages.items():
+                    if dim_label not in format_orientation_totals:
+                        format_orientation_totals[dim_label] = {'Pionowe': [], 'Poziome': []}
+                    format_orientation_totals[dim_label]['Pionowe'].extend(orient_dict['Pionowe'])
+                    format_orientation_totals[dim_label]['Poziome'].extend(orient_dict['Poziome'])
+            else:
+                for idx in data['pages']:
+                    page = self.viewer.pdf_document[idx]
+                    orient = 'Poziome' if self._is_landscape(page) else 'Pionowe'
+                    if fmt not in format_orientation_totals:
+                        format_orientation_totals[fmt] = {'Pionowe': [], 'Poziome': []}
+                    format_orientation_totals[fmt][orient].append(idx)
 
         # Wyświetl nagłówek
         row += 1
