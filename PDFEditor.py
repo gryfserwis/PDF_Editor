@@ -3880,7 +3880,7 @@ class PDFAnalysisDialog(tk.Toplevel):
         self.transient(parent)
         # Don't grab_set() - we want non-blocking dialog
         self.resizable(True, True)
-        self.geometry("300x400")
+        self.geometry("300x600")
         self.minsize(300, 400)
         
         self.analysis_results = {}
@@ -4094,17 +4094,23 @@ class PDFAnalysisDialog(tk.Toplevel):
             self._show_message("Brak danych do wyświetlenia.")
             return
         
-        # Group by format and color
+        # Group by format and color, rozbij każdy niestandardowy rozmiar osobno
         color_format_groups = {}
         for key, data in self.analysis_results.items():
             color = data['color']
             page_format = data['format']
-            
+            # Jeśli niestandardowy, zamień na wymiary pierwszej strony
+            if page_format == "Niestandardowy" and data['pages']:
+                first_idx = data['pages'][0]
+                page = self.viewer.pdf_document[first_idx]
+                rect = page.rect
+                width_mm = round(rect.width / 72 * 25.4)
+                height_mm = round(rect.height / 72 * 25.4)
+                page_format = f"{width_mm}x{height_mm} mm"
             if color not in color_format_groups:
                 color_format_groups[color] = {}
             if page_format not in color_format_groups[color]:
                 color_format_groups[color][page_format] = []
-            
             color_format_groups[color][page_format].append(data)
         
         # Display grouped results
@@ -4114,17 +4120,37 @@ class PDFAnalysisDialog(tk.Toplevel):
             color_label = ttk.Label(self.results_container, text=f"{color}", font=("Arial", 10, "bold"))
             color_label.grid(row=row, column=0, columnspan=2, sticky="w", pady=(5, 2))
             row += 1
-            
-            for page_format in sorted(color_format_groups[color].keys()):
+
+            # Sort formats: standard first, then custom (dimensions)
+            def format_sort_key(fmt):
+                # Standard formats: A4, A3, Letter, etc.
+                std_formats = ["A4", "A3", "A5", "A6", "Letter", "Legal", "B5", "B4", "B3", "B6"]
+                if fmt in std_formats:
+                    return (0, std_formats.index(fmt) if fmt in std_formats else 0, fmt)
+                # Custom: "123x456 mm"
+                if "x" in fmt and "mm" in fmt:
+                    return (1, fmt)
+                return (2, fmt)
+
+            sorted_formats = sorted(color_format_groups[color].keys(), key=format_sort_key)
+            for page_format in sorted_formats:
                 for data in color_format_groups[color][page_format]:
                     pages = data['pages']
                     landscape_count = data['landscape_count']
-                    
+                    # Jeśli format to "Niestandardowy", pokaż tylko wymiary
+                    if page_format == "Niestandardowy" and pages:
+                        first_idx = pages[0]
+                        page = self.viewer.pdf_document[first_idx]
+                        rect = page.rect
+                        width_mm = round(rect.width / 72 * 25.4)
+                        height_mm = round(rect.height / 72 * 25.4)
+                        fmt_label = f"{width_mm}x{height_mm} mm"
+                    else:
+                        fmt_label = page_format
                     # Create clickable button
-                    text = f"{page_format}: {len(pages)} str."
+                    text = f"{fmt_label}: {len(pages)} str."
                     if page_format in ['A4', 'Letter'] and landscape_count > 0:
                         text += f" (poziomych: {landscape_count})"
-                    
                     btn = tk.Button(
                         self.results_container,
                         text=text,
@@ -4137,41 +4163,75 @@ class PDFAnalysisDialog(tk.Toplevel):
                     )
                     btn.grid(row=row, column=0, sticky="ew", padx=(10, 5), pady=1)
                     self.result_buttons.append(btn)
-                    
                     row += 1
         
-        # --- SUMA FORMATÓW NIEZALEŻNIE OD KOLORU ---
-        # Zbierz sumy stron dla każdego formatu
-        format_totals = {}
-        format_pages = {}
+
+        # --- SUMA FORMATÓW Z PODZIAŁEM NA ORIENTACJĘ ---
+        # Każdy niestandardowy rozmiar osobno
+        format_orientation_totals = {}
         for key, data in self.analysis_results.items():
             fmt = data['format']
-            if fmt not in format_totals:
-                format_totals[fmt] = 0
-                format_pages[fmt] = []
-            format_totals[fmt] += len(data['pages'])
-            format_pages[fmt].extend(data['pages'])
+            # Jeśli niestandardowy, zamień na wymiary pierwszej strony
+            if fmt == "Niestandardowy" and data['pages']:
+                first_idx = data['pages'][0]
+                page = self.viewer.pdf_document[first_idx]
+                rect = page.rect
+                width_mm = round(rect.width / 72 * 25.4)
+                height_mm = round(rect.height / 72 * 25.4)
+                fmt = f"{width_mm}x{height_mm} mm"
+            for idx in data['pages']:
+                # Ustal orientację strony
+                page = self.viewer.pdf_document[idx]
+                orient = 'Poziome' if self._is_landscape(page) else 'Pionowe'
+                if fmt not in format_orientation_totals:
+                    format_orientation_totals[fmt] = {'Pionowe': [], 'Poziome': []}
+                format_orientation_totals[fmt][orient].append(idx)
 
         # Wyświetl nagłówek
         row += 1
         total_label = ttk.Label(self.results_container, text="Formaty łącznie:", font=("Arial", 10, "bold"))
         total_label.grid(row=row, column=0, columnspan=2, sticky="w", pady=(12, 2))
         row += 1
-        for fmt in sorted(format_totals.keys()):
-            text = f"{fmt}: {format_totals[fmt]} str."
-            btn = tk.Button(
-                self.results_container,
-                text=text,
-                anchor="w",
-                relief="flat",
-                bg="#f0f0f0",
-                fg="#0066cc",
-                cursor="hand2",
-                command=lambda p=format_pages[fmt]: self._select_pages(p)
-            )
-            btn.grid(row=row, column=0, sticky="ew", padx=(10, 5), pady=1)
-            self.result_buttons.append(btn)
-            row += 1
+        # Sort formats: standard first, then custom (dimensions)
+        def format_sort_key(fmt):
+            std_formats = ["A4", "A3", "A5", "A6", "Letter", "Legal", "B5", "B4", "B3", "B6"]
+            if fmt in std_formats:
+                return (0, std_formats.index(fmt) if fmt in std_formats else 0, fmt)
+            if "x" in fmt and "mm" in fmt:
+                return (1, fmt)
+            return (2, fmt)
+
+        sorted_total_formats = sorted(format_orientation_totals.keys(), key=format_sort_key)
+        for fmt in sorted_total_formats:
+            for orient in ("Pionowe", "Poziome"):
+                pages = format_orientation_totals[fmt][orient]
+                if not pages:
+                    continue
+                # Dodaj wymiary dla niestandardowego formatu
+                if fmt == "Niestandardowy":
+                    # Pobierz wymiary pierwszej strony tego formatu
+                    first_idx = pages[0]
+                    page = self.viewer.pdf_document[first_idx]
+                    rect = page.rect
+                    width_mm = round(rect.width / 72 * 25.4)
+                    height_mm = round(rect.height / 72 * 25.4)
+                    fmt_label = f"{width_mm}x{height_mm} mm"
+                else:
+                    fmt_label = fmt
+                text = f"{fmt_label} ({orient}): {len(pages)} str."
+                btn = tk.Button(
+                    self.results_container,
+                    text=text,
+                    anchor="w",
+                    relief="flat",
+                    bg="#f0f0f0",
+                    fg="#0066cc",
+                    cursor="hand2",
+                    command=lambda p=pages: self._select_pages(p)
+                )
+                btn.grid(row=row, column=0, sticky="ew", padx=(10, 5), pady=1)
+                self.result_buttons.append(btn)
+                row += 1
 
         # Configure grid
         self.results_container.columnconfigure(0, weight=1)
