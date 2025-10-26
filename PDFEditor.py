@@ -8997,11 +8997,11 @@ class SelectablePDFViewer:
             message = (
                 "Nie znaleziono Ghostscript.\n\n"
                 "Aby używać tej funkcji, pobierz i zainstaluj Ghostscript lub:\n"
-                "1. Pobierz Ghostscript ze strony: https://www.ghostscript.com/\n"
-                "2. Wypakuj do podkatalogu 'gs' w katalogu programu\n"
-                "   lub ustaw ścieżkę w Preferencjach (Plik → Preferencje)\n\n"
+                "Pobierz Ghostscript ze strony: https://www.ghostscript.com/\n"
+                "Wypakuj do podkatalogu 'gs' w katalogu programu\n"
+                "lub ustaw ścieżkę w Preferencjach (Plik → Preferencje)\n\n"
                 "Oczekiwana struktura:\n"
-                "  [katalog programu]\\gs\\bin\\gswin64.exe"
+                "[katalog programu]\\gs\\bin\\gswin64.exe"
             )
             custom_messagebox(self.master, "Ghostscript nie znaleziony", message, typ="error")
             return
@@ -9012,7 +9012,7 @@ class SelectablePDFViewer:
             self.master,
             "Konwersja do grayscale",
             f"Czy konwertować {num_pages} zaznaczonych stron do grayscale (skala szarości)?\n\n"
-            "Ta operacja jest nieodwracalna (użyj Cofnij aby przywrócić).",
+            "Operację można cofnąć (użyj Cofnij aby przywrócić).",
             typ="question"
         )
         
@@ -9021,6 +9021,7 @@ class SelectablePDFViewer:
         
         import tempfile
         import subprocess
+        import uuid
         
         try:
             # Zapisz stan do undo
@@ -9034,17 +9035,16 @@ class SelectablePDFViewer:
             # 1. Eksportuj zaznaczone strony do tymczasowego PDF
             selected_indices = sorted(list(self.selected_pages))
             
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_input:
-                temp_input_path = temp_input.name
-                temp_doc = fitz.open()
-                for page_idx in selected_indices:
-                    temp_doc.insert_pdf(self.pdf_document, from_page=page_idx, to_page=page_idx)
-                temp_doc.save(temp_input_path)
-                temp_doc.close()
+            # Ustal katalog tymczasowy na katalog programu
+            temp_dir = BASE_DIR
+            temp_input_path = os.path.join(temp_dir, f"gs_input_{uuid.uuid4().hex}.pdf")
+            temp_output_path = os.path.join(temp_dir, f"gs_output_{uuid.uuid4().hex}.pdf")
             
-            # 2. Przygotuj plik wyjściowy
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_output:
-                temp_output_path = temp_output.name
+            temp_doc = fitz.open()
+            for page_idx in selected_indices:
+                temp_doc.insert_pdf(self.pdf_document, from_page=page_idx, to_page=page_idx)
+            temp_doc.save(temp_input_path)
+            temp_doc.close()
             
             # 3. Wykonaj konwersję przez Ghostscript
             self._update_status("Konwersja do grayscale przez Ghostscript...")
