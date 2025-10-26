@@ -3421,6 +3421,9 @@ class MacroRecordingDialog(tk.Toplevel):
             self.viewer.macro_recording_name = None
             self.viewer.current_macro_actions = []
             self.viewer._update_status("Nagrywanie makra anulowane.")
+        # Restore focus and mousewheel bindings
+        self.parent.focus_force()
+        self.viewer._bind_mousewheel()
         self.destroy()
 
 
@@ -3621,6 +3624,9 @@ class MacrosListDialog(tk.Toplevel):
         # Wyczyść referencję w viewerze przed zamknięciem
         if self.viewer.macros_list_dialog == self:
             self.viewer.macros_list_dialog = None
+        # Restore focus and mousewheel bindings
+        self.parent.focus_force()
+        self.viewer._bind_mousewheel()
         self.destroy()
 
 
@@ -4186,6 +4192,9 @@ class PDFAnalysisDialog(tk.Toplevel):
         # Jeśli zamykamy pierwszy otwarty dialog, resetuj znacznik
         if hasattr(self.viewer, '_dialog_first_opened') and self.viewer._dialog_first_opened == 'analysis':
             self.viewer._dialog_first_opened = None
+        # Restore focus and mousewheel bindings
+        self.parent.focus_force()
+        self.viewer._bind_mousewheel()
         self.destroy()
 
 
@@ -4677,6 +4686,10 @@ class SelectablePDFViewer:
 
         dialog = PageCropResizeDialog(self.master, self.prefs_manager)
         result = dialog.result
+        # Restore focus and mousewheel bindings after dialog closes
+        self.master.focus_force()
+        self._bind_mousewheel()
+        
         if not result:
             self._update_status("Anulowano operację.")
             return
@@ -4783,6 +4796,10 @@ class SelectablePDFViewer:
         
         dialog = PageNumberingDialog(self.master, self.prefs_manager)
         settings = dialog.result
+        
+        # Restore focus and mousewheel bindings after dialog closes
+        self.master.focus_force()
+        self._bind_mousewheel()
 
         if settings is None:
             self._update_status("Wstawianie numeracji anulowane przez użytkownika.")
@@ -4964,6 +4981,10 @@ class SelectablePDFViewer:
         # 1. Otwarcie dialogu i pobranie wartości od użytkownika
         dialog = PageNumberMarginDialog(self.master, initial_margin_mm=20, prefs_manager=self.prefs_manager) # Zakładam, że root to główne okno
         margins = dialog.result
+        
+        # Restore focus and mousewheel bindings after dialog closes
+        self.master.focus_force()
+        self._bind_mousewheel()
 
         if margins is None:
             self._update_status("Usuwanie numerów stron anulowane.")
@@ -5186,8 +5207,13 @@ class SelectablePDFViewer:
 
         def _on_mousewheel(event):
             canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
-        dialog.bind("<Destroy>", lambda e: canvas.unbind_all("<MouseWheel>"))
+        canvas.bind("<MouseWheel>", _on_mousewheel)  # Use bind instead of bind_all for local canvas
+        
+        # Restore main app's focus and mousewheel bindings when dialog closes
+        def _on_dialog_close(event):
+            self.master.focus_force()
+            self._bind_mousewheel()
+        dialog.bind("<Destroy>", _on_dialog_close)
 
         dialog.focus_force()
  
@@ -5203,6 +5229,10 @@ class SelectablePDFViewer:
 
         dialog = ShiftContentDialog(self.master, self.prefs_manager)
         result = dialog.result
+        
+        # Restore focus and mousewheel bindings after dialog closes
+        self.master.focus_force()
+        self._bind_mousewheel()
 
         if not result or (result['x_mm'] == 0 and result['y_mm'] == 0):
             self._update_status("Anulowano lub zerowe przesunięcie.")
@@ -5693,9 +5723,7 @@ class SelectablePDFViewer:
         self.scrollbar.pack(side="right", fill="y")
         self.canvas.pack(side="left", fill="both", expand=True) 
 
-        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel) 
-        self.canvas.bind_all("<Button-4>", self._on_mousewheel)
-        self.canvas.bind_all("<Button-5>", self._on_mousewheel)
+        self._bind_mousewheel()
         
         # Initialize wait overlay for blocking UI during operations
         self.wait_overlay = WaitOverlay(self.master)
@@ -5852,6 +5880,9 @@ class SelectablePDFViewer:
     def show_preferences_dialog(self):
         """Wyświetla okno dialogowe preferencji"""
         PreferencesDialog(self.master, self.prefs_manager)
+        # Restore focus and mousewheel bindings after dialog closes
+        self.master.focus_force()
+        self._bind_mousewheel()
     
     def show_about_dialog(self):
         PROGRAM_LOGO_PATH = resource_path(os.path.join('icons', 'logo.png'))
@@ -6590,7 +6621,12 @@ class SelectablePDFViewer:
             else:
                 self.master.update_idletasks() 
                 dialog = EnhancedPageRangeDialog(self.master, "Ustawienia importu PDF", imported_doc)
-                selected_indices = dialog.result 
+                selected_indices = dialog.result
+                
+                # Restore focus and mousewheel bindings after dialog closes
+                self.master.focus_force()
+                self._bind_mousewheel()
+                
                 if selected_indices is None or not selected_indices:
                     self._update_status("Anulowano importowanie lub nie wybrano stron.")
                     return
@@ -6680,6 +6716,11 @@ class SelectablePDFViewer:
         else:
             dialog = ImageImportSettingsDialog(self.master, "Ustawienia importu obrazu", image_path, prefs_manager=self.prefs_manager)
             settings = dialog.result
+            
+            # Restore focus and mousewheel bindings after dialog closes
+            self.master.focus_force()
+            self._bind_mousewheel()
+            
             if not settings:
                 return
 
@@ -7711,6 +7752,11 @@ class SelectablePDFViewer:
 
         dialog = MergePageGridDialog(self.master, page_count=num_pages, prefs_manager=self.prefs_manager)
         params = dialog.result
+        
+        # Restore focus and mousewheel bindings after dialog closes
+        self.master.focus_force()
+        self._bind_mousewheel()
+        
         if params is None:
             self._update_status("Anulowano scalanie stron.")
             return
@@ -7937,6 +7983,12 @@ class SelectablePDFViewer:
             traceback.print_exc()
             
     # --- Metody obsługi widoku/GUI (Bez zmian) ---
+    def _bind_mousewheel(self):
+        """Binduje zdarzenia kółka myszy do canvas. Używane przy inicjalizacji i po zamknięciu dialogów."""
+        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel) 
+        self.canvas.bind_all("<Button-4>", self._on_mousewheel)
+        self.canvas.bind_all("<Button-5>", self._on_mousewheel)
+    
     def _on_mousewheel(self, event):
         # Oblicz różnicę w pozycji yview w zależności od scrolla
         step = 0.05  # Im mniejsza liczba, tym łagodniejsze przewijanie (np. 0.02)
@@ -8578,6 +8630,9 @@ class SelectablePDFViewer:
     def merge_pdf_files(self):
         """Otwiera okno dialogowe do scalania plików PDF"""
         MergePDFDialog(self.master)
+        # Restore focus and mousewheel bindings after dialog closes
+        self.master.focus_force()
+        self._bind_mousewheel()
     
     # ===================================================================
     # FUNKCJE MAKR
