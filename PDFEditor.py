@@ -4202,50 +4202,51 @@ class WaitOverlay:
     def __init__(self, parent):
         """
         Create a modal wait overlay.
-        
         Args:
-            parent: Parent window (should be the main Tk window)
+            parent: Any widget (preferably main Tk window or any child)
         """
-        self.parent = parent
+        # Wymuś, by parent był oknem najwyższego poziomu (root)
+        self.parent = parent.winfo_toplevel() if hasattr(parent, 'winfo_toplevel') else parent
         self.overlay = None
     
     def show(self):
-        """Display the wait overlay."""
+        """Wyświetl modalny dialog blokujący dostęp do okna głównego."""
         if self.overlay is not None:
-            return  # Already shown
-        
-        # Create a toplevel window without decorations
+            return  # Już pokazany
+
+
         self.overlay = tk.Toplevel(self.parent)
-        self.overlay.overrideredirect(True)  # Remove window decorations
-        
-        # Make it modal - block interaction with parent
+        self.overlay.overrideredirect(True)  # Brak belki tytułowej i ramki
         self.overlay.transient(self.parent)
+        self.overlay.resizable(False, False)
         self.overlay.grab_set()
-        
-        # Create dark semi-transparent background
-        frame = tk.Frame(self.overlay, bg="#222222", relief=tk.FLAT, bd=0)
-        frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
-        
-        # Add "Proszę czekać..." text
+        self.overlay.attributes("-topmost", True)
+
+        # Wyśrodkuj względem okna głównego
+        self.overlay.update_idletasks()
+        parent_x = self.parent.winfo_rootx()
+        parent_y = self.parent.winfo_rooty()
+        parent_w = self.parent.winfo_width()
+        parent_h = self.parent.winfo_height()
+        width = 320
+        height = 100
+        x = parent_x + (parent_w - width) // 2
+        y = parent_y + (parent_h - height) // 2
+        self.overlay.geometry(f"{width}x{height}+{x}+{y}")
+        self.overlay.update()
+        self.overlay.lift()
+        self.overlay.focus_force()
+
+        frame = tk.Frame(self.overlay, bg="#222222")
+        frame.pack(fill="both", expand=True)
         label = tk.Label(
             frame,
             text="Proszę czekać...",
             font=("Arial", 14, "bold"),
             bg="#222222",
-            fg="#CCCCCC",
-            relief=tk.FLAT,
-            bd=0
+            fg="#CCCCCC"
         )
-        label.pack(pady=10)
-        
-        # Position the overlay in the center of parent window
-        self._center_on_parent()
-        
-        # Prevent closing
-        self.overlay.protocol("WM_DELETE_WINDOW", lambda: None)
-        
-        # Update to ensure window is visible
-        self.overlay.update_idletasks()
+        label.pack(expand=True)
     
     def hide(self):
         """Hide and destroy the wait overlay."""
@@ -5612,6 +5613,22 @@ class SelectablePDFViewer:
         self.shift_content_btn = create_tool_button(tools_frame, 'shift', self.shift_page_content, self.BG_SHIFT, GRAY_FG, state=tk.DISABLED, padx=(0, PADX_LARGE))
         self.remove_nums_btn = create_tool_button(tools_frame, 'page_num_del', self.remove_page_numbers, self.BG_DELETE, GRAY_FG, state=tk.DISABLED, padx=(0, PADX_SMALL))
         self.add_nums_btn = create_tool_button(tools_frame, 'add_nums', self.insert_page_numbers, self.BG_INSERT, GRAY_FG, state=tk.DISABLED, padx=(0, PADX_LARGE))
+
+        # Przycisk testowy overlay
+        def _get_overlay():
+            # Zwraca instancję WaitOverlay, tworzy jeśli nie istnieje
+            if not hasattr(self, '_wait_overlay') or self._wait_overlay is None:
+                self._wait_overlay = WaitOverlay(self.master)
+            return self._wait_overlay
+
+        def toggle_overlay():
+            overlay = _get_overlay()
+            overlay.show()
+            # Ukryj overlay po 1 sekundzie (1000 ms)
+            self.master.after(1000, overlay.hide)
+        self.test_overlay_btn = tk.Button(tools_frame, text="Test overlay", command=toggle_overlay, bg="#FFD700", fg="#222", relief=tk.RAISED, bd=1)
+        self.test_overlay_btn.pack(side=tk.LEFT, padx=(20, 5))
+        Tooltip(self.test_overlay_btn, "Pokazuje/ukrywa overlay do testów.")
         
         
         Tooltip(self.open_button, "Otwórz plik PDF.")
