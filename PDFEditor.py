@@ -4155,32 +4155,43 @@ class PDFAnalysisDialog(tk.Toplevel):
                 for data in color_format_groups[color][page_format]:
                     pages = data['pages']
                     landscape_count = data['landscape_count']
-                    # Jeśli format to "Niestandardowy", pokaż tylko wymiary
-                    if page_format == "Niestandardowy" and pages:
-                        first_idx = pages[0]
-                        page = self.viewer.pdf_document[first_idx]
-                        rect = page.rect
-                        width_mm = round(rect.width / 72 * 25.4)
-                        height_mm = round(rect.height / 72 * 25.4)
-                        fmt_label = f"{width_mm}x{height_mm} mm"
+                    # Jeśli format to niestandardowy (czyli label zawiera 'x' i 'mm')
+                    if "x" in page_format and "mm" in page_format:
+                        try:
+                            dims = page_format.replace(' mm', '').split('x')
+                            width_mm = int(dims[0])
+                            height_mm = int(dims[1])
+                            area_m2 = width_mm * height_mm / 1_000_000
+                            # A4: 210x297 mm, A3: 297x420 mm
+                            if width_mm > 297 or height_mm > 420:
+                                fmt_label = f"{width_mm}x{height_mm} mm ({area_m2:.2f} m²)"
+                            elif width_mm <= 210 and height_mm <= 297:
+                                fmt_label = f"{width_mm}x{height_mm} mm (A4)"
+                            elif width_mm <= 297 and height_mm <= 420:
+                                fmt_label = f"{width_mm}x{height_mm} mm (A3)"
+                            else:
+                                fmt_label = f"{width_mm}x{height_mm} mm"
+                        except Exception:
+                            fmt_label = page_format
                     else:
                         fmt_label = page_format
                     # Create clickable button
-                    text = f"{fmt_label}: {len(pages)} str."
+                    # Pogrub ilość stron
+                    text = f"{fmt_label}: "
+                    text_bold = f"{len(pages)}"
                     if page_format in ['A4', 'Letter'] and landscape_count > 0:
                         text += f" (poziomych: {landscape_count})"
-                    btn = tk.Button(
-                        self.results_container,
-                        text=text,
-                        anchor="w",
-                        relief="flat",
-                        bg="#f0f0f0",
-                        fg="#0066cc",
-                        cursor="hand2",
-                        command=lambda p=pages: self._select_pages(p)
-                    )
-                    btn.grid(row=row, column=0, sticky="ew", padx=(10, 5), pady=1)
-                    self.result_buttons.append(btn)
+                    # Użyj dwóch labeli: zwykły i pogrubiony dla ilości
+                    frame = tk.Frame(self.results_container, bg="#f0f0f0")
+                    label_fmt = tk.Label(frame, text=text, anchor="w", bg="#f0f0f0", fg="#0066cc", font=("Arial", 10))
+                    label_bold = tk.Label(frame, text=text_bold, anchor="w", bg="#f0f0f0", fg="#0066cc", font=("Arial", 10, "bold"))
+                    label_fmt.pack(side="left")
+                    label_bold.pack(side="left")
+                    frame.grid(row=row, column=0, sticky="ew", padx=(10, 5), pady=1)
+                    frame.bind("<Button-1>", lambda e, p=pages: self._select_pages(p))
+                    label_fmt.bind("<Button-1>", lambda e, p=pages: self._select_pages(p))
+                    label_bold.bind("<Button-1>", lambda e, p=pages: self._select_pages(p))
+                    self.result_buttons.append(frame)
                     row += 1
         
 
@@ -4236,30 +4247,38 @@ class PDFAnalysisDialog(tk.Toplevel):
                 pages = format_orientation_totals[fmt][orient]
                 if not pages:
                     continue
-                # Dodaj wymiary dla niestandardowego formatu
-                if fmt == "Niestandardowy":
-                    # Pobierz wymiary pierwszej strony tego formatu
-                    first_idx = pages[0]
-                    page = self.viewer.pdf_document[first_idx]
-                    rect = page.rect
-                    width_mm = round(rect.width / 72 * 25.4)
-                    height_mm = round(rect.height / 72 * 25.4)
-                    fmt_label = f"{width_mm}x{height_mm} mm"
+                # Dodaj wymiary i m2 lub info o A4/A3 dla niestandardowego formatu
+                if "x" in fmt and "mm" in fmt:
+                    try:
+                        dims = fmt.replace(' mm', '').split('x')
+                        width_mm = int(dims[0])
+                        height_mm = int(dims[1])
+                        area_m2 = width_mm * height_mm / 1_000_000
+                        if width_mm > 297 or height_mm > 420:
+                            fmt_label = f"{width_mm}x{height_mm} mm ({area_m2:.2f} m²)"
+                        elif width_mm <= 210 and height_mm <= 297:
+                            fmt_label = f"{width_mm}x{height_mm} mm (A4)"
+                        elif width_mm <= 297 and height_mm <= 420:
+                            fmt_label = f"{width_mm}x{height_mm} mm (A3)"
+                        else:
+                            fmt_label = f"{width_mm}x{height_mm} mm"
+                    except Exception:
+                        fmt_label = fmt
                 else:
                     fmt_label = fmt
-                text = f"{fmt_label} ({orient}): {len(pages)} str."
-                btn = tk.Button(
-                    self.results_container,
-                    text=text,
-                    anchor="w",
-                    relief="flat",
-                    bg="#f0f0f0",
-                    fg="#0066cc",
-                    cursor="hand2",
-                    command=lambda p=pages: self._select_pages(p)
-                )
-                btn.grid(row=row, column=0, sticky="ew", padx=(10, 5), pady=1)
-                self.result_buttons.append(btn)
+                # Pogrub ilość stron
+                text = f"{fmt_label} ({orient}): "
+                text_bold = f"{len(pages)}"
+                frame = tk.Frame(self.results_container, bg="#f0f0f0")
+                label_fmt = tk.Label(frame, text=text, anchor="w", bg="#f0f0f0", fg="#0066cc", font=("Arial", 10))
+                label_bold = tk.Label(frame, text=text_bold, anchor="w", bg="#f0f0f0", fg="#0066cc", font=("Arial", 10, "bold"))
+                label_fmt.pack(side="left")
+                label_bold.pack(side="left")
+                frame.grid(row=row, column=0, sticky="ew", padx=(10, 5), pady=1)
+                frame.bind("<Button-1>", lambda e, p=pages: self._select_pages(p))
+                label_fmt.bind("<Button-1>", lambda e, p=pages: self._select_pages(p))
+                label_bold.bind("<Button-1>", lambda e, p=pages: self._select_pages(p))
+                self.result_buttons.append(frame)
                 row += 1
 
         # Configure grid
