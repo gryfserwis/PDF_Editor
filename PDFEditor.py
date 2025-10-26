@@ -160,13 +160,23 @@ def render_thumbnail_for_multiprocessing(pdf_bytes, page_index, thumb_width):
         mat = fitz.Matrix(scale, scale)
         pix = page.get_pixmap(matrix=mat, alpha=False)
         
-        # Konwertuj do PIL Image
-        img_data = pix.tobytes("ppm")
-        image = Image.open(io.BytesIO(img_data))
+        # Konwertuj do PIL Image - użyj pil_image() dla najlepszej wydajności
+        try:
+            # Próbuj użyć pil_image() (najwydajniejsze - bezpośrednia konwersja)
+            image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        except Exception:
+            # Fallback do tradycyjnej metody
+            img_data = pix.tobytes("ppm")
+            image = Image.open(io.BytesIO(img_data))
         
         # Dostosuj do dokładnej wielkości jeśli potrzeba
         if image.size != (final_thumb_width, final_thumb_height):
-            image = image.resize((final_thumb_width, final_thumb_height), Image.BILINEAR)
+            # Użyj Image.Resampling.BILINEAR dla nowszych wersji PIL
+            try:
+                image = image.resize((final_thumb_width, final_thumb_height), Image.Resampling.BILINEAR)
+            except AttributeError:
+                # Fallback dla starszych wersji PIL
+                image = image.resize((final_thumb_width, final_thumb_height), Image.BILINEAR)
         
         # Zamknij dokument
         doc.close()
@@ -8335,10 +8345,13 @@ class SelectablePDFViewer:
         tasks = [(pdf_bytes, i, column_width) for i in range(page_count)]
         
         # Renderuj miniatury równolegle używając multiprocessing
+        # Ogranicz liczbę procesów aby nie przeciążyć systemu (max 4 lub cpu_count)
+        num_processes = min(cpu_count(), 4)
+        
         pil_images = {}
         try:
-            # Użyj Pool z liczbą procesorów
-            with Pool(processes=cpu_count()) as pool:
+            # Użyj Pool z ograniczoną liczbą procesorów
+            with Pool(processes=num_processes) as pool:
                 # Mapuj zadania na procesy
                 results = pool.starmap(render_thumbnail_for_multiprocessing, tasks)
                 
@@ -8412,10 +8425,13 @@ class SelectablePDFViewer:
                 tasks.append((pdf_bytes, i, column_width))
         
         # Renderuj miniatury równolegle używając multiprocessing (tylko te bez cache)
+        # Ogranicz liczbę procesów aby nie przeciążyć systemu (max 4 lub cpu_count)
+        num_processes = min(cpu_count(), 4)
+        
         pil_images = {}
         if tasks:
             try:
-                with Pool(processes=cpu_count()) as pool:
+                with Pool(processes=num_processes) as pool:
                     results = pool.starmap(render_thumbnail_for_multiprocessing, tasks)
                     
                     for page_index, pil_image in results:
