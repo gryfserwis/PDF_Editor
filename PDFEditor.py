@@ -8262,7 +8262,7 @@ class SelectablePDFViewer:
     
     def _on_mousewheel(self, event):
         # Oblicz różnicę w pozycji yview w zależności od scrolla
-        step = 0.05  # Im mniejsza liczba, tym łagodniejsze przewijanie (np. 0.02)
+        step = 0.01  # Im mniejsza liczba, tym łagodniejsze przewijanie (np. 0.02)
         current_top, _ = self.canvas.yview()
         if event.num == 4 or event.delta > 0:
             new_pos = max(0, current_top - step)
