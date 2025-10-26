@@ -4194,6 +4194,22 @@ class PDFAnalysisDialog(tk.Toplevel):
 # ====================================================================
 
 class WaitOverlay:
+    def _block_events(self):
+        # Blokuj kliknięcia i klawiaturę w oknie głównym
+        self._blocked_events = []
+        for seq in ("<Button>", "<ButtonPress>", "<ButtonRelease>", "<Key>", "<KeyPress>", "<KeyRelease>", "<FocusIn>", "<FocusOut>"):
+            bind_id = self.parent.bind_all(seq, lambda e: "break", add='+')
+            self._blocked_events.append((seq, bind_id))
+
+    def _unblock_events(self):
+        # Przywróć obsługę zdarzeń
+        if hasattr(self, '_blocked_events'):
+            for seq, bind_id in self._blocked_events:
+                try:
+                    self.parent.unbind_all(seq)
+                except Exception:
+                    pass
+            self._blocked_events = []
     """
     Lightweight modal overlay that blocks interaction during long operations.
     Displays "Proszę czekać..." message over the main window.
@@ -4233,6 +4249,11 @@ class WaitOverlay:
         self._center_on_parent()
         self._overlay.deiconify()  # Pokaż okno
         self._overlay.lift()
+        try:
+            self._overlay.grab_set_global()  # Wymuś globalną blokadę interakcji
+        except Exception:
+            self._overlay.grab_set()
+        self._block_events()
         self._overlay.update()
         # Automatyczne zamknięcie po timeout_ms
         self._overlay.after(self._timeout_ms, self.hide)
@@ -4240,6 +4261,8 @@ class WaitOverlay:
     def hide(self):
         if self._overlay is not None:
             try:
+                self._overlay.grab_release()
+                self._unblock_events()
                 self._overlay.destroy()
             except Exception:
                 pass
