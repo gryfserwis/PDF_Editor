@@ -2420,7 +2420,7 @@ class PagePreviewPopup(tk.Toplevel):
         page = self.pdf_document.load_page(self.page_index)
         
         # Calculate target width (600px or more, keeping aspect ratio)
-        target_width = 600
+        target_width = 650
         page_width = page.rect.width
         page_height = page.rect.height
         
