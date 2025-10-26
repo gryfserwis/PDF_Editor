@@ -4140,6 +4140,39 @@ class PDFAnalysisDialog(tk.Toplevel):
                     
                     row += 1
         
+        # --- SUMA FORMATÓW NIEZALEŻNIE OD KOLORU ---
+        # Zbierz sumy stron dla każdego formatu
+        format_totals = {}
+        format_pages = {}
+        for key, data in self.analysis_results.items():
+            fmt = data['format']
+            if fmt not in format_totals:
+                format_totals[fmt] = 0
+                format_pages[fmt] = []
+            format_totals[fmt] += len(data['pages'])
+            format_pages[fmt].extend(data['pages'])
+
+        # Wyświetl nagłówek
+        row += 1
+        total_label = ttk.Label(self.results_container, text="Formaty łącznie:", font=("Arial", 10, "bold"))
+        total_label.grid(row=row, column=0, columnspan=2, sticky="w", pady=(12, 2))
+        row += 1
+        for fmt in sorted(format_totals.keys()):
+            text = f"{fmt}: {format_totals[fmt]} str."
+            btn = tk.Button(
+                self.results_container,
+                text=text,
+                anchor="w",
+                relief="flat",
+                bg="#f0f0f0",
+                fg="#0066cc",
+                cursor="hand2",
+                command=lambda p=format_pages[fmt]: self._select_pages(p)
+            )
+            btn.grid(row=row, column=0, sticky="ew", padx=(10, 5), pady=1)
+            self.result_buttons.append(btn)
+            row += 1
+
         # Configure grid
         self.results_container.columnconfigure(0, weight=1)
     
@@ -4182,7 +4215,7 @@ class PDFAnalysisDialog(tk.Toplevel):
                     _, _, _, max_y = map(int, scroll_region.split())
                     if max_y > 0:
                         fraction = frame_y / max_y
-                        self.viewer.canvas.yview_moveto(max(0, fraction - 0.1))
+                        self.viewer.canvas.yview_moveto(max(0, fraction))
     
     def close(self):
         """Zamknij okno"""
@@ -5831,11 +5864,11 @@ class SelectablePDFViewer:
         self.file_menu.add_separator()
         self.file_menu.add_command(label="Importuj strony z PDF...", command=self.import_pdf_after_active_page, state=tk.DISABLED, accelerator="Ctrl+I") 
         self.file_menu.add_command(label="Eksportuj strony do PDF...", command=self.extract_selected_pages, state=tk.DISABLED,accelerator="Ctrl+E") 
-        self.file_menu.add_separator() 
+        #self.file_menu.add_separator() 
         self.file_menu.add_command(label="Importuj obraz na nową stronę...", command=self.import_image_to_new_page, state=tk.DISABLED, accelerator="Ctrl+Shift+I") 
         self.file_menu.add_command(label="Eksportuj strony jako obrazy PNG...", command=self.export_selected_pages_to_image, state=tk.DISABLED, accelerator="Ctrl+Shift+E")
-        self.file_menu.add_separator()
-        self.file_menu.add_command(label="Scalanie plików PDF...", command=self.merge_pdf_files)
+       # self.file_menu.add_separator()
+       #self.file_menu.add_command(label="Scalanie plików PDF...", command=self.merge_pdf_files)
         self.file_menu.add_separator()
         self.file_menu.add_command(label="Preferencje...", command=self.show_preferences_dialog)
         self.file_menu.add_separator()
@@ -5869,6 +5902,7 @@ class SelectablePDFViewer:
         self.external_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Programy", menu=self.external_menu)
         self.external_menu.add_command(label="Analiza PDF", command=self.show_pdf_analysis, state=tk.DISABLED, accelerator="F11")
+        self.external_menu.add_command(label="Scalanie plików PDF", command=self.merge_pdf_files)
         self.external_menu.add_command(label="Porównianie PDF", command=self.run_compare_program)
         
         
