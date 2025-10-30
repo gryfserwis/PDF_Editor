@@ -37,7 +37,7 @@ FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
  
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
-PROGRAM_VERSION = "5.8.0"
+PROGRAM_VERSION = "5.8.1"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
 # === STAŁE DLA A4 [w punktach PDF i mm] ===
@@ -5314,20 +5314,27 @@ class SelectablePDFViewer:
                 
                 for scan_rect in scan_rects:
                     text_blocks = page.get_text("blocks", clip=scan_rect)
-                    
+                    # Rozpoznaj czy to nagłówek czy stopka
+                    is_header = scan_rect.y0 == page.rect.y0
+                    is_footer = scan_rect.y1 == page.rect.y1
+                    found_instances = []
                     for block in text_blocks:
                         block_text = block[4]
                         lines = block_text.strip().split('\n')
-                        
                         for line in lines:
                             cleaned_line = line.strip()
                             for pattern in compiled_patterns:
                                 if pattern.fullmatch(cleaned_line):
                                     text_instances = page.search_for(cleaned_line, clip=scan_rect)
-                                    
-                                    for inst in text_instances:
-                                        page.add_redact_annot(inst)
-                                        found_and_removed = True
+                                    if not text_instances:
+                                        continue
+                                    found_instances.extend(text_instances)
+                    if found_instances:
+                        if is_header:
+                            page.add_redact_annot(found_instances[-1])  # ostatnie wystąpienie
+                        else:
+                            page.add_redact_annot(found_instances[0])  # pierwsze wystąpienie
+                        found_and_removed = True
                                         
                 if found_and_removed:
                     page.apply_redactions()
