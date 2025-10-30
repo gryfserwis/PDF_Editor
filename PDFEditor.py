@@ -5145,6 +5145,67 @@ class SelectablePDFViewer:
 # _save_state, _update_status i _reconfigure_grid.
 
     def insert_page_numbers(self):
+        settings = None
+        def shift_watermark(doc, selected_indices, watermark_side, left_pt_base, right_pt_base):
+            """
+            Wykrywa, maskuje i przenosi watermark na wybranych stronach PDF.
+            Wstawia watermark przy lewym lub prawym marginesie, na tej samej wysokości.
+            """
+            import re
+            watermark_pattern = r"\d+:\d{8,}"
+            for i in selected_indices:
+                page = doc.load_page(i)
+                text = None
+                font_size_wm = None
+                color = None
+                rect = None
+                fontname = "helv"
+                try:
+                    text_dict = page.get_text("dict")
+                    for block in text_dict.get("blocks", []):
+                        if block.get("type", 1) != 0:
+                            continue
+                        for line in block.get("lines", []):
+                            for span in line.get("spans", []):
+                                m = re.search(watermark_pattern, span["text"])
+                                if m:
+                                    text = m.group(0)
+                                    font_size_wm = span.get("size")
+                                    color = span.get("color")
+                                    fontname = span.get("font", "helv")
+                                    rect = fitz.Rect(span["bbox"])
+                                    break
+                            if text:
+                                break
+                        if text:
+                            break
+                except Exception:
+                    fontname = "helv"
+                    pass
+                if text and rect is not None:
+                    # Zamaskuj stary watermark
+                    page.draw_rect(rect, color=(1,1,1), fill=(1,1,1), overlay=True)
+                    # Ustal szerokość watermarka
+                    wm_width = fitz.get_text_length(text, fontname=fontname, fontsize=font_size_wm)
+                    # Pozycja X: przy lewym/prawym marginesie
+                    if watermark_side == 'left':
+                        wm_x = page.rect.x0 + left_pt_base
+                    else:
+                        wm_x = page.rect.x1 - right_pt_base - wm_width
+                    # Pozycja Y: wysokość jak oryginalny rect watermarka (przyklej do dolnej krawędzi rect)
+                    wm_y = rect.y1
+                    page.insert_text(
+                        fitz.Point(wm_x, wm_y),
+                        text,
+                        fontsize=font_size_wm,
+                        fontname=fontname,
+                        color=color if color else (0,0,0),
+                        overlay=True
+                    )
+                    print(f"[WATERMARK TXT] Strona {i+1}: watermark '{text}' przeniesiony przy marginesie {watermark_side}, x={wm_x}, y={wm_y}, font_size={font_size_wm}, color={color}, fontname={fontname}")
+        # --- Przesuwanie watermarka jeśli trzeba ---
+        if settings is not None and settings.get('watermark_shift', False):
+            shift_watermark(doc, selected_indices, settings.get('watermark_side', 'left'), left_pt_base, right_pt_base)
         """
         Wstawia numerację stron, z uwzględnieniem tylko zaznaczonych stron 
         (self.selected_pages) oraz poprawnej logiki centrowania ('srodek').
