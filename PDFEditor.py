@@ -5575,6 +5575,7 @@ class SelectablePDFViewer:
         watermark_texts_by_page = {}
         watermark_sizes_by_page = {}
         watermark_colors_by_page = {}
+        watermark_fonts_by_page = {}
         import fitz
         # Zapisz stan przed przesunięciem (undo) tylko raz, niezależnie od opcji watermarka
         self._save_state_to_undo()
@@ -5599,6 +5600,7 @@ class SelectablePDFViewer:
                                     text = m.group(0)
                                     font_size = span.get("size")
                                     color = span.get("color")
+                                    fontname = span.get("font", "helv")
                                     rect = fitz.Rect(span["bbox"])
                                     break
                             if text:
@@ -5606,19 +5608,22 @@ class SelectablePDFViewer:
                         if text:
                             break
                 except Exception:
+                    fontname = "helv"
                     pass
                 if not text or rect is None:
                     watermark_texts_by_page[page_index] = None
                     watermark_sizes_by_page[page_index] = None
                     watermark_colors_by_page[page_index] = None
+                    watermark_fonts_by_page[page_index] = None
                     print(f"[WATERMARK] Strona {page_index+1}: nie znaleziono watermarku")
                 else:
                     watermark_texts_by_page[page_index] = (text, rect)
                     watermark_sizes_by_page[page_index] = font_size
                     watermark_colors_by_page[page_index] = color
+                    watermark_fonts_by_page[page_index] = fontname
                     # Zamaskuj watermark białym prostokątem
                     page.draw_rect(rect, color=(1,1,1), fill=(1,1,1), overlay=True)
-                    print(f"[WATERMARK] Strona {page_index+1}: wycięto watermark tekstowy rect={rect}, text={text}, font_size={font_size}, color={color}")
+                    print(f"[WATERMARK] Strona {page_index+1}: wycięto watermark tekstowy rect={rect}, text={text}, font_size={font_size}, color={color}, fontname={fontname}")
         """
         Otwiera okno dialogowe i przesuwa zawartość zaznaczonych stron.
         Najpierw czyści/odświeża wybrane strony (resave przez PyMuPDF), potem wykonuje przesunięcie przez pypdf.
@@ -5715,6 +5720,7 @@ class SelectablePDFViewer:
                     font_size = watermark_sizes_by_page.get(page_index) or 12
                     color_int = watermark_colors_by_page.get(page_index)
                     color = _convert_color(color_int)
+                    fontname = watermark_fonts_by_page.get(page_index) or "helv"
                     if wm:
                         text, rect = wm
                         # Wstaw watermark jako tekst w to samo miejsce (lewy dolny róg rect)
@@ -5722,11 +5728,11 @@ class SelectablePDFViewer:
                             fitz.Point(rect.x0, rect.y1),
                             text,
                             fontsize=font_size,
-                            fontname="helv",
+                            fontname=fontname,
                             color=color,
                             overlay=True
                         )
-                        print(f"[WATERMARK TXT] Strona {page_index+1}: wstawiono watermark jako tekst '{text}' w rect={rect}, font_size={font_size}, color={color}")
+                        print(f"[WATERMARK TXT] Strona {page_index+1}: wstawiono watermark jako tekst '{text}' w rect={rect}, font_size={font_size}, color={color}, fontname={fontname}")
             self.hide_progressbar()
 
             # Optymalizacja: odśwież tylko zmienione miniatury (nie zmienia się liczba stron)
