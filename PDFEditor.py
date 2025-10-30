@@ -1300,20 +1300,23 @@ class PageNumberingDialog(tk.Toplevel):
         self.wait_window(self)
 
     def create_variables(self):
-        self.v_margin_left = tk.StringVar(value=self._get_pref('margin_left'))
-        self.v_margin_right = tk.StringVar(value=self._get_pref('margin_right'))
-        self.v_margin_vertical_mm = tk.StringVar(value=self._get_pref('margin_vertical_mm'))
-        self.v_vertical_pos = tk.StringVar(value=self._get_pref('vertical_pos'))
-        self.v_alignment = tk.StringVar(value=self._get_pref('alignment'))
-        self.v_mode = tk.StringVar(value=self._get_pref('mode'))
-        self.v_start_page = tk.StringVar(value=self._get_pref('start_page'))
-        self.v_start_number = tk.StringVar(value=self._get_pref('start_number'))
+        self.v_margin_left = tk.StringVar(master=self, value=self._get_pref('margin_left'))
+        self.v_margin_right = tk.StringVar(master=self, value=self._get_pref('margin_right'))
+        self.v_margin_vertical_mm = tk.StringVar(master=self, value=self._get_pref('margin_vertical_mm'))
+        self.v_vertical_pos = tk.StringVar(master=self, value=self._get_pref('vertical_pos'))
+        self.v_alignment = tk.StringVar(master=self, value=self._get_pref('alignment'))
+        self.v_mode = tk.StringVar(master=self, value=self._get_pref('mode'))
+        self.v_start_page = tk.StringVar(master=self, value=self._get_pref('start_page'))
+        self.v_start_number = tk.StringVar(master=self, value=self._get_pref('start_number'))
         self.font_options = ["Helvetica", "Times-Roman", "Courier", "Arial"]
         self.size_options = ["6", "8", "10", "11", "12", "13", "14"]
-        self.v_font_name = tk.StringVar(value=self._get_pref('font_name'))
-        self.v_font_size = tk.StringVar(value=self._get_pref('font_size'))
-        self.v_mirror_margins = tk.BooleanVar(value=self._get_pref('mirror_margins') == 'True')
-        self.v_format_type = tk.StringVar(value=self._get_pref('format_type'))
+        self.v_font_name = tk.StringVar(master=self, value=self._get_pref('font_name'))
+        self.v_font_size = tk.StringVar(master=self, value=self._get_pref('font_size'))
+        self.v_mirror_margins = tk.BooleanVar(master=self, value=self._get_pref('mirror_margins') == 'True')
+        self.v_format_type = tk.StringVar(master=self, value=self._get_pref('format_type'))
+        # Watermark section variables
+        self.v_watermark_shift = tk.BooleanVar(master=self, value=False)
+        self.v_watermark_side = tk.StringVar(master=self, value='left')
     
     def _get_pref(self, key):
         """Pobiera preferencję dla tego dialogu"""
@@ -1448,6 +1451,18 @@ class PageNumberingDialog(tk.Toplevel):
         ttk.Radiobutton(f_frame, text="Standardowy (1, 2...)", variable=self.v_format_type, value='simple').pack(side='left', padx=(0,6))
         ttk.Radiobutton(f_frame, text="Strona 1 z 99", variable=self.v_format_type, value='full').pack(side='left', padx=(0,0))
 
+        # 4a. Sekcja Watermark
+        watermark_frame = ttk.LabelFrame(left_frame, text="Watermark")
+        watermark_frame.pack(fill="x", padx=PADX_GROUP, pady=PADY_GROUP)
+        watermark_row = ttk.Frame(watermark_frame)
+        watermark_row.pack(anchor='w', padx=2, pady=(6,2))
+        watermark_check = ttk.Checkbutton(watermark_row, text="Przesuń watermark", variable=self.v_watermark_shift, command=self._on_watermark_check)
+        watermark_check.pack(side='left')
+        self.watermark_radio_left = ttk.Radiobutton(watermark_row, text="Od lewej", variable=self.v_watermark_side, value='left', state='disabled')
+        self.watermark_radio_left.pack(side='left', padx=(12,2))
+        self.watermark_radio_right = ttk.Radiobutton(watermark_row, text="Od prawej", variable=self.v_watermark_side, value='right', state='disabled')
+        self.watermark_radio_right.pack(side='left', padx=(2,2))
+
         # 5. Przyciski
         button_frame = ttk.Frame(left_frame)
         button_frame.pack(fill='x', pady=(8,6))
@@ -1511,7 +1526,9 @@ class PageNumberingDialog(tk.Toplevel):
                 'font_name': self.v_font_name.get().strip(),
                 'font_size': float(self.v_font_size.get().replace(',', '.')),
                 'mirror_margins': self.v_mirror_margins.get(),
-                'format_type': self.v_format_type.get()
+                'format_type': self.v_format_type.get(),
+                'watermark_shift': self.v_watermark_shift.get(),
+                'watermark_side': self.v_watermark_side.get()
             }
             self.result = result
             # Zapisz preferencje przed zamknięciem
@@ -1539,6 +1556,8 @@ class PageNumberingDialog(tk.Toplevel):
             'font_size': self.v_font_size.get(),
             'mirror_margins': str(self.v_mirror_margins.get()),
             'format_type': self.v_format_type.get(),
+            'watermark_shift': self.v_watermark_shift.get(),
+            'watermark_side': self.v_watermark_side.get(),
         }
     
     def apply_settings(self, settings):
@@ -1555,6 +1574,14 @@ class PageNumberingDialog(tk.Toplevel):
         self.v_font_size.set(settings.get('font_size', self.DEFAULTS['font_size']))
         self.v_mirror_margins.set(settings.get('mirror_margins', self.DEFAULTS['mirror_margins']) == 'True')
         self.v_format_type.set(settings.get('format_type', self.DEFAULTS['format_type']))
+        self.v_watermark_shift.set(settings.get('watermark_shift', False))
+        self.v_watermark_side.set(settings.get('watermark_side', 'left'))
+
+    def _on_watermark_check(self):
+        # Enable/disable watermark side radios based on checkbox
+        state = 'normal' if self.v_watermark_shift.get() else 'disabled'
+        self.watermark_radio_left.config(state=state)
+        self.watermark_radio_right.config(state=state)
     
     def refresh_profile_list(self):
         """Odświeża listę profili w listbox"""
