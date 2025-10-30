@@ -4600,6 +4600,47 @@ class WaitOverlay:
 # ====================================================================
 
 class SelectablePDFViewer:
+    def _extract_watermark_image(self, page, pattern=r"\d+:\d{8,}", dpi=600, margin=2):
+        """
+        Szuka watermarka (np. 6:9755211654) na stronie, także jeśli jest rozbity na kilka bloków/spans.
+        Zwraca: (pixmapa, rect) lub (None, None) jeśli nie znaleziono.
+        """
+        import re
+        text_dict = page.get_text("dict")
+        for block in text_dict.get("blocks", []):
+            if block.get("type", 1) != 0:
+                continue
+            for line in block.get("lines", []):
+                spans = line.get("spans", [])
+                texts = [s["text"] for s in spans]
+                joined = "".join(texts)
+                m = re.search(pattern, joined)
+                if m:
+                    # Znaleziono watermark, ustal bbox od pierwszego do ostatniego spana z dopasowaniem
+                    start, end = m.start(), m.end()
+                    char_count = 0
+                    first_span = last_span = None
+                    for s in spans:
+                        span_text = s["text"]
+                        span_start = char_count
+                        span_end = char_count + len(span_text)
+                        if first_span is None and span_end > start:
+                            first_span = s
+                        if span_start < end <= span_end:
+                            last_span = s
+                            break
+                        char_count += len(span_text)
+                    if first_span and last_span:
+                        bbox = [
+                            first_span["bbox"][0]-margin,
+                            min(first_span["bbox"][1], last_span["bbox"][1])-margin,
+                            last_span["bbox"][2]+margin,
+                            max(first_span["bbox"][3], last_span["bbox"][3])+margin
+                        ]
+                        rect = fitz.Rect(bbox)
+                        pix = page.get_pixmap(clip=rect, dpi=dpi, alpha=True)
+                        return pix, rect
+        return None, None
     MM_TO_POINTS = 72 / 25.4 # ~2.8346
     # === NOWE STAŁE DLA MARGINESU ===
     # Określamy wysokość marginesu do skanowania w milimetrach [np. 20 mm]
@@ -5502,6 +5543,22 @@ class SelectablePDFViewer:
         dialog.focus_force()
  
     def shift_page_content(self):
+        # --- Wykrywanie i wycinanie watermarków jako obrazki przed przesunięciem ---
+        watermark_pattern = r"\d+:\d{8,}"
+        watermark_images_by_page = {}
+        self._save_state_to_undo()  # Zapisz stan przed wycięciem watermarków (undo)
+        import fitz
+        for page_index in self.selected_pages:
+            page = self.pdf_document.load_page(page_index)
+            pix, rect = self._extract_watermark_image(page, watermark_pattern, dpi=600)
+            if pix and rect:
+                watermark_images_by_page[page_index] = (pix, rect)
+                # Zamaskuj watermark białym prostokątem
+                page.draw_rect(rect, color=(1,1,1), fill=(1,1,1), overlay=True)
+                print(f"[WATERMARK] Strona {page_index+1}: wycięto watermark jako obrazek rect={rect}")
+            else:
+                watermark_images_by_page[page_index] = None
+                print(f"[WATERMARK] Strona {page_index+1}: nie znaleziono watermarku")
         """
         Otwiera okno dialogowe i przesuwa zawartość zaznaczonych stron.
         Najpierw czyści/odświeża wybrane strony (resave przez PyMuPDF), potem wykonuje przesunięcie przez pypdf.
@@ -5531,6 +5588,7 @@ class SelectablePDFViewer:
         final_dx = dx_pt * x_sign
         final_dy = dy_pt * y_sign
 
+
         try:
             self._save_state_to_undo()
 
@@ -5541,7 +5599,7 @@ class SelectablePDFViewer:
             pages_to_shift = sorted(list(self.selected_pages))
             pages_to_shift_set = set(pages_to_shift)
             total_pages = len(self.pdf_document)
-            
+
             # Update status first to ensure it's visible immediately
             self._update_status("Przesuwanie zawartości stron...")
             self.show_progressbar(maximum=total_pages * 2)  # 2 etapy: oczyszczanie i przesuwanie
@@ -5587,8 +5645,17 @@ class SelectablePDFViewer:
             import fitz
             self.pdf_document = fitz.open("pdf", new_pdf_bytes)
 
+            # --- Wklejanie watermarków po przesunięciu ---
+            for page_index in pages_to_shift:
+                page = self.pdf_document.load_page(page_index)
+                wm_img = watermark_images_by_page.get(page_index)
+                if wm_img:
+                    pix, rect = wm_img
+                    # Wklej watermark w oryginalne miejsce (rect), bez przesuwania
+                    page.insert_image(rect, stream=pix.tobytes(), overlay=True, keep_proportion=True, mask=None)
+                    print(f"[WATERMARK IMG] Strona {page_index+1}: wstawiono watermark jako obrazek rect={rect}")
             self.hide_progressbar()
-            
+
             # Optymalizacja: odśwież tylko zmienione miniatury (nie zmienia się liczba stron)
             self.show_progressbar(maximum=len(pages_to_shift))
             for i, page_index in enumerate(pages_to_shift):
@@ -5596,7 +5663,7 @@ class SelectablePDFViewer:
                 self.update_single_thumbnail(page_index)
                 self.update_progressbar(i + 1)
             self.hide_progressbar()
-            
+
             self._update_status(f"Przesunięto zawartość na {len(pages_to_shift)} stronach o {result['x_mm']} mm (X) i {result['y_mm']} mm (Y).")
             self._record_action('shift_page_content',
                 x_mm=result['x_mm'],
