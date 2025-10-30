@@ -5572,22 +5572,53 @@ class SelectablePDFViewer:
 
         keep_watermark = result.get('keep_watermark', True)
         watermark_pattern = r"\d+:\d{8,}"
-        watermark_images_by_page = {}
+        watermark_texts_by_page = {}
+        watermark_sizes_by_page = {}
+        watermark_colors_by_page = {}
         import fitz
         # Zapisz stan przed przesunięciem (undo) tylko raz, niezależnie od opcji watermarka
         self._save_state_to_undo()
         if keep_watermark:
+            import re
             for page_index in self.selected_pages:
                 page = self.pdf_document.load_page(page_index)
-                pix, rect = self._extract_watermark_image(page, watermark_pattern, dpi=600)
-                if pix and rect:
-                    watermark_images_by_page[page_index] = (pix, rect)
+                # Szukaj watermarka jako tekstu i zapamiętaj jego pozycję, rozmiar, kolor
+                text = None
+                font_size = None
+                color = None
+                rect = None
+                try:
+                    text_dict = page.get_text("dict")
+                    for block in text_dict.get("blocks", []):
+                        if block.get("type", 1) != 0:
+                            continue
+                        for line in block.get("lines", []):
+                            for span in line.get("spans", []):
+                                m = re.search(watermark_pattern, span["text"])
+                                if m:
+                                    text = m.group(0)
+                                    font_size = span.get("size")
+                                    color = span.get("color")
+                                    rect = fitz.Rect(span["bbox"])
+                                    break
+                            if text:
+                                break
+                        if text:
+                            break
+                except Exception:
+                    pass
+                if not text or rect is None:
+                    watermark_texts_by_page[page_index] = None
+                    watermark_sizes_by_page[page_index] = None
+                    watermark_colors_by_page[page_index] = None
+                    print(f"[WATERMARK] Strona {page_index+1}: nie znaleziono watermarku")
+                else:
+                    watermark_texts_by_page[page_index] = (text, rect)
+                    watermark_sizes_by_page[page_index] = font_size
+                    watermark_colors_by_page[page_index] = color
                     # Zamaskuj watermark białym prostokątem
                     page.draw_rect(rect, color=(1,1,1), fill=(1,1,1), overlay=True)
-                    print(f"[WATERMARK] Strona {page_index+1}: wycięto watermark jako obrazek rect={rect}")
-                else:
-                    watermark_images_by_page[page_index] = None
-                    print(f"[WATERMARK] Strona {page_index+1}: nie znaleziono watermarku")
+                    print(f"[WATERMARK] Strona {page_index+1}: wycięto watermark tekstowy rect={rect}, text={text}, font_size={font_size}, color={color}")
         """
         Otwiera okno dialogowe i przesuwa zawartość zaznaczonych stron.
         Najpierw czyści/odświeża wybrane strony (resave przez PyMuPDF), potem wykonuje przesunięcie przez pypdf.
@@ -5670,20 +5701,32 @@ class SelectablePDFViewer:
 
             # --- Wklejanie watermarków po przesunięciu ---
             if keep_watermark:
+                def _convert_color(color_int):
+                    if color_int is None:
+                        return (0, 0, 0)
+                    r = ((color_int >> 16) & 0xFF) / 255.0
+                    g = ((color_int >> 8) & 0xFF) / 255.0
+                    b = (color_int & 0xFF) / 255.0
+                    return (r, g, b)
+
                 for page_index in pages_to_shift:
                     page = self.pdf_document.load_page(page_index)
-                    wm_img = watermark_images_by_page.get(page_index)
-                    if wm_img:
-                        pix, rect = wm_img
-                        # Przelicz rozmiar rect na podstawie DPI pixmapy i DPI strony (zwykle 72)
-                        # Wylicz szerokość i wysokość watermarka w punktach (1pt = 1/72 cala)
-                        dpi_pix = pix.xres if pix.xres else 600
-                        width_pt = pix.width * 72.0 / dpi_pix
-                        height_pt = pix.height * 72.0 / dpi_pix
-                        # Wstaw watermark w to samo miejsce, ale z natywną rozdzielczością
-                        new_rect = fitz.Rect(rect.x0, rect.y0, rect.x0 + width_pt, rect.y0 + height_pt)
-                        page.insert_image(new_rect, stream=pix.tobytes(), overlay=True, keep_proportion=True, mask=None)
-                        print(f"[WATERMARK IMG] Strona {page_index+1}: wstawiono watermark jako obrazek rect={new_rect}, dpi={dpi_pix}")
+                    wm = watermark_texts_by_page.get(page_index)
+                    font_size = watermark_sizes_by_page.get(page_index) or 12
+                    color_int = watermark_colors_by_page.get(page_index)
+                    color = _convert_color(color_int)
+                    if wm:
+                        text, rect = wm
+                        # Wstaw watermark jako tekst w to samo miejsce (lewy dolny róg rect)
+                        page.insert_text(
+                            fitz.Point(rect.x0, rect.y1),
+                            text,
+                            fontsize=font_size,
+                            fontname="helv",
+                            color=color,
+                            overlay=True
+                        )
+                        print(f"[WATERMARK TXT] Strona {page_index+1}: wstawiono watermark jako tekst '{text}' w rect={rect}, font_size={font_size}, color={color}")
             self.hide_progressbar()
 
             # Optymalizacja: odśwież tylko zmienione miniatury (nie zmienia się liczba stron)
