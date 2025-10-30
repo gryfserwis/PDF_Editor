@@ -5237,10 +5237,11 @@ class SelectablePDFViewer:
                             watermark_side = 'right' if settings.get('watermark_side', 'left') == 'left' else 'left'
                     margin_left_mm = settings.get('margin_left_mm', 0)
                     margin_right_mm = settings.get('margin_right_mm', 0)
-                    margin_vertical_mm = settings.get('margin_vertical_mm', 0)
+                    margin_vertical_mm = settings.get('margin_vertical_mm', 0)-5
                     margin_left_pt = mm2pt(margin_left_mm)
                     margin_right_pt = mm2pt(margin_right_mm)
                     margin_v_pt = mm2pt(margin_vertical_mm)
+                    #margin_v_pt = rect.y1
                     page_rect = page.rect
                     # Zamiana marginesów co drugą stronę jeśli mirror_margins
                     mirror_margins = settings.get('mirror_margins', False)
