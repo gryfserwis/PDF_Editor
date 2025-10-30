@@ -5186,6 +5186,12 @@ class SelectablePDFViewer:
                     print(f"[WATERMARK] Strona {page_index+1}: nie znaleziono watermarku")
                 else:
                     print(f"[WATERMARK] Strona {page_index+1}: wykryto watermark tekstowy rect={rect}, text={text}, font_size={font_size}, color={color}, fontname={fontname}")
+                    # Usuń watermark tekstowy przez zamalowanie rect (jak w shift_page_content)
+                    try:
+                        page.draw_rect(rect, color=(1,1,1), fill=(1,1,1), overlay=True)
+                        print(f"[WATERMARK] Strona {page_index+1}: watermark zamalowany (draw_rect)")
+                    except Exception as e:
+                        print(f"[WATERMARK] Strona {page_index+1}: błąd przy zamalowywaniu watermarka: {e}")
         # Parametry watermark_shift i watermark_side są pobierane z dialogu i dostępne w settings
         # Przykład użycia:
         # watermark_shift = settings.get('watermark_shift', False)
