@@ -16,6 +16,8 @@ from pypdf.generic import RectangleObject, FloatObject, ArrayObject
 # wystarczyłoby, jeśli pypdf je konwertuje. Zostawiam dla pełnej kompatybilności.
 from pypdf.generic import NameObject # Dodaj import dla NameObject
 import json
+import multiprocessing
+from multiprocessing import Pool, cpu_count
 
 # Definicja BASE_DIR i inne stałe
 if getattr(sys, 'frozen', False):
@@ -115,6 +117,75 @@ def resource_path(relative_path):
         base_path = os.path.dirname(os.path.abspath(__file__))
         
     return os.path.join(base_path, relative_path)
+
+def render_thumbnail_for_multiprocessing(pdf_bytes, page_index, thumb_width):
+    """
+    Globalna funkcja renderująca miniaturę strony PDF.
+    Używana przez multiprocessing do równoległego generowania miniatur.
+    
+    UWAGA: Ta funkcja NIE MOŻE używać tkinter ani ImageTk - działa w osobnym procesie!
+    
+    Args:
+        pdf_bytes: Bytes z dokumentu PDF
+        page_index: Indeks strony do renderowania (0-based)
+        thumb_width: Docelowa szerokość miniatury w pikselach
+        
+    Returns:
+        tuple: (page_index, PIL.Image) - zwraca indeks strony i obiekt PIL.Image
+    """
+    try:
+        # Otwórz dokument PDF w procesie potomnym
+        doc = fitz.open("pdf", pdf_bytes)
+        page = doc.load_page(page_index)
+        
+        # Pobierz wymiary strony
+        page_width = page.rect.width
+        page_height = page.rect.height
+        aspect_ratio = page_height / page_width if page_width != 0 else 1
+        
+        # Oblicz docelowe wymiary miniatury
+        final_thumb_width = thumb_width
+        final_thumb_height = int(final_thumb_width * aspect_ratio)
+        if final_thumb_width <= 0:
+            final_thumb_width = 1
+        if final_thumb_height <= 0:
+            final_thumb_height = 1
+        
+        # Oblicz współczynnik skalowania
+        scale_x = final_thumb_width / page_width
+        scale_y = final_thumb_height / page_height
+        scale = min(scale_x, scale_y)
+        
+        # Renderuj stronę w docelowym rozmiarze
+        mat = fitz.Matrix(scale, scale)
+        pix = page.get_pixmap(matrix=mat, alpha=False)
+        
+        # Konwertuj do PIL Image - użyj bezpośredniego dostępu do bufora pikseli
+        try:
+            # Bezpośrednie utworzenie obrazu z bufora pikseli (najbardziej wydajne)
+            image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        except Exception:
+            # Fallback do tradycyjnej metody przez PPM
+            img_data = pix.tobytes("ppm")
+            image = Image.open(io.BytesIO(img_data))
+        
+        # Dostosuj do dokładnej wielkości jeśli potrzeba
+        if image.size != (final_thumb_width, final_thumb_height):
+            # Użyj Image.Resampling.BILINEAR dla nowszych wersji PIL
+            try:
+                image = image.resize((final_thumb_width, final_thumb_height), Image.Resampling.BILINEAR)
+            except AttributeError:
+                # Fallback dla starszych wersji PIL
+                image = image.resize((final_thumb_width, final_thumb_height), Image.BILINEAR)
+        
+        # Zamknij dokument
+        doc.close()
+        
+        # Zwróć PIL.Image (NIE ImageTk.PhotoImage!)
+        return (page_index, image)
+    except Exception as e:
+        print(f"Błąd renderowania strony {page_index}: {e}")
+        return (page_index, None)
 
 def add_watermark_to_pdf(pdf_bytes):
     """
@@ -2597,11 +2668,12 @@ class PagePreviewPopup(tk.Toplevel):
 # ====================================================================
 
 class ThumbnailFrame(tk.Frame):
-    def __init__(self, parent, viewer_app, page_index, column_width):
+    def __init__(self, parent, viewer_app, page_index, column_width, pil_image=None):
         super().__init__(parent, bg="#F5F5F5") 
         self.page_index = page_index
         self.viewer_app = viewer_app
         self.column_width = column_width
+        self.pil_image = pil_image  # PIL.Image wygenerowany przez multiprocessing
         self.bg_normal = "#F5F5F5"
         self.bg_selected = "#B3E5FC"
         self.outer_frame = tk.Frame(
@@ -2627,8 +2699,16 @@ class ThumbnailFrame(tk.Frame):
 
 
     def setup_ui(self, parent_frame):
-        img_tk = self.viewer_app._render_and_scale(self.page_index, self.column_width)
-        # Cache is now handled inside _render_and_scale
+        # Jeśli mamy PIL.Image z multiprocessing, konwertuj go na ImageTk w głównym wątku
+        if self.pil_image is not None:
+            img_tk = ImageTk.PhotoImage(self.pil_image)
+            # Zapisz w cache
+            if self.page_index not in self.viewer_app.tk_images:
+                self.viewer_app.tk_images[self.page_index] = {}
+            self.viewer_app.tk_images[self.page_index][self.column_width] = img_tk
+        else:
+            # Fallback do oryginalnej metody sekwencyjnej
+            img_tk = self.viewer_app._render_and_scale(self.page_index, self.column_width)
         
         image_container = tk.Frame(parent_frame, bg="white") 
         image_container.pack(padx=5, pady=(5, 0))
@@ -8770,39 +8850,80 @@ class SelectablePDFViewer:
 
 
     def _create_widgets(self, num_cols, column_width):
-        """Tworzy wszystkie ramki miniatur dla aktualnego dokumentu PDF."""
+        """Tworzy wszystkie ramki miniatur dla aktualnego dokumentu PDF z użyciem multiprocessing."""
         page_count = len(self.pdf_document)
-        # Dodaj pasek postępu tylko przy większej liczbie stron (np. 10+), by nie przeszkadzać przy szybkim ładowaniu
+        
+        # Pokaż pasek postępu
         if page_count > 10:
             self.show_progressbar(maximum=page_count, mode="determinate")
+        
+        # Eksportuj PDF do bajtów dla procesów potomnych
+        pdf_bytes = self.pdf_document.tobytes()
+        
+        # Przygotuj argumenty dla procesów potomnych
+        tasks = [(pdf_bytes, i, column_width) for i in range(page_count)]
+        
+        # Renderuj miniatury równolegle używając multiprocessing
+        # Ogranicz liczbę procesów aby nie przeciążyć systemu (max 4 lub cpu_count)
+        num_processes = min(cpu_count(), 4)
+        
+        pil_images = {}
+        try:
+            # Użyj Pool z ograniczoną liczbą procesorów
+            with Pool(processes=num_processes) as pool:
+                # Mapuj zadania na procesy
+                results = pool.starmap(render_thumbnail_for_multiprocessing, tasks)
+                
+                # Zbierz wyniki
+                for page_index, pil_image in results:
+                    if pil_image is not None:
+                        pil_images[page_index] = pil_image
+                    
+                    if page_count > 10:
+                        self.update_progressbar(page_index + 1)
+        except Exception as e:
+            print(f"Błąd podczas równoległego renderowania miniatur: {e}")
+            # Fallback do sekwencyjnego renderowania w przypadku błędu
+            for i in range(page_count):
+                _, pil_image = render_thumbnail_for_multiprocessing(pdf_bytes, i, column_width)
+                if pil_image is not None:
+                    pil_images[i] = pil_image
+                if page_count > 10:
+                    self.update_progressbar(i + 1)
+        
+        # Twórz widgety i konwertuj PIL.Image na ImageTk.PhotoImage w głównym wątku
         for i in range(page_count):
             page_frame = ThumbnailFrame(
                 parent=self.scrollable_frame,  
                 viewer_app=self,  
                 page_index=i,  
-                column_width=column_width
+                column_width=column_width,
+                pil_image=pil_images.get(i)  # Przekaż PIL.Image
             )
             page_frame.grid(row=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")  
             self.thumb_frames[i] = page_frame  
-            if page_count > 10:
-                self.update_progressbar(i + 1)
+        
         if page_count > 10:
             self.hide_progressbar()
+        
         self.update_selection_display()
         self.update_focus_display()
 
     def _update_widgets(self, num_cols, column_width):
+        """Aktualizuje wszystkie ramki miniatur dla aktualnego dokumentu PDF z użyciem multiprocessing."""
         page_count = len(self.pdf_document)
         frame_bg = "#F5F5F5"
 
         # Dodaj brakujące ramki miniaturek
         for i in range(page_count):
             if i not in self.thumb_frames:
+                # Twórz nową ramkę bez obrazu - dodamy go później
                 page_frame = ThumbnailFrame(
                     parent=self.scrollable_frame,
                     viewer_app=self,
                     page_index=i,
-                    column_width=column_width
+                    column_width=column_width,
+                    pil_image=None  # Bez obrazu na razie
                 )
                 self.thumb_frames[i] = page_frame
 
@@ -8812,10 +8933,58 @@ class SelectablePDFViewer:
             self.thumb_frames[idx].destroy()
             del self.thumb_frames[idx]
 
+        # Eksportuj PDF do bajtów dla procesów potomnych
+        pdf_bytes = self.pdf_document.tobytes()
+        
+        # Przygotuj argumenty dla procesów potomnych - tylko dla stron bez cache
+        tasks = []
+        for i in range(page_count):
+            # Sprawdź czy mamy już obraz w cache
+            if i not in self.tk_images or column_width not in self.tk_images[i]:
+                tasks.append((pdf_bytes, i, column_width))
+        
+        # Renderuj miniatury równolegle używając multiprocessing (tylko te bez cache)
+        # Ogranicz liczbę procesów aby nie przeciążyć systemu (max 4 lub cpu_count)
+        num_processes = min(cpu_count(), 4)
+        
+        pil_images = {}
+        if tasks:
+            try:
+                with Pool(processes=num_processes) as pool:
+                    results = pool.starmap(render_thumbnail_for_multiprocessing, tasks)
+                    
+                    for page_index, pil_image in results:
+                        if pil_image is not None:
+                            pil_images[page_index] = pil_image
+            except Exception as e:
+                print(f"Błąd podczas równoległego renderowania miniatur: {e}")
+                # Fallback do sekwencyjnego renderowania
+                for pdf_bytes_arg, page_idx, col_width in tasks:
+                    _, pil_image = render_thumbnail_for_multiprocessing(pdf_bytes_arg, page_idx, col_width)
+                    if pil_image is not None:
+                        pil_images[page_idx] = pil_image
+
+        # Aktualizuj widgety w głównym wątku
         for i in range(page_count):
             page_frame = self.thumb_frames[i]
             page_frame.grid(row=i // num_cols, column=i % num_cols, padx=self.THUMB_PADDING, pady=self.THUMB_PADDING, sticky="n")
-            img_tk = self._render_and_scale(i, column_width)
+            
+            # Użyj cache lub nowo wygenerowanego obrazu
+            if i in pil_images:
+                # Konwertuj PIL.Image na ImageTk.PhotoImage w głównym wątku
+                img_tk = ImageTk.PhotoImage(pil_images[i])
+                
+                # Zapisz w cache
+                if i not in self.tk_images:
+                    self.tk_images[i] = {}
+                self.tk_images[i][column_width] = img_tk
+            elif i in self.tk_images and column_width in self.tk_images[i]:
+                # Użyj cache
+                img_tk = self.tk_images[i][column_width]
+            else:
+                # Fallback - renderuj sekwencyjnie
+                img_tk = self._render_and_scale(i, column_width)
+            
             page_frame.img_label.config(image=img_tk)
             page_frame.img_label.image = img_tk
             outer_frame_children = page_frame.outer_frame.winfo_children()
