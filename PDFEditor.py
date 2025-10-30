@@ -5200,7 +5200,15 @@ class SelectablePDFViewer:
                         print(f"[WATERMARK] Strona {page_index+1}: błąd przy zamalowywaniu watermarka: {e}")
 
                     # Wklej watermark ponownie po lewej lub prawej stronie zgodnie z watermark_side i marginesami
+                    # Ustal stronę watermarka: jeśli lustrzana, to na zamianę; w przeciwnym razie zgodnie z wyborem
                     watermark_side = settings.get('watermark_side', 'left')
+                    # Ustal numerowaną_stronę na podstawie indeksu w pętli watermarka
+                    numerowana_strona_wm = list(sorted(self.selected_pages)).index(page_index)
+                    if settings.get('mode') == 'lustrzana':
+                        if numerowana_strona_wm % 2 == 0:
+                            watermark_side = 'left' if settings.get('watermark_side', 'left') == 'left' else 'right'
+                        else:
+                            watermark_side = 'right' if settings.get('watermark_side', 'left') == 'left' else 'left'
                     margin_left_mm = settings.get('margin_left_mm', 0)
                     margin_right_mm = settings.get('margin_right_mm', 0)
                     margin_vertical_mm = settings.get('margin_vertical_mm', 0)
@@ -5209,6 +5217,11 @@ class SelectablePDFViewer:
                     margin_right_pt = margin_right_mm * MM_PT
                     margin_v_pt = margin_vertical_mm * MM_PT
                     page_rect = page.rect
+                    # Zamiana marginesów co drugą stronę jeśli mirror_margins
+                    mirror_margins = settings.get('mirror_margins', False)
+                    if mirror_margins:
+                        if numerowana_strona_wm % 2 == 1:
+                            margin_left_pt, margin_right_pt = margin_right_pt, margin_left_pt
                     # Ustal punkt wstawienia watermarka
                     if watermark_side == 'left':
                         insert_x = page_rect.x0 + margin_left_pt
