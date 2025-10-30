@@ -5578,6 +5578,13 @@ class SelectablePDFViewer:
         # Zapamiętaj watermarky tylko za pierwszym razem
         if not hasattr(self, '_watermark_data_by_page'):
             self._watermark_data_by_page = {}
+        # Przechowuj sumę przesunięć watermarka, jeśli przesuwasz całą stronę
+        dx_pt = result['x_mm'] * self.MM_TO_POINTS
+        dy_pt = result['y_mm'] * self.MM_TO_POINTS
+        x_sign = 1 if result['x_dir'] == 'P' else -1
+        y_sign = 1 if result['y_dir'] == 'G' else -1
+        final_dx = dx_pt * x_sign
+        final_dy = dy_pt * y_sign
         watermark_texts_by_page = {}
         watermark_sizes_by_page = {}
         watermark_colors_by_page = {}
@@ -5635,9 +5642,25 @@ class SelectablePDFViewer:
                     watermark_sizes_by_page[page_index] = font_size
                     watermark_colors_by_page[page_index] = color
                     watermark_fonts_by_page[page_index] = fontname
-                    # Zamaskuj watermark białym prostokątem
+                    # Zamaskuj tylko oryginalny rect watermarka
                     page.draw_rect(rect, color=(1,1,1), fill=(1,1,1), overlay=True)
                     print(f"[WATERMARK] Strona {page_index+1}: wycięto watermark tekstowy rect={rect}, text={text}, font_size={font_size}, color={color}, fontname={fontname}")
+
+        # --- Aktualizacja pozycji watermarka po przesunięciu bez zachowania watermarka ---
+        # Jeśli przesuwasz całą stronę (bez zachowania watermarka), zaktualizuj rect watermarka przez dodanie offsetu
+        if not keep_watermark:
+            for page_index in self.selected_pages:
+                if page_index in self._watermark_data_by_page:
+                    text, rect, font_size, color, fontname = self._watermark_data_by_page[page_index]
+                    # Dodaj offset do rect
+                    new_rect = fitz.Rect(
+                        rect.x0 + final_dx,
+                        rect.y0 + final_dy,
+                        rect.x1 + final_dx,
+                        rect.y1 + final_dy
+                    )
+                    self._watermark_data_by_page[page_index] = (text, new_rect, font_size, color, fontname)
+                    print(f"[WATERMARK] Strona {page_index+1}: zaktualizowano pozycję watermarka przez offset dx={final_dx}, dy={final_dy}")
         """
         Otwiera okno dialogowe i przesuwa zawartość zaznaczonych stron.
         Najpierw czyści/odświeża wybrane strony (resave przez PyMuPDF), potem wykonuje przesunięcie przez pypdf.
