@@ -6006,9 +6006,18 @@ class SelectablePDFViewer:
             self.active_page_index = 0
             self.selected_pages.clear()
             
+            # OPTYMALIZACJA CACHE: Odwróć kolejność cache zamiast czyścić
+            # Liczba stron się nie zmienia, więc możemy zachować cache
+            if self.tk_images:
+                reversed_cache = {}
+                for old_idx in range(page_count):
+                    new_idx = page_count - 1 - old_idx
+                    if old_idx in self.tk_images:
+                        reversed_cache[new_idx] = self.tk_images[old_idx]
+                self.tk_images = reversed_cache
+            
             # 3. RĘCZNE CZYSZCZENIE I ODŚWIEŻENIE WIDOKU
-            # Używamy zestawu metod zidentyfikowanych w Twoim kodzie:
-            self.tk_images.clear()
+            # Nie czyścimy cache (został odwrócony powyżej)
             for widget in list(self.scrollable_frame.winfo_children()): 
                 widget.destroy()
             self.thumb_frames.clear()
@@ -6217,6 +6226,9 @@ class SelectablePDFViewer:
         # Debouncing for window resize events
         self._resize_timer = None
         self._resize_delay = 300  # milliseconds
+        
+        # OPTYMALIZACJA: Flaga zapobiegająca podwójnemu renderowaniu przy otwieraniu PDF
+        self._initializing = False
         
         self._set_initial_geometry()
         self._load_icons_or_fallback(size=28) 
@@ -7098,7 +7110,7 @@ class SelectablePDFViewer:
             self._update_status("Wczytywanie dokumentu i czyszczenie widoku...")
             self.pdf_document = doc
             self.selected_pages = set()
-            self.tk_images = {}
+            self.tk_images = {}  # OPTYMALIZACJA: Konieczne przy otwieraniu nowego dokumentu
             self.undo_stack.clear()
             self.redo_stack.clear()
             self.clipboard = None
@@ -7147,7 +7159,7 @@ class SelectablePDFViewer:
             self.pdf_document.close()
             self.pdf_document = None
         self.selected_pages.clear()
-        self.tk_images.clear()
+        self.tk_images.clear()  # OPTYMALIZACJA: Konieczne przy zamykaniu dokumentu
         self.thumb_frames.clear()
         for widget in list(self.scrollable_frame.winfo_children()):
             widget.destroy()
@@ -7300,10 +7312,14 @@ class SelectablePDFViewer:
             temp_doc_for_insert.close()
             self.hide_progressbar()
 
+            # OPTYMALIZACJA CACHE: Przesuń cache w górę przed wstawieniem
+            self._shift_cache_up(insert_index, num_inserted)
+
             # Select the newly imported pages
             self.selected_pages = set(range(insert_index, insert_index + num_inserted))
             
-            self.tk_images.clear()
+            # OPTYMALIZACJA: Nie czyścimy całego cache (self.tk_images.clear())
+            # Cache został już optymalnie przesunięty
             for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
             self.thumb_frames.clear()
 
@@ -7458,13 +7474,18 @@ class SelectablePDFViewer:
                 insert_index = len(self.pdf_document)
 
             self._save_state_to_undo()
+            
+            # OPTYMALIZACJA CACHE: Przesuń cache w górę przed wstawieniem
+            self._shift_cache_up(insert_index, 1)
+            
             self.pdf_document.insert_pdf(imported_doc, from_page=0, to_page=0, start_at=insert_index)
             
             # Select the newly imported image page
             self.selected_pages = {insert_index}
             self.active_page_index = insert_index
 
-            self.tk_images.clear()
+            # OPTYMALIZACJA: Nie czyścimy całego cache (self.tk_images.clear())
+            # Cache został już optymalnie przesunięty
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
             self.thumb_frames.clear()
@@ -7591,8 +7612,19 @@ class SelectablePDFViewer:
             self.clipboard = self._get_page_bytes(self.selected_pages)
             self.pages_in_clipboard_count = len(self.selected_pages)
             pages_to_delete = sorted(list(self.selected_pages), reverse=True)
-            for page_index in pages_to_delete:
+            
+            # OPTYMALIZACJA CACHE: Usuń cache i przesuń w dół przy usuwaniu stron
+            for idx, page_index in enumerate(pages_to_delete):
+                # Usuń cache dla usuwanej strony
+                if page_index in self.tk_images:
+                    del self.tk_images[page_index]
+                
                 self.pdf_document.delete_page(page_index)
+                
+                # Przesuń cache w dół dla stron po usuniętej
+                if idx < len(pages_to_delete) - 1:
+                    self._shift_cache_down(page_index, 1)
+            
             deleted_count = len(self.selected_pages)
             self.selected_pages.clear()
             
@@ -7603,7 +7635,8 @@ class SelectablePDFViewer:
             else:
                 self.active_page_index = 0
             
-            self.tk_images.clear()
+            # OPTYMALIZACJA: Nie czyścimy całego cache (self.tk_images.clear())
+            # Cache został już optymalnie zarządzany podczas usuwania
             for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
             self.thumb_frames.clear()  
             self._reconfigure_grid()
@@ -7665,6 +7698,9 @@ class SelectablePDFViewer:
                     else:
                         target_index = page_index + 1 + offset
 
+                    # OPTYMALIZACJA CACHE: Przesuń cache w górę przed wstawieniem
+                    self._shift_cache_up(target_index, pages_per_paste)
+                    
                     self.pdf_document.insert_pdf(temp_doc, start_at=target_index)
                     # Dodajemy do zaznaczenia nowo wstawione indeksy
                     for i in range(pages_per_paste):
@@ -7675,7 +7711,8 @@ class SelectablePDFViewer:
                 temp_doc.close()
                 self.selected_pages = new_page_indices
 
-                self.tk_images.clear()
+                # OPTYMALIZACJA: Nie czyścimy całego cache (self.tk_images.clear())
+                # Cache został już optymalnie przesunięty
                 for widget in list(self.scrollable_frame.winfo_children()):
                     widget.destroy()
                 self.thumb_frames.clear()
@@ -7705,13 +7742,17 @@ class SelectablePDFViewer:
             self.show_progressbar(mode="indeterminate")
             self._update_status("Wklejanie stron...")
             
+            # OPTYMALIZACJA CACHE: Przesuń cache w górę przed wstawieniem
+            self._shift_cache_up(target_index, num_inserted)
+            
             self.pdf_document.insert_pdf(temp_doc, start_at=target_index)
             temp_doc.close()
 
             # Select the newly pasted pages
             self.selected_pages = set(range(target_index, target_index + num_inserted))
 
-            self.tk_images.clear()
+            # OPTYMALIZACJA: Nie czyścimy całego cache (self.tk_images.clear())
+            # Cache został już optymalnie przesunięty
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
             self.thumb_frames.clear()
@@ -7760,15 +7801,28 @@ class SelectablePDFViewer:
             self._update_status("Usuwanie stron...")
             
             for idx, page_index in enumerate(pages_to_delete):
+                # OPTYMALIZACJA CACHE: Usuń cache dla usuwanej strony
+                if page_index in self.tk_images:
+                    del self.tk_images[page_index]
+                
                 self.pdf_document.delete_page(page_index)
+                
+                # OPTYMALIZACJA CACHE: Przesuń cache w dół dla stron po usuniętej
+                # Przesuwamy zawsze o 1, bo usuwamy pojedyncze strony od końca
+                if idx < len(pages_to_delete) - 1:
+                    self._shift_cache_down(page_index, 1)
+                
                 deleted_count += 1
                 self.update_progressbar(idx + 1)
             
             self.hide_progressbar()
             self.selected_pages.clear()
-            self.tk_images.clear()
+            
+            # OPTYMALIZACJA: Nie czyścimy całego cache (self.tk_images.clear())
+            # Cache został już optymalnie zarządzany podczas usuwania
+            # Czyścimy tylko widgety, które muszą być przebudowane
             for widget in list(self.scrollable_frame.winfo_children()): widget.destroy()
-            self.thumb_frames.clear()  
+            self.thumb_frames.clear()
             self.total_pages = len(self.pdf_document)
             self.active_page_index = min(self.active_page_index, self.total_pages - 1)
             self.active_page_index = max(0, self.active_page_index)
@@ -7951,7 +8005,11 @@ class SelectablePDFViewer:
 
             # Jeśli liczba stron się nie zmieniła – nie czyść ramek/widgetów!
             if old_page_count == new_page_count and self.thumb_frames:
-                self.tk_images.clear()
+                # OPTYMALIZACJA UNDO: Zachowaj cache jeśli liczba stron się nie zmienia
+                # Cache może być nieaktualny jeśli zawartość stron się zmieniła,
+                # ale pozycje stron pozostają takie same - nie czyścimy całego cache
+                # Odświeżamy tylko miniatury (które mogą mieć zmienioną zawartość)
+                
                 # Pokaz progress bar dla odświeżenia miniatur (jeśli plik jest duży)
                 if new_page_count > 10:
                     self.show_progressbar(maximum=new_page_count, mode="determinate")
@@ -7966,8 +8024,12 @@ class SelectablePDFViewer:
                 else:
                     self.active_page_index = 0
 
+                # Odśwież wszystkie miniatury (zawartość mogła się zmienić)
                 for idx in range(new_page_count):
                     self._update_status("Cofnięto ostatnią operację. Odświeżanie miniatur...")
+                    # Wymuś ponowne renderowanie - usuń cache dla każdej strony
+                    if idx in self.tk_images:
+                        del self.tk_images[idx]
                     self.update_single_thumbnail(idx)
                     if new_page_count > 10:
                         self.update_progressbar(idx + 1)
@@ -8025,7 +8087,11 @@ class SelectablePDFViewer:
 
             # Jeśli liczba stron się nie zmieniła – nie czyść ramek/widgetów!
             if old_page_count == new_page_count and self.thumb_frames:
-                self.tk_images.clear()
+                # OPTYMALIZACJA REDO: Zachowaj cache jeśli liczba stron się nie zmienia
+                # Cache może być nieaktualny jeśli zawartość stron się zmieniła,
+                # ale pozycje stron pozostają takie same - nie czyścimy całego cache
+                # Odświeżamy tylko miniatury (które mogą mieć zmienioną zawartość)
+                
                 # Pokaz progress bar dla odświeżenia miniatur (jeśli plik jest duży)
                 if new_page_count > 10:
                     self.show_progressbar(maximum=new_page_count, mode="determinate")
@@ -8040,15 +8106,19 @@ class SelectablePDFViewer:
                 else:
                     self.active_page_index = 0
 
+                # Odśwież wszystkie miniatury (zawartość mogła się zmienić)
                 for idx in range(new_page_count):
                     self._update_status("Ponowiono operację. Odświeżanie miniatur...")
+                    # Wymuś ponowne renderowanie - usuń cache dla każdej strony
+                    if idx in self.tk_images:
+                        del self.tk_images[idx]
                     self.update_single_thumbnail(idx)
                     if new_page_count > 10:
                         self.update_progressbar(idx + 1)
             else:
                 # Liczba stron się zmieniła: czyść wszystko i przebuduj siatkę
                 self.selected_pages.clear()
-                self.tk_images.clear()
+                self.tk_images.clear()  # OPTYMALIZACJA: Konieczne gdy liczba stron się zmienia (redo)
                 self.thumb_frames.clear()
                 for widget in list(self.scrollable_frame.winfo_children()):
                     widget.destroy()
@@ -8218,6 +8288,9 @@ class SelectablePDFViewer:
                 else:
                     target_page = page_index + 1 + offset
 
+                # OPTYMALIZACJA CACHE: Przesuń cache w górę przed wstawieniem
+                self._shift_cache_up(target_page, 1)
+                
                 self.pdf_document.insert_page(
                     pno=target_page,  
                     width=width,  
@@ -8229,7 +8302,8 @@ class SelectablePDFViewer:
 
             self.selected_pages = new_page_indices
 
-            self.tk_images.clear()
+            # OPTYMALIZACJA: Nie czyścimy całego cache (self.tk_images.clear())
+            # Cache został już optymalnie przesunięty
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
             self.thumb_frames.clear()
@@ -8284,6 +8358,10 @@ class SelectablePDFViewer:
 
                 temp_doc = fitz.open()
                 temp_doc.insert_pdf(self.pdf_document, from_page=idx, to_page=idx)
+                
+                # OPTYMALIZACJA CACHE: Przed wstawieniem, przesuń cache w górę
+                self._shift_cache_up(idx + 1, 1)
+                
                 self.pdf_document.insert_pdf(
                     temp_doc,
                     from_page=0,
@@ -8291,6 +8369,12 @@ class SelectablePDFViewer:
                     start_at=idx + 1
                 )
                 temp_doc.close()
+                
+                # OPTYMALIZACJA CACHE: Skopiuj cache dla zduplikowanej strony
+                # Nowa strona jest kopią starej, więc może używać tego samego cache
+                if idx in self.tk_images:
+                    self.tk_images[idx + 1] = self.tk_images[idx].copy()
+                
                 # Wstawiona strona jest zawsze na pozycji idx+1
                 new_page_indices.add(idx + 1)
                 offset += 1
@@ -8299,8 +8383,9 @@ class SelectablePDFViewer:
             self.hide_progressbar()
             self.selected_pages = new_page_indices
 
-            # Odświeżenie GUI
-            self.tk_images.clear()
+            # OPTYMALIZACJA: Nie czyścimy całego cache (self.tk_images.clear())
+            # Cache został już optymalnie zarządzany - zachowane i przesunięte
+            # Czyścimy tylko widgety do przebudowy
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
             self.thumb_frames.clear()
@@ -8356,6 +8441,9 @@ class SelectablePDFViewer:
             
             temp_doc1.close()
             temp_doc2.close()
+            
+            # OPTYMALIZACJA CACHE: Zamień cache miejscami
+            self._swap_cache_entries(page1_idx, page2_idx)
             
             # Odśwież tylko zamienione miniatury
             self.update_single_thumbnail(page1_idx)
@@ -8606,7 +8694,9 @@ class SelectablePDFViewer:
                     self._update_status("Anulowano zapisywanie.")
             else:
                 # Dodano do bieżącego dokumentu - odśwież GUI
-                self.tk_images.clear()
+                # OPTYMALIZACJA: Strony zostały dodane na końcu dokumentu
+                # Nie trzeba czyścić całego cache, tylko dodać nowe strony do widoku
+                # Cache dla istniejących stron pozostaje bez zmian
                 for widget in list(self.scrollable_frame.winfo_children()):
                     widget.destroy()
                 self.thumb_frames.clear()
@@ -8713,9 +8803,15 @@ class SelectablePDFViewer:
 
         # Create or update widgets
         if not self.thumb_frames:
+            # OPTYMALIZACJA: Ustawiamy flagę inicjalizacji przed tworzeniem widgetów
+            self._initializing = True
             self._create_widgets(num_cols, column_width)
+            self._initializing = False
         else:
-            self._update_widgets(num_cols, column_width)
+            # OPTYMALIZACJA: Nie wywołujemy _update_widgets podczas inicjalizacji
+            # (zapobiega podwójnemu renderowaniu)
+            if not self._initializing:
+                self._update_widgets(num_cols, column_width)
 
         self.scrollable_frame.update_idletasks()  
         bbox = self.canvas.bbox("all")
@@ -8906,6 +9002,109 @@ class SelectablePDFViewer:
         """
         if page_index in self.tk_images:
             del self.tk_images[page_index]
+    
+    # ===================================================================
+    # CACHE MANAGEMENT HELPER FUNCTIONS - OPTYMALIZACJA CACHE MINIATUREK
+    # ===================================================================
+    
+    def _shift_cache_down(self, start_index, count):
+        """
+        Przesuwa cache miniaturek w dół (w stronę niższych indeksów) po usunięciu stron.
+        
+        Używane przy usuwaniu stron - cache dla stron po usuniętych zostaje przesunięty,
+        aby odpowiadał nowym indeksom stron w dokumencie.
+        
+        Args:
+            start_index: Indeks pierwszej usuniętej strony
+            count: Liczba usuniętych stron
+        """
+        if not self.tk_images:
+            return
+        
+        # Utwórz nowy słownik cache z przesuniętymi indeksami
+        new_cache = {}
+        
+        # Zachowaj cache dla stron przed start_index (bez zmian)
+        for page_idx in range(start_index):
+            if page_idx in self.tk_images:
+                new_cache[page_idx] = self.tk_images[page_idx]
+        
+        # Przesuń cache dla stron po usuniętych (start_index + count i dalej)
+        # Nowy indeks = stary indeks - count
+        max_old_index = max(self.tk_images.keys()) if self.tk_images else 0
+        for old_idx in range(start_index + count, max_old_index + 1):
+            if old_idx in self.tk_images:
+                new_idx = old_idx - count
+                new_cache[new_idx] = self.tk_images[old_idx]
+        
+        # Zastąp stary cache nowym
+        self.tk_images = new_cache
+    
+    def _shift_cache_up(self, start_index, count):
+        """
+        Przesuwa cache miniaturek w górę (w stronę wyższych indeksów) po dodaniu stron.
+        
+        Używane przy dodawaniu/wstawianiu stron - cache dla stron po miejscu wstawienia
+        zostaje przesunięty w górę, zachowując istniejące miniatury.
+        
+        Args:
+            start_index: Indeks, od którego zaczynamy przesuwanie (pierwsza nowa strona)
+            count: Liczba dodanych stron
+        """
+        if not self.tk_images:
+            return
+        
+        # Utwórz nowy słownik cache z przesuniętymi indeksami
+        new_cache = {}
+        
+        # Zachowaj cache dla stron przed start_index (bez zmian)
+        for page_idx in range(start_index):
+            if page_idx in self.tk_images:
+                new_cache[page_idx] = self.tk_images[page_idx]
+        
+        # Przesuń cache dla stron od start_index w górę
+        # Nowy indeks = stary indeks + count
+        max_old_index = max(self.tk_images.keys()) if self.tk_images else 0
+        for old_idx in range(start_index, max_old_index + 1):
+            if old_idx in self.tk_images:
+                new_idx = old_idx + count
+                new_cache[new_idx] = self.tk_images[old_idx]
+        
+        # Zastąp stary cache nowym
+        self.tk_images = new_cache
+    
+    def _swap_cache_entries(self, index1, index2):
+        """
+        Zamienia miejscami wpisy cache dla dwóch stron.
+        
+        Używane przy zamianie stron miejscami - cache zostaje zamieniony,
+        więc nie trzeba renderować miniaturek od nowa.
+        
+        Args:
+            index1: Indeks pierwszej strony
+            index2: Indeks drugiej strony
+        """
+        if not self.tk_images:
+            return
+        
+        # Pobierz cache obu stron (jeśli istnieją)
+        cache1 = self.tk_images.get(index1)
+        cache2 = self.tk_images.get(index2)
+        
+        # Zamień cache
+        if cache1 is not None and cache2 is not None:
+            # Obie strony mają cache - zamień
+            self.tk_images[index1] = cache2
+            self.tk_images[index2] = cache1
+        elif cache1 is not None:
+            # Tylko pierwsza ma cache - przenieś do drugiej i usuń pierwszą
+            self.tk_images[index2] = cache1
+            del self.tk_images[index1]
+        elif cache2 is not None:
+            # Tylko druga ma cache - przenieś do pierwszej i usuń drugą
+            self.tk_images[index1] = cache2
+            del self.tk_images[index2]
+        # Jeśli żadna nie ma cache, nic nie rób
 
     def update_single_thumbnail(self, page_index, column_width=None):
         """
@@ -9278,12 +9477,22 @@ class SelectablePDFViewer:
             
             # Usuń puste strony (od końca, żeby nie zmienić indeksów)
             for idx, page_index in enumerate(reversed(empty_pages)):
+                # OPTYMALIZACJA CACHE: Usuń cache dla usuwanej strony
+                if page_index in self.tk_images:
+                    del self.tk_images[page_index]
+                
                 self.pdf_document.delete_page(page_index)
+                
+                # Przesuń cache w dół dla stron po usuniętej
+                if idx < len(empty_pages) - 1:
+                    self._shift_cache_down(page_index, 1)
+                
                 self.update_progressbar(idx + 1)
             
             # Odśwież widok
             self.selected_pages.clear()
-            self.tk_images.clear()
+            # OPTYMALIZACJA: Nie czyścimy całego cache (self.tk_images.clear())
+            # Cache został już optymalnie zarządzany podczas usuwania
             self.thumb_frames.clear()
             for widget in list(self.scrollable_frame.winfo_children()):
                 widget.destroy()
