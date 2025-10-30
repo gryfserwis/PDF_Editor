@@ -1873,6 +1873,7 @@ class ShiftContentDialog(tk.Toplevel):
         position_y = parent_y + (parent_height // 2) - (dialog_height // 2)
         self.geometry(f'+{position_x}+{position_y}')
 
+
     def create_widgets(self):
         main_frame = ttk.Frame(self, padding="8")
         main_frame.pack(fill="both", expand=True)
@@ -1899,6 +1900,15 @@ class ShiftContentDialog(tk.Toplevel):
         self.y_direction = tk.StringVar(value=self._get_pref('y_direction'))
         ttk.Radiobutton(xy_frame, text="Dół", variable=self.y_direction, value='D').grid(row=1, column=2, sticky="w", padx=(8, 4))
         ttk.Radiobutton(xy_frame, text="Góra", variable=self.y_direction, value='G').grid(row=1, column=3, sticky="w", padx=(0,2))
+
+        # Checkbox: zachowuj watermark
+        self.keep_watermark = tk.BooleanVar(value=True)
+        self.keep_watermark_checkbox = ttk.Checkbutton(
+            main_frame,
+            text="Zachowaj pozycję i wygląd watermarka (usuń i wklej po przesunięciu)",
+            variable=self.keep_watermark
+        )
+        self.keep_watermark_checkbox.pack(anchor="w", padx=8, pady=(10, 0))
 
         # Komunikat informacyjny przeniesiony do ramki xy_frame
         info_label = ttk.Label(
@@ -1928,7 +1938,8 @@ class ShiftContentDialog(tk.Toplevel):
                 'x_dir': self.x_direction.get(),
                 'y_dir': self.y_direction.get(),
                 'x_mm': x_mm,
-                'y_mm': y_mm
+                'y_mm': y_mm,
+                'keep_watermark': self.keep_watermark.get()
             }
             # Zapisz preferencje przed zamknięciem
             self._save_prefs()
@@ -5543,22 +5554,33 @@ class SelectablePDFViewer:
         dialog.focus_force()
  
     def shift_page_content(self):
-        # --- Wykrywanie i wycinanie watermarków jako obrazki przed przesunięciem ---
+        # --- Opcjonalne wykrywanie i wycinanie watermarków jako obrazki przed przesunięciem ---
+        dialog = ShiftContentDialog(self.master, self.prefs_manager)
+        result = dialog.result
+
+        if not result or (result['x_mm'] == 0 and result['y_mm'] == 0):
+            self._update_status("Anulowano lub zerowe przesunięcie.")
+            return
+
+        keep_watermark = result.get('keep_watermark', True)
         watermark_pattern = r"\d+:\d{8,}"
         watermark_images_by_page = {}
-        self._save_state_to_undo()  # Zapisz stan przed wycięciem watermarków (undo)
         import fitz
-        for page_index in self.selected_pages:
-            page = self.pdf_document.load_page(page_index)
-            pix, rect = self._extract_watermark_image(page, watermark_pattern, dpi=600)
-            if pix and rect:
-                watermark_images_by_page[page_index] = (pix, rect)
-                # Zamaskuj watermark białym prostokątem
-                page.draw_rect(rect, color=(1,1,1), fill=(1,1,1), overlay=True)
-                print(f"[WATERMARK] Strona {page_index+1}: wycięto watermark jako obrazek rect={rect}")
-            else:
-                watermark_images_by_page[page_index] = None
-                print(f"[WATERMARK] Strona {page_index+1}: nie znaleziono watermarku")
+        if keep_watermark:
+            self._save_state_to_undo()  # Zapisz stan przed wycięciem watermarków (undo)
+            for page_index in self.selected_pages:
+                page = self.pdf_document.load_page(page_index)
+                pix, rect = self._extract_watermark_image(page, watermark_pattern, dpi=600)
+                if pix and rect:
+                    watermark_images_by_page[page_index] = (pix, rect)
+                    # Zamaskuj watermark białym prostokątem
+                    page.draw_rect(rect, color=(1,1,1), fill=(1,1,1), overlay=True)
+                    print(f"[WATERMARK] Strona {page_index+1}: wycięto watermark jako obrazek rect={rect}")
+                else:
+                    watermark_images_by_page[page_index] = None
+                    print(f"[WATERMARK] Strona {page_index+1}: nie znaleziono watermarku")
+        else:
+            self._save_state_to_undo()  # Zapisz stan przed przesunięciem (undo)
         """
         Otwiera okno dialogowe i przesuwa zawartość zaznaczonych stron.
         Najpierw czyści/odświeża wybrane strony (resave przez PyMuPDF), potem wykonuje przesunięcie przez pypdf.
@@ -5568,16 +5590,10 @@ class SelectablePDFViewer:
             self._update_status("Musisz zaznaczyć przynajmniej jedną stronę PDF.")
             return
 
-        dialog = ShiftContentDialog(self.master, self.prefs_manager)
-        result = dialog.result
-        
+
         # Restore focus and mousewheel bindings after dialog closes
         self.master.focus_force()
         self._bind_mousewheel()
-
-        if not result or (result['x_mm'] == 0 and result['y_mm'] == 0):
-            self._update_status("Anulowano lub zerowe przesunięcie.")
-            return
 
         dx_pt = result['x_mm'] * self.MM_TO_POINTS
         dy_pt = result['y_mm'] * self.MM_TO_POINTS
@@ -5646,14 +5662,21 @@ class SelectablePDFViewer:
             self.pdf_document = fitz.open("pdf", new_pdf_bytes)
 
             # --- Wklejanie watermarków po przesunięciu ---
-            for page_index in pages_to_shift:
-                page = self.pdf_document.load_page(page_index)
-                wm_img = watermark_images_by_page.get(page_index)
-                if wm_img:
-                    pix, rect = wm_img
-                    # Wklej watermark w oryginalne miejsce (rect), bez przesuwania
-                    page.insert_image(rect, stream=pix.tobytes(), overlay=True, keep_proportion=True, mask=None)
-                    print(f"[WATERMARK IMG] Strona {page_index+1}: wstawiono watermark jako obrazek rect={rect}")
+            if keep_watermark:
+                for page_index in pages_to_shift:
+                    page = self.pdf_document.load_page(page_index)
+                    wm_img = watermark_images_by_page.get(page_index)
+                    if wm_img:
+                        pix, rect = wm_img
+                        # Przelicz rozmiar rect na podstawie DPI pixmapy i DPI strony (zwykle 72)
+                        # Wylicz szerokość i wysokość watermarka w punktach (1pt = 1/72 cala)
+                        dpi_pix = pix.xres if pix.xres else 600
+                        width_pt = pix.width * 72.0 / dpi_pix
+                        height_pt = pix.height * 72.0 / dpi_pix
+                        # Wstaw watermark w to samo miejsce, ale z natywną rozdzielczością
+                        new_rect = fitz.Rect(rect.x0, rect.y0, rect.x0 + width_pt, rect.y0 + height_pt)
+                        page.insert_image(new_rect, stream=pix.tobytes(), overlay=True, keep_proportion=True, mask=None)
+                        print(f"[WATERMARK IMG] Strona {page_index+1}: wstawiono watermark jako obrazek rect={new_rect}, dpi={dpi_pix}")
             self.hide_progressbar()
 
             # Optymalizacja: odśwież tylko zmienione miniatury (nie zmienia się liczba stron)
