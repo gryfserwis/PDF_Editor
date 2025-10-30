@@ -5562,6 +5562,9 @@ class SelectablePDFViewer:
         dialog.focus_force()
  
     def shift_page_content(self):
+        # --- Zapamiętaj oryginalne rect watermarka, by nie przesuwać go wielokrotnie ---
+        if not hasattr(self, '_watermark_rects_by_page'):
+            self._watermark_rects_by_page = {}
         # --- Opcjonalne wykrywanie i wycinanie watermarków jako obrazki przed przesunięciem ---
         dialog = ShiftContentDialog(self.master, self.prefs_manager)
         result = dialog.result
@@ -5572,6 +5575,9 @@ class SelectablePDFViewer:
 
         keep_watermark = result.get('keep_watermark', True)
         watermark_pattern = r"\d+:\d{8,}"
+        # Zapamiętaj watermarky tylko za pierwszym razem
+        if not hasattr(self, '_watermark_data_by_page'):
+            self._watermark_data_by_page = {}
         watermark_texts_by_page = {}
         watermark_sizes_by_page = {}
         watermark_colors_by_page = {}
@@ -5583,33 +5589,41 @@ class SelectablePDFViewer:
             import re
             for page_index in self.selected_pages:
                 page = self.pdf_document.load_page(page_index)
-                # Szukaj watermarka jako tekstu i zapamiętaj jego pozycję, rozmiar, kolor
-                text = None
-                font_size = None
-                color = None
-                rect = None
-                try:
-                    text_dict = page.get_text("dict")
-                    for block in text_dict.get("blocks", []):
-                        if block.get("type", 1) != 0:
-                            continue
-                        for line in block.get("lines", []):
-                            for span in line.get("spans", []):
-                                m = re.search(watermark_pattern, span["text"])
-                                if m:
-                                    text = m.group(0)
-                                    font_size = span.get("size")
-                                    color = span.get("color")
-                                    fontname = span.get("font", "helv")
-                                    rect = fitz.Rect(span["bbox"])
+                # Jeśli watermark już zapamiętany, użyj tych danych
+                if page_index in self._watermark_data_by_page:
+                    text, rect, font_size, color, fontname = self._watermark_data_by_page[page_index]
+                else:
+                    # Szukaj watermarka tylko za pierwszym razem
+                    text = None
+                    font_size = None
+                    color = None
+                    rect = None
+                    fontname = "helv"
+                    try:
+                        text_dict = page.get_text("dict")
+                        for block in text_dict.get("blocks", []):
+                            if block.get("type", 1) != 0:
+                                continue
+                            for line in block.get("lines", []):
+                                for span in line.get("spans", []):
+                                    m = re.search(watermark_pattern, span["text"])
+                                    if m:
+                                        text = m.group(0)
+                                        font_size = span.get("size")
+                                        color = span.get("color")
+                                        fontname = span.get("font", "helv")
+                                        rect = fitz.Rect(span["bbox"])
+                                        break
+                                if text:
                                     break
                             if text:
                                 break
-                        if text:
-                            break
-                except Exception:
-                    fontname = "helv"
-                    pass
+                    except Exception:
+                        fontname = "helv"
+                        pass
+                    # Zapamiętaj watermark tylko jeśli znaleziony
+                    if text and rect is not None:
+                        self._watermark_data_by_page[page_index] = (text, rect, font_size, color, fontname)
                 if not text or rect is None:
                     watermark_texts_by_page[page_index] = None
                     watermark_sizes_by_page[page_index] = None
@@ -5723,16 +5737,17 @@ class SelectablePDFViewer:
                     fontname = watermark_fonts_by_page.get(page_index) or "helv"
                     if wm:
                         text, rect = wm
-                        # Wstaw watermark jako tekst w to samo miejsce (lewy dolny róg rect)
+                        # Wstaw watermark zawsze w oryginalne miejsce (nieprzesunięte)
+                        insert_point = fitz.Point(rect.x0, rect.y1)
                         page.insert_text(
-                            fitz.Point(rect.x0, rect.y1),
+                            insert_point,
                             text,
                             fontsize=font_size,
                             fontname=fontname,
                             color=color,
                             overlay=True
                         )
-                        print(f"[WATERMARK TXT] Strona {page_index+1}: wstawiono watermark jako tekst '{text}' w rect={rect}, font_size={font_size}, color={color}, fontname={fontname}")
+                        print(f"[WATERMARK TXT] Strona {page_index+1}: wstawiono watermark jako tekst '{text}' w oryginalne miejsce {insert_point}, font_size={font_size}, color={color}, fontname={fontname}")
             self.hide_progressbar()
 
             # Optymalizacja: odśwież tylko zmienione miniatury (nie zmienia się liczba stron)
