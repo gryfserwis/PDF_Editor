@@ -5150,6 +5150,8 @@ class SelectablePDFViewer:
         settings = dialog.result
         if settings is None:
             return
+        # Zapisz stan dokumentu przed jakąkolwiek modyfikacją (undo)
+        self._save_state_to_undo()
         if settings.get('watermark_shift', False):
             import re
             watermark_pattern = r"\d+:\d{8,}"
@@ -5186,12 +5188,56 @@ class SelectablePDFViewer:
                     print(f"[WATERMARK] Strona {page_index+1}: nie znaleziono watermarku")
                 else:
                     print(f"[WATERMARK] Strona {page_index+1}: wykryto watermark tekstowy rect={rect}, text={text}, font_size={font_size}, color={color}, fontname={fontname}")
+                    # Skopiuj dane watermarka do słownika (jak w shift_page_content)
+                    if not hasattr(self, '_watermark_data_by_page'):
+                        self._watermark_data_by_page = {}
+                    self._watermark_data_by_page[page_index] = (text, rect, font_size, color, fontname)
                     # Usuń watermark tekstowy przez zamalowanie rect (jak w shift_page_content)
                     try:
                         page.draw_rect(rect, color=(1,1,1), fill=(1,1,1), overlay=True)
                         print(f"[WATERMARK] Strona {page_index+1}: watermark zamalowany (draw_rect)")
                     except Exception as e:
                         print(f"[WATERMARK] Strona {page_index+1}: błąd przy zamalowywaniu watermarka: {e}")
+
+                    # Wklej watermark ponownie po lewej lub prawej stronie zgodnie z watermark_side i marginesami
+                    watermark_side = settings.get('watermark_side', 'left')
+                    margin_left_mm = settings.get('margin_left_mm', 0)
+                    margin_right_mm = settings.get('margin_right_mm', 0)
+                    margin_vertical_mm = settings.get('margin_vertical_mm', 0)
+                    MM_PT = self.MM_TO_POINTS
+                    margin_left_pt = margin_left_mm * MM_PT
+                    margin_right_pt = margin_right_mm * MM_PT
+                    margin_v_pt = margin_vertical_mm * MM_PT
+                    page_rect = page.rect
+                    # Ustal punkt wstawienia watermarka
+                    if watermark_side == 'left':
+                        insert_x = page_rect.x0 + margin_left_pt
+                    else:
+                        insert_x = page_rect.x1 - margin_right_pt - (rect.width if rect else 0)
+                    # Zachowaj oryginalną wysokość watermarka (y1 z rect)
+                    insert_y = rect.y1 if rect else (page_rect.y1 - margin_v_pt)
+                    insert_point = fitz.Point(insert_x, insert_y)
+                    # Konwersja koloru (int na tuple RGB 0-1)
+                    def _convert_color(color_int):
+                        if color_int is None:
+                            return (0, 0, 0)
+                        r = ((color_int >> 16) & 0xFF) / 255.0
+                        g = ((color_int >> 8) & 0xFF) / 255.0
+                        b = (color_int & 0xFF) / 255.0
+                        return (r, g, b)
+                    color_tuple = _convert_color(color)
+                    try:
+                        page.insert_text(
+                            insert_point,
+                            text,
+                            fontsize=font_size or 12,
+                            fontname=fontname or "helv",
+                            color=color_tuple,
+                            overlay=True
+                        )
+                        print(f"[WATERMARK] Strona {page_index+1}: watermark wklejony po stronie {watermark_side} w punkcie {insert_point}, font_size={font_size}, color={color_tuple}, fontname={fontname}")
+                    except Exception as e:
+                        print(f"[WATERMARK] Strona {page_index+1}: błąd przy wklejaniu watermarka: {e}")
         # Parametry watermark_shift i watermark_side są pobierane z dialogu i dostępne w settings
         # Przykład użycia:
         # watermark_shift = settings.get('watermark_shift', False)
@@ -5223,8 +5269,6 @@ class SelectablePDFViewer:
         MM_PT = self.MM_TO_POINTS 
 
         try:
-            self._save_state_to_undo() 
-            
             start_number = settings['start_num']
             mode = settings['mode']                 
             direction = settings['alignment']        
@@ -5325,16 +5369,6 @@ class SelectablePDFViewer:
                         text_area_w = rect.width - lp - rp
                         y = rect.x0 + lp + (text_area_w / 2) - (text_width / 2)
                     angle = 270
-     #           elif rotation == 270:
-     #              x = rect.y1 - margin_v if position == "gora" else rect.y0 + margin_v
-      #              if align == "lewa":
-       #                 y = rect.x1 - right_pt - text_width
-        #            elif align == "prawa":
-         #               y = rect.x0 + left_pt
-          #          elif align == "srodek":
-           #             text_area_w = rect.width - left_pt - right_pt
-            #            y = rect.x0 + left_pt + (text_area_w / 2) - (text_width / 2)
-             #       angle = 270
                 else:
                     x = rect.x0 + left_pt
                     y = rect.y1 - margin_v
@@ -5359,7 +5393,6 @@ class SelectablePDFViewer:
             self.show_progressbar(maximum=len(selected_indices))
             for i, page_index in enumerate(selected_indices):
                 self._update_status(f"Numeracja wstawiona na {len(selected_indices)} stronach. Odświeżanie miniatur...")
-               
                 self.update_single_thumbnail(page_index)
                 self.update_progressbar(i + 1)
             self.hide_progressbar()
