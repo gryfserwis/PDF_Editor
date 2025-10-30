@@ -425,6 +425,8 @@ class PreferencesManager:
             'PageNumberingDialog.font_size': '12',
             'PageNumberingDialog.mirror_margins': 'False',
             'PageNumberingDialog.format_type': 'simple',
+            'PageNumberingDialog.watermark_shift': 'False',
+            'PageNumberingDialog.watermark_side': 'left',
             
             # ShiftContentDialog
             'ShiftContentDialog.x_direction': 'P',
@@ -1270,6 +1272,8 @@ class PageNumberingDialog(tk.Toplevel):
         'font_size': '12',
         'mirror_margins': 'False',
         'format_type': 'simple',
+        'watermark_shift': False,
+        'watermark_side': 'left',
     }
     
     def __init__(self, parent, prefs_manager=None):
@@ -1287,8 +1291,10 @@ class PageNumberingDialog(tk.Toplevel):
         self.vcmd_200 = (self.register(lambda v: validate_float_range(v, 1, 200)), "%P")
         self.vcmd_9999 = (self.register(lambda v: validate_float_range(v, 1, 9999)), "%P")
 
+
         self.create_variables()
         self.build_ui()
+        self._on_watermark_check()
 
         self.resizable(False, False)
         self.grab_set()
@@ -1315,8 +1321,8 @@ class PageNumberingDialog(tk.Toplevel):
         self.v_mirror_margins = tk.BooleanVar(master=self, value=self._get_pref('mirror_margins') == 'True')
         self.v_format_type = tk.StringVar(master=self, value=self._get_pref('format_type'))
         # Watermark section variables
-        self.v_watermark_shift = tk.BooleanVar(master=self, value=False)
-        self.v_watermark_side = tk.StringVar(master=self, value='left')
+        self.v_watermark_shift = tk.BooleanVar(master=self, value=self._get_pref('watermark_shift') == 'True')
+        self.v_watermark_side = tk.StringVar(master=self, value=self._get_pref('watermark_side'))
     
     def _get_pref(self, key):
         """Pobiera preferencję dla tego dialogu"""
@@ -1339,6 +1345,8 @@ class PageNumberingDialog(tk.Toplevel):
             self.prefs_manager.set('PageNumberingDialog.font_size', self.v_font_size.get())
             self.prefs_manager.set('PageNumberingDialog.mirror_margins', str(self.v_mirror_margins.get()))
             self.prefs_manager.set('PageNumberingDialog.format_type', self.v_format_type.get())
+            self.prefs_manager.set('PageNumberingDialog.watermark_shift', str(self.v_watermark_shift.get()))
+            self.prefs_manager.set('PageNumberingDialog.watermark_side', self.v_watermark_side.get())
     
     def restore_defaults(self):
         """Przywraca wartości domyślne"""
@@ -1354,6 +1362,9 @@ class PageNumberingDialog(tk.Toplevel):
         self.v_font_size.set(self.DEFAULTS['font_size'])
         self.v_mirror_margins.set(self.DEFAULTS['mirror_margins'] == 'True')
         self.v_format_type.set(self.DEFAULTS['format_type'])
+        self.v_watermark_shift.set(self.DEFAULTS['watermark_shift'])
+        self.v_watermark_side.set(self.DEFAULTS['watermark_side'])
+        self._on_watermark_check()
 
     def center_window(self):
         self.update_idletasks()
@@ -1576,6 +1587,7 @@ class PageNumberingDialog(tk.Toplevel):
         self.v_format_type.set(settings.get('format_type', self.DEFAULTS['format_type']))
         self.v_watermark_shift.set(settings.get('watermark_shift', False))
         self.v_watermark_side.set(settings.get('watermark_side', 'left'))
+        self._on_watermark_check()
 
     def _on_watermark_check(self):
         # Enable/disable watermark side radios based on checkbox
@@ -5164,6 +5176,10 @@ class SelectablePDFViewer:
                 fontname = "helv"
                 try:
                     text_dict = page.get_text("dict")
+                    page_rect = page.rect
+                    margin_mm = 25
+                    MM_PT = self.MM_TO_POINTS
+                    margin_pt = margin_mm * MM_PT
                     for block in text_dict.get("blocks", []):
                         if block.get("type", 1) != 0:
                             continue
@@ -5171,12 +5187,22 @@ class SelectablePDFViewer:
                             for span in line.get("spans", []):
                                 m = re.search(watermark_pattern, span["text"])
                                 if m:
-                                    text = m.group(0)
-                                    font_size = span.get("size")
-                                    color = span.get("color")
-                                    fontname = span.get("font", "helv")
-                                    rect = fitz.Rect(span["bbox"])
-                                    break
+                                    bbox = fitz.Rect(span["bbox"])
+                                    # Sprawdź czy środek bbox jest w odległości <= 25mm od dowolnej krawędzi
+                                    center_x = (bbox.x0 + bbox.x1) / 2
+                                    center_y = (bbox.y0 + bbox.y1) / 2
+                                    if (
+                                        center_x - page_rect.x0 <= margin_pt or
+                                        page_rect.x1 - center_x <= margin_pt or
+                                        center_y - page_rect.y0 <= margin_pt or
+                                        page_rect.y1 - center_y <= margin_pt
+                                    ):
+                                        text = m.group(0)
+                                        font_size = span.get("size")
+                                        color = span.get("color")
+                                        fontname = span.get("font", "helv")
+                                        rect = bbox
+                                        break
                             if text:
                                 break
                         if text:
@@ -5212,24 +5238,55 @@ class SelectablePDFViewer:
                     margin_left_mm = settings.get('margin_left_mm', 0)
                     margin_right_mm = settings.get('margin_right_mm', 0)
                     margin_vertical_mm = settings.get('margin_vertical_mm', 0)
-                    MM_PT = self.MM_TO_POINTS
-                    margin_left_pt = margin_left_mm * MM_PT
-                    margin_right_pt = margin_right_mm * MM_PT
-                    margin_v_pt = margin_vertical_mm * MM_PT
+                    margin_left_pt = mm2pt(margin_left_mm)
+                    margin_right_pt = mm2pt(margin_right_mm)
+                    margin_v_pt = mm2pt(margin_vertical_mm)
                     page_rect = page.rect
                     # Zamiana marginesów co drugą stronę jeśli mirror_margins
                     mirror_margins = settings.get('mirror_margins', False)
                     if mirror_margins:
                         if numerowana_strona_wm % 2 == 1:
                             margin_left_pt, margin_right_pt = margin_right_pt, margin_left_pt
-                    # Ustal punkt wstawienia watermarka
+                    # Ustal punkt i kąt wstawienia watermarka względem obrotu strony (jak numeracja, zawsze dół)
+                    rotation = page.rotation
                     if watermark_side == 'left':
-                        insert_x = page_rect.x0 + margin_left_pt
+                        align = 'lewa'
                     else:
-                        insert_x = page_rect.x1 - margin_right_pt - (rect.width if rect else 0)
-                    # Zachowaj oryginalną wysokość watermarka (y1 z rect)
-                    insert_y = rect.y1 if rect else (page_rect.y1 - margin_v_pt)
-                    insert_point = fitz.Point(insert_x, insert_y)
+                        align = 'prawa'
+                    left_pt, right_pt = margin_left_pt, margin_right_pt
+                    if mirror_margins:
+                        numerowana_strona_wm = list(sorted(self.selected_pages)).index(page_index)
+                        if numerowana_strona_wm % 2 == 1:
+                            left_pt, right_pt = right_pt, left_pt
+                    # Watermark zawsze w stopce, bez align='srodek', bez nagłówek/stopka
+                    rect_for_calc = rect if rect else page_rect
+                    if watermark_side == 'left':
+                        align = 'lewa'
+                    else:
+                        align = 'prawa'
+                    rotation = page.rotation
+                    font_size_wm = font_size or 12
+                    if rotation == 0:
+                        x = page_rect.x0 + left_pt if align == 'lewa' else page_rect.x1 - right_pt - rect_for_calc.width
+                        y = page_rect.y1 - margin_v_pt
+                        angle = 0
+                    elif rotation == 90:
+                        x = page_rect.y1 - margin_v_pt
+                        y = page_rect.x1 - left_pt if align == 'lewa' else page_rect.x0 + right_pt + rect_for_calc.width
+                        angle = 90
+                    elif rotation == 180:
+                        x = page_rect.x1 - left_pt if align == 'lewa' else page_rect.x0 + right_pt + rect_for_calc.width
+                        y = page_rect.y0 + margin_v_pt
+                        angle = 180
+                    elif rotation == 270:
+                        x = page_rect.y0 + margin_v_pt
+                        y = page_rect.x0 + left_pt if align == 'lewa' else page_rect.x1 - right_pt - rect_for_calc.width
+                        angle = 270
+                    else:
+                        x = page_rect.x0 + left_pt if align == 'lewa' else page_rect.x1 - right_pt - rect_for_calc.width
+                        y = page_rect.y1 - margin_v_pt
+                        angle = 0
+                    insert_point = fitz.Point(x, y)
                     # Konwersja koloru (int na tuple RGB 0-1)
                     def _convert_color(color_int):
                         if color_int is None:
@@ -5246,9 +5303,10 @@ class SelectablePDFViewer:
                             fontsize=font_size or 12,
                             fontname=fontname or "helv",
                             color=color_tuple,
-                            overlay=True
+                            overlay=True,
+                            rotate=angle
                         )
-                        print(f"[WATERMARK] Strona {page_index+1}: watermark wklejony po stronie {watermark_side} w punkcie {insert_point}, font_size={font_size}, color={color_tuple}, fontname={fontname}")
+                        print(f"[WATERMARK] Strona {page_index+1}: watermark wklejony po stronie {watermark_side} w punkcie {insert_point}, font_size={font_size}, color={color_tuple}, fontname={fontname}, rotacja={angle}°")
                     except Exception as e:
                         print(f"[WATERMARK] Strona {page_index+1}: błąd przy wklejaniu watermarka: {e}")
         # Parametry watermark_shift i watermark_side są pobierane z dialogu i dostępne w settings
