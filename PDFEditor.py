@@ -5145,18 +5145,18 @@ class SelectablePDFViewer:
 # _save_state, _update_status i _reconfigure_grid.
 
     def insert_page_numbers(self):
-        settings = None
-        def shift_watermark(doc, selected_indices, watermark_side, left_pt_base, right_pt_base):
-            """
-            Wykrywa, maskuje i przenosi watermark na wybranych stronach PDF.
-            Wstawia watermark przy lewym lub prawym marginesie, na tej samej wysokości.
-            """
+        # --- Wykrywanie watermarka jeśli zaznaczono opcję Przesuń watermark ---
+        dialog = PageNumberingDialog(self.master, self.prefs_manager)
+        settings = dialog.result
+        if settings is None:
+            return
+        if settings.get('watermark_shift', False):
             import re
             watermark_pattern = r"\d+:\d{8,}"
-            for i in selected_indices:
-                page = doc.load_page(i)
+            for page_index in sorted(self.selected_pages):
+                page = self.pdf_document.load_page(page_index)
                 text = None
-                font_size_wm = None
+                font_size = None
                 color = None
                 rect = None
                 fontname = "helv"
@@ -5170,7 +5170,7 @@ class SelectablePDFViewer:
                                 m = re.search(watermark_pattern, span["text"])
                                 if m:
                                     text = m.group(0)
-                                    font_size_wm = span.get("size")
+                                    font_size = span.get("size")
                                     color = span.get("color")
                                     fontname = span.get("font", "helv")
                                     rect = fitz.Rect(span["bbox"])
@@ -5182,30 +5182,14 @@ class SelectablePDFViewer:
                 except Exception:
                     fontname = "helv"
                     pass
-                if text and rect is not None:
-                    # Zamaskuj stary watermark
-                    page.draw_rect(rect, color=(1,1,1), fill=(1,1,1), overlay=True)
-                    # Ustal szerokość watermarka
-                    wm_width = fitz.get_text_length(text, fontname=fontname, fontsize=font_size_wm)
-                    # Pozycja X: przy lewym/prawym marginesie
-                    if watermark_side == 'left':
-                        wm_x = page.rect.x0 + left_pt_base
-                    else:
-                        wm_x = page.rect.x1 - right_pt_base - wm_width
-                    # Pozycja Y: wysokość jak oryginalny rect watermarka (przyklej do dolnej krawędzi rect)
-                    wm_y = rect.y1
-                    page.insert_text(
-                        fitz.Point(wm_x, wm_y),
-                        text,
-                        fontsize=font_size_wm,
-                        fontname=fontname,
-                        color=color if color else (0,0,0),
-                        overlay=True
-                    )
-                    print(f"[WATERMARK TXT] Strona {i+1}: watermark '{text}' przeniesiony przy marginesie {watermark_side}, x={wm_x}, y={wm_y}, font_size={font_size_wm}, color={color}, fontname={fontname}")
-        # --- Przesuwanie watermarka jeśli trzeba ---
-        if settings is not None and settings.get('watermark_shift', False):
-            shift_watermark(doc, selected_indices, settings.get('watermark_side', 'left'), left_pt_base, right_pt_base)
+                if not text or rect is None:
+                    print(f"[WATERMARK] Strona {page_index+1}: nie znaleziono watermarku")
+                else:
+                    print(f"[WATERMARK] Strona {page_index+1}: wykryto watermark tekstowy rect={rect}, text={text}, font_size={font_size}, color={color}, fontname={fontname}")
+        # Parametry watermark_shift i watermark_side są pobierane z dialogu i dostępne w settings
+        # Przykład użycia:
+        # watermark_shift = settings.get('watermark_shift', False)
+        # watermark_side = settings.get('watermark_side', 'left')
         """
         Wstawia numerację stron, z uwzględnieniem tylko zaznaczonych stron 
         (self.selected_pages) oraz poprawnej logiki centrowania ('srodek').
@@ -5218,9 +5202,6 @@ class SelectablePDFViewer:
         if not hasattr(self, 'selected_pages') or not self.selected_pages:
              self._update_status("Musisz zaznaczyć przynajmniej jedną stronę PDF.")
              return
-        
-        dialog = PageNumberingDialog(self.master, self.prefs_manager)
-        settings = dialog.result
         
         # Restore focus and mousewheel bindings after dialog closes
         self.master.focus_force()
