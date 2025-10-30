@@ -37,7 +37,7 @@ FOCUS_HIGHLIGHT_WIDTH = 6       # Szerokość ramki fokusu (stała)
  
 # DANE PROGRAMU
 PROGRAM_TITLE = "GRYF PDF Editor" 
-PROGRAM_VERSION = "5.8.1"
+PROGRAM_VERSION = "5.8.2"
 PROGRAM_DATE = date.today().strftime("%Y-%m-%d")
 
 # === STAŁE DLA A4 [w punktach PDF i mm] ===
@@ -1810,6 +1810,7 @@ class ShiftContentDialog(tk.Toplevel):
         'y_direction': 'G',
         'x_value': '0',
         'y_value': '0',
+        'keep_watermark': False,  # domyślnie odznaczony
     }
     
     def __init__(self, parent, prefs_manager=None):
@@ -1841,7 +1842,12 @@ class ShiftContentDialog(tk.Toplevel):
     def _get_pref(self, key):
         """Pobiera preferencję dla tego dialogu"""
         if self.prefs_manager:
+            if key == 'keep_watermark':
+                # Zwróć bool, nie string
+                return self.prefs_manager.get(f'ShiftContentDialog.{key}', str(self.DEFAULTS.get(key, False))) == 'True'
             return self.prefs_manager.get(f'ShiftContentDialog.{key}', self.DEFAULTS.get(key, ''))
+        if key == 'keep_watermark':
+            return self.DEFAULTS.get(key, False)
         return self.DEFAULTS.get(key, '')
     
     def _save_prefs(self):
@@ -1851,6 +1857,7 @@ class ShiftContentDialog(tk.Toplevel):
             self.prefs_manager.set('ShiftContentDialog.y_direction', self.y_direction.get())
             self.prefs_manager.set('ShiftContentDialog.x_value', self.x_value.get())
             self.prefs_manager.set('ShiftContentDialog.y_value', self.y_value.get())
+            self.prefs_manager.set('ShiftContentDialog.keep_watermark', 'True' if self.keep_watermark.get() else 'False')
     
     def restore_defaults(self):
         """Przywraca wartości domyślne"""
@@ -1860,6 +1867,7 @@ class ShiftContentDialog(tk.Toplevel):
         self.x_value.insert(0, self.DEFAULTS['x_value'])
         self.y_value.delete(0, tk.END)
         self.y_value.insert(0, self.DEFAULTS['y_value'])
+        self.keep_watermark.set(self.DEFAULTS['keep_watermark'])
 
     def center_window(self):
         self.update_idletasks()
@@ -1902,7 +1910,7 @@ class ShiftContentDialog(tk.Toplevel):
         ttk.Radiobutton(xy_frame, text="Góra", variable=self.y_direction, value='G').grid(row=1, column=3, sticky="w", padx=(0,2))
 
         # Checkbox: zachowuj watermark
-        self.keep_watermark = tk.BooleanVar(value=True)
+        self.keep_watermark = tk.BooleanVar(value=self._get_pref('keep_watermark'))
         self.keep_watermark_checkbox = ttk.Checkbutton(
             main_frame,
             text="Zachowaj pozycję i wygląd watermarka (usuń i wklej po przesunięciu)",
@@ -5566,8 +5574,9 @@ class SelectablePDFViewer:
         watermark_pattern = r"\d+:\d{8,}"
         watermark_images_by_page = {}
         import fitz
+        # Zapisz stan przed przesunięciem (undo) tylko raz, niezależnie od opcji watermarka
+        self._save_state_to_undo()
         if keep_watermark:
-            self._save_state_to_undo()  # Zapisz stan przed wycięciem watermarków (undo)
             for page_index in self.selected_pages:
                 page = self.pdf_document.load_page(page_index)
                 pix, rect = self._extract_watermark_image(page, watermark_pattern, dpi=600)
@@ -5579,8 +5588,6 @@ class SelectablePDFViewer:
                 else:
                     watermark_images_by_page[page_index] = None
                     print(f"[WATERMARK] Strona {page_index+1}: nie znaleziono watermarku")
-        else:
-            self._save_state_to_undo()  # Zapisz stan przed przesunięciem (undo)
         """
         Otwiera okno dialogowe i przesuwa zawartość zaznaczonych stron.
         Najpierw czyści/odświeża wybrane strony (resave przez PyMuPDF), potem wykonuje przesunięcie przez pypdf.
@@ -5606,7 +5613,7 @@ class SelectablePDFViewer:
 
 
         try:
-            self._save_state_to_undo()
+          #  self._save_state_to_undo()
 
             import io
             from pypdf import PdfReader, PdfWriter, Transformation
